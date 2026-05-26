@@ -4,17 +4,17 @@ Monyet Batu\
 ORCID: 0009-0007-9002-5381\
 23 May 2026
 
-## Apprenticeship — A slight diversion
+*Editor's note: the third essay in this series refines the term "practice recipe" to "practice bundle", separating the artefact (the bundle of five constitutive elements) from the means of its transmission (apprenticeship). This essay predates that distinction and uses the earlier term throughout; see "Practice Theory — The Implementation" for the revised vocabulary.*
 
-In my last article I promised to go into detail about closing the loop and adding a self-improving process through practice theory, and I will, but first a slight diversion to explain my insight on apprenticeship.
+## Apprenticeship — the missing layer
 
-I previously saw the practice recipe as a way to **apprentice** the LLM in the practice, effectively removing the apprenticeship and allowing the LLM, as the practitioner, to enact it with the user as the main **beneficiary**.
+The previous essay promised this one would go into detail about closing the loop and adding a self-improving process. It will — but along the way I ran into a problem worth sitting with first, because it reshaped what the loop is closing.
 
-The realisation came that this implied that the knowledge about the user should live in the teleo-affective structure and the understanding of the practice recipe so that the LLM would be guided by it. However where there are many practice recipes available to the LLM this results in the user knowledge being duplicated in every recipe.
+I had been treating the **practice recipe** as a way to apprentice the LLM in a practice — the recipe carrying what a human apprentice would absorb through participation, so the LLM could become the practitioner with the user as the **beneficiary**. The catch came with the user's knowledge. If the recipe is what guides the practitioner, then what the practitioner knows *about this user* — preferences, history, current concerns — has to sit inside the recipe, in the teleo-affective structure and the understanding. With one recipe that is fine. With many recipes available to the LLM, that same about-the-user content has to be duplicated into every one.
 
-I struggled with this for a while but finally had a breakthrough by accepting that an apprenticeship was necessary for the LLM and that an apprenticeship was also needed for the user themselves.
+I struggled with this for a while, then had a breakthrough by accepting that an apprenticeship was necessary for the LLM *and* that an apprenticeship was also needed for the user themselves.
 
-Quite the jump, let me explain how I got there.
+Quite the jump — let me explain how I got there.
 
 I interact with many LLM “harnesses”, Codex, Claude Code, Cursor, Antigravity, as well as custom ones. I imagined trying to work with them all with a set of practices that apply to me.
 

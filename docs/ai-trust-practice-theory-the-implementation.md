@@ -189,7 +189,7 @@ These files grow as later steps extend them: step 2 refactors `Bundle` to be a s
 
 A single captured bundle is the smallest unit. On its own it does not yet say how elements get shared across bundles, how a material's name gets bound to runnable code, how the captured form gets projected into something an LLM can engage with, or how an enactment leaves a trail behind it. Each of those is its own step, and each gets its own section as we build it.
 
-The bundle is what the apprentice would carry into the workshop. The workshop, the bench, the tool cupboard, and the master watching from the corner are all coming — but the bundle comes first.
+The bundle is what the apprentice would carry into the workshop. The workshop, the bench, the tool cupboard, and the standing arrangement around them are all coming — but the bundle comes first.
 
 ## Step 2: Pools and the function registry
 
@@ -1000,7 +1000,7 @@ SELECT id, target_enactment_id, kind, observed_at, NOW() FROM friction_observati
 
 Both rely on `INSERT OR IGNORE` against the inbox's primary key, so re-routing the same source row is a no-op. There is no "have I already routed this" cursor to maintain — the schema is the cursor.
 
-A workers connecting to the autonomic MCP endpoint then claim from the inboxes: `SELECT … WHERE consumed_at IS NULL AND (claim_expires_at IS NULL OR claim_expires_at < NOW()) ORDER BY routed_at LIMIT 1`, then `UPDATE … SET claimed_at = NOW(), claimed_by = worker_id, claim_expires_at = NOW() + lease`. If the worker finishes, the same row is marked consumed; if the worker dies, the lease eventually expires and another worker can claim it.
+Workers connecting to the autonomic MCP endpoint then claim from the inboxes: `SELECT … WHERE consumed_at IS NULL AND (claim_expires_at IS NULL OR claim_expires_at < NOW()) ORDER BY routed_at LIMIT 1`, then `UPDATE … SET claimed_at = NOW(), claimed_by = worker_id, claim_expires_at = NOW() + lease`. If the worker finishes, the same row is marked consumed; if the worker dies, the lease eventually expires and another worker can claim it.
 
 ### The adapter ABC
 
@@ -1015,11 +1015,11 @@ class AutonomicAdapter(ABC):
 
 `open()` sets up the LLM primitive once. `dispatch(work)` is called for each inbox row and is expected to make the LLM enact one work item end-to-end. `close()` tears down.
 
-Four concrete subclasses are provided, spanning two provider families (Anthropic and Codex) and two process shapes (long-lived in-process, subprocess per dispatch):
+Four concrete subclasses are provided. Three drive a real LLM, spanning two provider families (Anthropic and Codex) and two process shapes (long-lived in-process, subprocess per dispatch); the fourth, `ScriptedAdapter`, is a deterministic stand-in used by the verify so the loop can run without API keys. When the rest of the essay says "three real adapters" it means the three LLM-driving ones:
 
 **`ScriptedAdapter`** — deterministic, no LLM. Takes a Python async callable that opens its own MCP session, drives the autonomic surface, and returns the consumer enactment id. Used by the verify so the loop runs without API keys or external tooling. The handler is what an LLM enactment *would* do, written explicitly.
 
-**`AnthropicSDKAdapter`** — Anthropic, in-process. Uses `claude-agent-sdk` to open a long-lived `ClaudeSDKClient` per role with the bundle's brief as the system prompt; the conversation and cached prompt persist across work items. Each `dispatch` sends a single query naming the inbox row and drains the response. Requires `claude-agent-sdk` installed and Claude credentials (subscription or API key). Anthropic's subscription terms for SDK use are scheduled to change on **2026-06-16**; check current policy before relying on the subscription path beyond that date.
+**`AnthropicSDKAdapter`** — Anthropic, in-process. Uses `claude-agent-sdk` to open a long-lived `ClaudeSDKClient` per role with the bundle's brief as the system prompt; the conversation and cached prompt persist across work items. Each `dispatch` sends a single query naming the inbox row and drains the response. Requires `claude-agent-sdk` installed and Claude credentials (subscription or API key). Anthropic's subscription terms for SDK use are scheduled to change on **2026-06-15**; check current policy before relying on the subscription path beyond that date.
 
 **`ClaudeCliAdapter`** — Anthropic, subprocess. Invokes `claude -p` (Claude Code's print mode) as a subprocess per work item. Stateless across dispatches; same provider as the SDK adapter but no Python dependency. Each call spawns a fresh `claude` process with the bundle's brief as `--system-prompt` and the dispatch message as the prompt argument; MCP config is injected via `--mcp-config` as JSON. Uses whatever credentials the CLI itself has — subscription OAuth by default, or `ANTHROPIC_API_KEY` if set. Requires the `claude` binary on PATH (configurable via `PRACTICE_CLAUDE_BIN`).
 
@@ -1113,6 +1113,16 @@ Everything the loop touches gets recorded the same way. A somatic enactment clos
 
 This is what doc 2 named: practices in their own right, judged and smoothed alongside everything else. The strange loop is not added in step 12 — step 12 just observes that the machinery already does it. The same harness that processes the Judge's findings about Activities Management will process the Judge's findings about an earlier Judge enactment, and the same Smoother that amended Activities Management can amend the Smoother bundle itself if a Friction names it.
 
+### One mechanism, two cadences
+
+Essay 2 named the runaway-recursion fix as **two loops**: a reactive loop responding to somatic completions, and a separately-scheduled reflective loop examining autonomic history. It said, plainly, that *when an autonomic enactment completes, no notification is dispatched*; the autonomic history was to be visited only on the reflective loop's own schedule. The implementation collapses those two loops into **one idempotent inbox plus a discipline about when to drain it**. There is no separate "reflective" loop in the code — the dispatcher's `INSERT OR IGNORE` routes every closed enactment, somatic or autonomic, to `judge_inbox` with the same SQL.
+
+What essay 2's two-loop scheme bought — keeping the autonomic loop from consuming itself — the implementation buys differently. In the verify, the discipline is **bounded drains plus a controlled `route_now`**: pass 1 routes and drains the somatic completions; pass 2 routes and drains what pass 1 produced. `route_now` between passes plays the role essay 2 gave the reflective scheduled cadence — the second pass is the reflection on the first.
+
+In production with real LLM enactment, that discipline has to come from somewhere else, and the dispatcher as written does not supply it. `judge_inbox` is fed by *closed enactments*, not by Friction; so a Judge enactment that emits zero Friction still closes, still gets routed, and still becomes another Judge work item. A continuously-polling dispatcher with no other gate will judge the Judge's judgement of the Judge, indefinitely, even when each pass produces nothing. Quieting the smoother_inbox does not quiet judge_inbox.
+
+So the production answer is a **routing cadence or policy** layered over the same mechanism: route somatic completions continuously, but route autonomic enactments only on a slower scheduled pass (which is essay 2's reflective cadence, recovered as a routing rule rather than a separate loop); or filter routing so a Judge enactment that produced no Friction is not requeued at all; or set `PRACTICE_DISABLE_DISPATCHER=1` on the autonomic side and drive reflection from an explicit scheduler. The verify demonstrates that the underlying mechanism supports recursive self-examination; it does not demonstrate that a continuously-polling production dispatcher converges. Closing that gap — picking and implementing the cadence/policy — is honest unfinished work, and the right shape for it follows essay 2's two-loop instinct, recovered as a discipline at the routing layer rather than as a second loop.
+
 ### Demonstrating one revolution
 
 The verify, after running the first pass of Judge and Smoother, calls `route_now(store)` again. The Judge and Smoother enactments produced by the first pass have closed; the dispatcher's idempotent INSERT picks them up and adds them to `judge_inbox`. A second `drain` of the Judge processes them.
@@ -1133,7 +1143,7 @@ Second pass (strange loop — Judge examines Judge/Smoother enactments):
 
 Five new judge_inbox rows — the four Judge enactments from pass 1 (one per somatic practice judged) plus the one Smoother enactment. Judge processed each in turn. No new Friction came back, because the verify's deterministic heuristic (`narrow_engagement` when `used <= 1` of multiple available affordances) does not fire for the Judge's own enactments: each Judge enactment used at least two affordances (`read_enactment_steps` plus `read_bundle`). The loop ran, found nothing to name, and went still.
 
-That stillness matters. An autonomic loop that never finds equilibrium will churn forever, generating Friction about Friction about Friction. The Judge's discipline — observe, do not invent — is what lets the loop quiet when nothing genuinely needs attention. A real Judge enactment, reading the bundle's understanding, would apply the same discipline; the verify's heuristic is a small-but-honest stand-in.
+That stillness matters. Within a bounded reflective pass, the Judge's discipline — observe, do not invent — is what lets the pass quiet when nothing genuinely needs attention. A real Judge enactment, reading the bundle's understanding, would apply the same discipline; the verify's heuristic is a small-but-honest stand-in.
 
 ### A note on bounding
 
@@ -1145,7 +1155,7 @@ Two harness choices together make this clean:
 
 2. **`max_items` matches initial pending.** Each drain processes exactly the work that was queued when it started. Work that arrives mid-drain (newly closed autonomic enactments) waits for the next pass.
 
-In production with real LLM enactment, the run-loop variant (`run_role_loop`) is used instead — it polls forever, idle-waits when empty, and stops on a signal. The dispatcher in the long-lived server keeps inboxes populated; the run-loop drains them as they fill. No bounding is needed because the LLM-driven Judge is smart enough to recognise an already-examined enactment and emit no new Friction, so the inbox naturally empties over time.
+In production with real LLM enactment, the run-loop variant (`run_role_loop`) is used instead — it polls forever, idle-waits when empty, and stops on a signal. The dispatcher in the long-lived server keeps inboxes populated; the run-loop drains them as they fill. As written, a continuously polling dispatcher still needs the routing cadence or policy named above; without it, autonomic enactments can keep re-entering `judge_inbox` even when they emit no Friction.
 
 ### What the strange loop buys
 

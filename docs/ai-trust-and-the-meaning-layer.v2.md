@@ -72,6 +72,6 @@ A Judge practice monitors the enactment history, identifying frictions — place
 
 The pattern is a familiar one: monitor, analyse, plan, execute, over a shared store of knowledge — the autonomic loop that the self-managing systems literature has described for decades, here cast as practices in their own right. Once the loop is set in motion, the recipe maintains itself; the human role is to bootstrap, not to govern.
 
-A virtuous circle, running under its own power. How the loop works in detail — what the Judge attends to, what the Smoother is allowed to change, and how the bootstrap is performed — is the subject of a forthcoming essay on the autonomic recipe loop.
+A virtuous circle, running under its own power. How the loop works in detail — what the Judge attends to, what the Smoother is allowed to change, and how the bootstrap is performed — is the subject of a [follow-up essay on the autonomic recipe loop](https://doi.org/10.5281/zenodo.20354614).
 
 Practice makes perfect.
