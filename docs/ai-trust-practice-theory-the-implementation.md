@@ -439,6 +439,8 @@ The tool list never changes (once registered). Affordances change through `disco
 
 Each MCP session holds one active practice at a time. The session opens with no practice active; the harness reaches for one via `switch_practice`. When `switch_practice` is called again, the previous active practice is discarded and the new one is projected fresh.
 
+*Source caveat: as written, the server holds the active practice in module-level globals rather than per-session state. Under stdio (one client per process) and a single HTTP client this is invisible. Concurrent HTTP clients would race on the shared active-practice slot — making the per-session model an intended shape rather than a present property until per-session lifespan state lands.*
+
 Switching is also the projection point. `switch_practice(practice_id)` does:
 
 ```text
@@ -465,7 +467,7 @@ The server does not need to know about the substrate or the registry. The active
 The server supports two transports, chosen at startup via `PRACTICE_TRANSPORT`:
 
 - **`stdio`** (default) — the client launches the server as a subprocess and the two communicate over standard input and output. Each connection is its own process. Fits the verify, fits Codex's `.mcp.json` (Codex spawns the server per `codex exec`), and fits any harness that's happy to manage subprocesses.
-- **`http`** — the server binds to a port (`PRACTICE_HTTP_HOST` / `PRACTICE_HTTP_PORT`, default `127.0.0.1:7180`) and runs as a long-lived process; many clients connect concurrently. Fits the production autonomic deployment where Anthropic-SDK workers and the user's harness all connect to one substrate.
+- **`http`** — the server binds to a port (`PRACTICE_HTTP_HOST` / `PRACTICE_HTTP_PORT`, default `127.0.0.1:7180`) and runs as a long-lived process. Aimed at production autonomic deployment where Anthropic-SDK workers and the user's harness connect to one substrate. Genuine concurrent use is gated on the per-session-state work noted above; until then the safe pattern is one HTTP client per server.
 
 Both transports run the same tool surface (six in somatic, five in autonomic — see step 6 for the asymmetry), the same projection, the same dispatcher. The MCP machinery is transport-agnostic; switching is a configuration choice, not a change to the tools.
 
@@ -496,8 +498,11 @@ With one bundle in the catalog (`activities_management`) the session looks like 
   { "active": "activities_management" }
 
 > current_practice()
-  { "id": "activities_management", "name": "...", "rules": 4,
-    "affordances": 4, "materials": 4 }
+  { "mode": "somatic",
+    "practice": { "id": "activities_management", "name": "...",
+                  "description": "..." },
+    "enactment_id": "a7c1...",
+    "composition": "# Activities Management\n\n## Teleo-affective\n..." }
 
 > discover_affordances()
   [
@@ -1023,7 +1028,7 @@ Four concrete subclasses are provided. Three drive a real LLM, spanning two prov
 
 **`ClaudeCliAdapter`** — Anthropic, subprocess. Invokes `claude -p` (Claude Code's print mode) as a subprocess per work item. Stateless across dispatches; same provider as the SDK adapter but no Python dependency. Each call spawns a fresh `claude` process with the bundle's brief as `--system-prompt` and the dispatch message as the prompt argument; MCP config is injected via `--mcp-config` as JSON. Uses whatever credentials the CLI itself has — subscription OAuth by default, or `ANTHROPIC_API_KEY` if set. Requires the `claude` binary on PATH (configurable via `PRACTICE_CLAUDE_BIN`).
 
-**`CodexExecAdapter`** — Codex, subprocess. Invokes `codex exec` as a subprocess per work item. Stateless across dispatches. Each call spawns a fresh process with the bundle's brief plus the work's dispatch message; the subprocess does the MCP work (via `.mcp.json` in its cwd) and exits. Requires the Codex CLI binary; configurable via `PRACTICE_CODEX_BIN`.
+**`CodexExecAdapter`** — Codex, subprocess. Invokes `codex exec` as a subprocess per work item. Stateless across dispatches. Each call spawns a fresh process with the bundle's brief plus the work's dispatch message; the autonomic MCP server is injected inline via `codex exec -c mcp_servers.…` so the adapter does not depend on the user's `~/.codex/config.toml` or a `.mcp.json` in cwd. Requires the Codex CLI binary; configurable via `PRACTICE_CODEX_BIN`.
 
 ### Briefs from bundle content
 
@@ -1048,7 +1053,14 @@ The output of the verify shows the inbox counts going up and down: `judge_inbox 
 
 The three real adapters are present and runnable via `autonomic_runner.py`. The shape of the MCP transport follows from the shape of the adapter:
 
-**`AnthropicSDKAdapter` — long-lived in-process, HTTP transport.** The SDK keeps a long-lived `ClaudeSDKClient` and wants a stable MCP URL it can reach. Start an HTTP server in autonomic mode in one terminal, then run the harness in another:
+**`AnthropicSDKAdapter` — long-lived in-process.** The SDK keeps a long-lived `ClaudeSDKClient` per role. The MCP transport is configurable: by default (`PRACTICE_AUTONOMIC_MCP_URL` unset) each adapter instance spawns its own stdio MCP server subprocess, which sidesteps the shared module-level state today. With `PRACTICE_AUTONOMIC_MCP_URL` set, the adapter connects to a long-lived HTTP server — the intended shape once per-session state lands. Stdio default:
+
+```bash
+PRACTICE_AUTONOMIC_PROVIDER=anthropic \
+  uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
+```
+
+HTTP shape (one server, many workers, gated on per-session state):
 
 ```bash
 # Terminal 1 — long-lived HTTP autonomic server
@@ -1056,7 +1068,7 @@ PRACTICE_TRANSPORT=http PRACTICE_HTTP_PORT=7181 \
   PRACTICE_SERVER_MODE=autonomic \
   uv run python -m practice_theory_implementation.server
 
-# Terminal 2 — Anthropic SDK harness driving Judge + Smoother
+# Terminal 2 — Anthropic SDK harness pointing at it
 PRACTICE_AUTONOMIC_PROVIDER=anthropic \
   PRACTICE_AUTONOMIC_MCP_URL=http://127.0.0.1:7181/mcp/ \
   uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
@@ -1071,7 +1083,7 @@ PRACTICE_AUTONOMIC_PROVIDER=anthropic_cli \
 
 If you prefer to point it at an existing long-lived HTTP server instead, set `PRACTICE_AUTONOMIC_MCP_URL=http://…/mcp/`; the adapter switches its `--mcp-config` shape accordingly.
 
-**`CodexExecAdapter` — subprocess per dispatch, stdio transport.** `codex exec` spawns its own MCP server per dispatch via `.mcp.json` in cwd. No separate long-lived server needed:
+**`CodexExecAdapter` — subprocess per dispatch, stdio transport.** Each `codex exec` invocation spawns its own MCP server per dispatch via inline `-c mcp_servers.…` configuration injected by the adapter. No separate long-lived server needed and no dependency on the user's Codex MCP config:
 
 ```bash
 PRACTICE_AUTONOMIC_PROVIDER=codex \

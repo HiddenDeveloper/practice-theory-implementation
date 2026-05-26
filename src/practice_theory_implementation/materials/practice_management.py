@@ -328,6 +328,7 @@ def pm_amend_bundle(
         understanding_ids=tuple(new_und),
         rules_ids=tuple(new_rules),
         affordance_ids=tuple(new_aff),
+        mode=current.mode,
     )
     store.upsert_bundle(amended)
     catalog[id] = amended

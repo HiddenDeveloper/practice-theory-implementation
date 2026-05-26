@@ -855,7 +855,8 @@ MATERIALS: dict[str, Material] = {
                 "required": ["target_enactment_id", "kind", "content"],
             },
         ),
-        # Smoother materials (its third affordance reuses pm_amend_bundle above).
+        # Smoother — two smoother-specific materials; the Smoother bundle's
+        # other six affordances reuse PM materials defined above.
         Material(
             name="smoother_read_pending_friction",
             description=(

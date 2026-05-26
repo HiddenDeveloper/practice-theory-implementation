@@ -7,20 +7,23 @@ name is fully earned only in somatic mode; an autonomic-mode server is
 narrower.)
 
 The server has a mode at startup: somatic (default) or autonomic, set via
-the PRACTICE_SERVER_MODE environment variable. The mode controls two things:
-the catalog the server exposes (filtered by Bundle.mode), and whether the
-engagement bundle is projected. Everything else — the five tools, the
-substrate, the projection rules, the trail — is identical across modes.
+the PRACTICE_SERVER_MODE environment variable. The mode controls three
+things: the catalog the server exposes (filtered by Bundle.mode), whether
+the engagement bundle is projected, and whether the somatic-only
+`user_engagement` tool is registered. Everything else — the substrate, the
+projection rules, the trail — is identical across modes.
 
-Five fixed tools, exposed once and never changed:
+Fixed tool surface, exposed once and never changed:
 
   list_practices         - what bundles are in the catalog
   switch_practice        - project a bundle and make it the session's active practice
   current_practice       - summary of what is active
+  user_engagement        - somatic-only: the engagement layer's content
   discover_affordances   - the active practice's affordances, optionally filtered
   invoke_affordance      - dispatch to the active practice's invoke()
 
-The five tools never change. Affordances surface dynamically through
+Six tools in somatic mode (where `user_engagement` is registered), five in
+autonomic mode (where it is not). Affordances surface dynamically through
 discover_affordances based on which practice is active. In stdio transport
 each connection is its own process, so the active practice is module-level
 state; HTTP transport would scope this per-session via a lifespan.

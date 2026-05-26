@@ -17,8 +17,9 @@ Runs three phases in sequence:
 3. Trail + Friction summary — top-level enactments, their children, and the
    Friction observations table.
 
-Two real adapters (`AnthropicSDKAdapter`, `CodexExecAdapter`) live alongside
-the ScriptedAdapter for production usage; see the doc for runbook commands.
+Three real LLM adapters (`AnthropicSDKAdapter`, `ClaudeCliAdapter`,
+`CodexExecAdapter`) live alongside the ScriptedAdapter for production usage;
+see the doc for runbook commands.
 
 Run with:
 

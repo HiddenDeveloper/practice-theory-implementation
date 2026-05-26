@@ -1,7 +1,9 @@
 """Autonomic adapters — abstractions over the LLM-driving primitive.
 
 One run-loop (`run_role_loop`) works against any adapter that implements the
-`AutonomicAdapter` ABC. Three concrete adapters are provided:
+`AutonomicAdapter` ABC. Four concrete adapters are provided — three drive a
+real LLM (Anthropic SDK, Claude CLI, Codex exec) and one is a deterministic
+stand-in (`ScriptedAdapter`) used by the verify:
 
 - `ScriptedAdapter` — deterministic, no LLM. Used by the verify so the loop
   is demonstrable without API keys or external tooling. Takes a per-role
@@ -13,11 +15,18 @@ One run-loop (`run_role_loop`) works against any adapter that implements the
   across work items. Dispatches by sending a query naming the inbox row.
   Requires `claude-agent-sdk` to be installed and Claude credentials
   available (subscription or API key). Note: Anthropic's subscription terms
-  for SDK use are scheduled to change on 2026-06-16.
+  for SDK use are scheduled to change on 2026-06-15.
+
+- `ClaudeCliAdapter` — invokes `claude -p` (Claude Code's print mode) as a
+  subprocess per work item. Same provider as the SDK adapter but no Python
+  dependency. Stateless across dispatches. Requires the `claude` binary on
+  PATH; configurable via `PRACTICE_CLAUDE_BIN`.
 
 - `CodexExecAdapter` — invokes `codex exec` as a subprocess per work item.
-  Stateless across dispatches. Requires the Codex CLI binary; configurable
-  via `PRACTICE_CODEX_BIN` env var (defaults to "codex" on PATH).
+  Stateless across dispatches. The autonomic MCP server is injected inline
+  via `codex exec -c mcp_servers.…`, so the adapter does not depend on the
+  user's `~/.codex/config.toml` or a `.mcp.json` in cwd. Requires the Codex
+  CLI binary; configurable via `PRACTICE_CODEX_BIN`.
 
 The brief (system prompt) for each role is composed from the role's bundle
 content — teleo-affective + understanding + rules — by `compose_brief`.
@@ -166,10 +175,12 @@ class AnthropicSDKAdapter(AutonomicAdapter):
     Requires `claude-agent-sdk` installed. Requires Claude credentials —
     either an Anthropic API key (`ANTHROPIC_API_KEY`) or a logged-in
     Claude Code / Claude Pro / Max subscription. The subscription path is
-    scheduled to change on 2026-06-16; check current Anthropic policy.
+    scheduled to change on 2026-06-15; check current Anthropic policy.
 
-    `mcp_url` on AdapterConfig must be set (HTTP transport — the SDK
-    doesn't drive stdio MCP cleanly).
+    `mcp_url` on AdapterConfig is optional. Unset (the default), the adapter
+    uses stdio — each adapter instance spawns its own server subprocess.
+    Set, the adapter connects to a long-lived HTTP MCP server. HTTP is the
+    intended shape once per-session lifespan state lands on the server.
     """
 
     def __init__(
@@ -416,11 +427,13 @@ class CodexExecAdapter(AutonomicAdapter):
 
     Stateless across dispatches. Each dispatch spawns a fresh `codex exec`
     with the brief as part of the prompt and the work's dispatch_message
-    appended. The subprocess does the MCP work (configured via `.mcp.json`
-    in `cwd`) and exits.
+    appended. The autonomic MCP server is injected inline via
+    `codex exec -c mcp_servers.practice_server_autonomic.…`, so the
+    subprocess does not depend on the user's `~/.codex/config.toml` or a
+    `.mcp.json` in cwd.
 
-    `mcp_url` on AdapterConfig is unused — Codex picks up the MCP server
-    from `.mcp.json` in its working directory.
+    `mcp_url` on AdapterConfig is unused — Codex always uses the inline
+    stdio MCP config the adapter injects.
     """
 
     def __init__(

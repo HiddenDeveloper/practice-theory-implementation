@@ -5,7 +5,7 @@ Two tables in a small SQLite database:
   enactments  : one row per period of doing-a-practice within a session
   steps       : one row per invoke_affordance call within an enactment
 
-The trail is the substrate trust rests on. A reader (the Judge in step 8, a
+The trail is the substrate trust rests on. A reader (the Judge in step 9, a
 user, an auditor) inspects it to see what was actually done — independent of
 what was said about it.
 

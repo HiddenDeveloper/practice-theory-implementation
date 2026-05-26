@@ -5,8 +5,11 @@ PRACTICE_DISPATCHER_POLL_INTERVAL_SECONDS (default 2.0) and calls the trail
 store's idempotent routing methods. New rows in the source tables become new
 rows in the inbox tables; old rows stay where they were.
 
-A boot cutoff is captured at startup so historical events from previous
-process lifetimes are not re-routed.
+A boot cutoff is captured at startup for logging. It is not currently used
+as a filter — routing relies on `INSERT OR IGNORE` against the inbox tables,
+so historical events from previous process lifetimes are re-routed harmlessly
+and a fresh autonomic server can pick up closed somatic enactments left
+behind by an earlier run.
 
 The dispatcher is server-side. The autonomic adapters (Anthropic, Codex,
 Scripted) are workers that read the inboxes via the MCP autonomic surface;

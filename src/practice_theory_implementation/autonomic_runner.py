@@ -1,28 +1,37 @@
-"""Runner for the real autonomic adapters — Anthropic SDK or Codex exec.
+"""Runner for the real autonomic adapters — Anthropic SDK, Claude CLI, or Codex exec.
 
 Long-running counterpart to the verify's bounded `drain`. Picks the adapter
 by env var or CLI flag, opens it, runs `run_role_loop` for both Judge and
 Smoother concurrently against the trail's inboxes, and exits on SIGINT/SIGTERM
 or when `/tmp/practice-autonomic-quit` appears.
 
-Usage (Anthropic):
+Usage (Anthropic SDK, stdio default):
     PRACTICE_AUTONOMIC_PROVIDER=anthropic \
-        PRACTICE_AUTONOMIC_MCP_URL=http://127.0.0.1:7180/mcp/autonomic/ \
         uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
+
+Usage (Anthropic SDK, HTTP — gated on per-session lifespan state):
+    PRACTICE_AUTONOMIC_PROVIDER=anthropic \
+        PRACTICE_AUTONOMIC_MCP_URL=http://127.0.0.1:7181/mcp/ \
+        uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
+
+Usage (Claude CLI):
+    PRACTICE_AUTONOMIC_PROVIDER=anthropic_cli \
+        uv run python -m practice_theory_implementation.autonomic_runner
 
 Usage (Codex):
     PRACTICE_AUTONOMIC_PROVIDER=codex \
-        PRACTICE_CODEX_BIN=codex \
         uv run python -m practice_theory_implementation.autonomic_runner
 
-This module assumes the autonomic MCP server is reachable. The stdio server
-in `server.py` is fine for the Codex variant (codex exec spawns the server
-itself via .mcp.json); the Anthropic SDK variant requires an HTTP MCP server
-URL.
+PRACTICE_AUTONOMIC_MCP_URL is optional. Unset, each adapter instance spawns
+its own stdio MCP server subprocess (Anthropic SDK) or invokes the autonomic
+MCP server inline (Claude CLI via `--mcp-config`, Codex via inline
+`-c mcp_servers.…`). Set, the adapter connects to a long-lived HTTP MCP
+server instead.
 
-Both adapters drive the same `run_role_loop` against the same trail inboxes.
-The choice of adapter is the only difference; everything else — bundle
-content, policies, brief composition, consumption marking — is shared.
+All three real adapters drive the same `run_role_loop` against the same
+trail inboxes. The choice of adapter is the only difference; everything else
+— bundle content, policies, brief composition, consumption marking — is
+shared.
 """
 
 from __future__ import annotations

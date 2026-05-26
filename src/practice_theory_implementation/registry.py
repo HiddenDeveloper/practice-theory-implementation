@@ -50,7 +50,8 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "judge_read_enactment_steps": judge.judge_read_enactment_steps,
     "judge_read_bundle": judge.judge_read_bundle,
     "judge_emit_friction": judge.judge_emit_friction,
-    # Smoother (its third affordance reuses pm_amend_bundle above)
+    # Smoother — two smoother-specific materials; the other six affordances
+    # in the Smoother bundle reuse PM materials registered above.
     "smoother_read_pending_friction": smoother.smoother_read_pending_friction,
     "smoother_mark_addressed": smoother.smoother_mark_addressed,
 }
