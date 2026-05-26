@@ -24,9 +24,19 @@ Fixed tool surface, exposed once and never changed:
 
 Six tools in somatic mode (where `user_engagement` is registered), five in
 autonomic mode (where it is not). Affordances surface dynamically through
-discover_affordances based on which practice is active. In stdio transport
-each connection is its own process, so the active practice is module-level
-state; HTTP transport would scope this per-session via a lifespan.
+discover_affordances based on which practice is active.
+
+Alongside the tools, a fixed `practice://*` resource surface exposes the
+active projection's composition as readable resources — `practice://current`
+plus one per section (teleo-affective, understanding, rules, affordances).
+The resource list never changes; the content changes whenever a practice is
+switched in. Resources are an alternative read-path to the inline
+`composition` field on `current_practice`; clients that prefer the
+MCP resource model can subscribe and read.
+
+In stdio transport each connection is its own process, so the active
+practice is module-level state; HTTP transport would scope this per-session
+via a lifespan.
 
 Run directly to serve over stdio (the client launches this as a subprocess):
 
@@ -83,8 +93,63 @@ if _TRANSPORT not in ("stdio", "http"):
 _HTTP_HOST: str = os.environ.get("PRACTICE_HTTP_HOST", "127.0.0.1")
 _HTTP_PORT: int = int(os.environ.get("PRACTICE_HTTP_PORT", "7180"))
 
+_SOMATIC_INSTRUCTIONS = """\
+This is the apprenticeship server in somatic mode — a standing arrangement \
+with the user, within which discrete practices are reached for. The \
+engagement bundle is projected at session open; every practice you switch \
+into inherits its teleo-affective, rules, and affordances additively.
+
+Start by reading `user_engagement` to see what the apprenticeship knows \
+about the user before deciding which practice to engage. Then `list_practices` \
+to see what is available, `switch_practice(practice_id)` to engage one, \
+`current_practice` to read the merged composition (engagement + practice), \
+`discover_affordances(query?)` to find the affordances available, and \
+`invoke_affordance(affordance_id, material_name, arguments)` to act.
+
+Every invocation is recorded on the trail. Engagement-layer affordances \
+(e.g. `about_the_user`) record on the engagement enactment; practice-layer \
+affordances record on the active practice enactment, whose `parent_enactment_id` \
+points at the engagement. The trail is the substrate trust rests on — \
+inspectable by you, the user, and downstream Judge enactments.
+
+The active projection is also readable as MCP resources: `practice://current` \
+(full composition), `practice://teleo-affective`, `practice://understanding`, \
+`practice://rules`, `practice://affordances`. Same content as the inline \
+`composition` field on `current_practice`; pick whichever read-path fits \
+your client.
+"""
+
+_AUTONOMIC_INSTRUCTIONS = """\
+This is the apprenticeship server in autonomic mode. There is no user in \
+the loop; you are an autonomic practitioner (Judge or Smoother) tending the \
+substrate. The engagement layer is not projected — autonomic practices have \
+no user-focus to inherit.
+
+Use `list_practices` to see autonomic bundles, `switch_practice(practice_id)` \
+to enact one, `discover_affordances(query?)` to find what's available, and \
+`invoke_affordance(affordance_id, material_name, arguments)` to act. The \
+Judge reads the trail and emits Friction observations; the Smoother reads \
+pending Friction and amends the substrate through Practice Management's \
+meta-materials.
+
+Your own enactment is recorded on the trail too. The dispatcher routes \
+closed enactments — yours included — into `judge_inbox`, so the loop is \
+recursive by construction: the Judge can be judged, the Smoother can amend \
+the Smoother. Read the bundle's understanding before acting; its prose \
+carries the heuristics.
+
+The active projection is also readable as MCP resources: `practice://current` \
+(full composition), `practice://teleo-affective`, `practice://understanding`, \
+`practice://rules`, `practice://affordances`.
+"""
+
+_SERVER_INSTRUCTIONS: str = (
+    _SOMATIC_INSTRUCTIONS if _MODE == "somatic" else _AUTONOMIC_INSTRUCTIONS
+)
+
 mcp_app: FastMCP = FastMCP(
     f"practice-server-{_MODE}",
+    instructions=_SERVER_INSTRUCTIONS,
     host=_HTTP_HOST,
     port=_HTTP_PORT,
 )
@@ -328,6 +393,90 @@ def invoke_affordance(
             duration_ms=timing["duration_ms"],
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Resource surface — five fixed URIs reading from the active projection.
+#
+# The resource *list* never changes (no resources/list_changed nudge needed
+# in either direction). The *content* changes whenever switch_practice is
+# called. The composition is also returned inline by current_practice; the
+# resource surface is provided for clients that prefer the MCP resource read
+# model over a tool round-trip.
+# ---------------------------------------------------------------------------
+
+_NO_ACTIVE_MARKDOWN = (
+    "_No active practice. Call `switch_practice(practice_id)` to engage one._"
+)
+
+
+def _active_for_resources() -> ProjectedPractice | None:
+    """Return the active projection for resource reads.
+
+    In somatic mode the engagement is projected at startup and stands in
+    until a practice is switched into. In autonomic mode there is no
+    engagement, so resources resolve only when a practice is active.
+    """
+    return _active_practice or _engagement
+
+
+@mcp_app.resource("practice://current", mime_type="text/markdown")
+def resource_current() -> str:
+    """The active projection's full composition as Markdown."""
+    active = _active_for_resources()
+    if active is None:
+        return _NO_ACTIVE_MARKDOWN
+    return compose_composition(active)
+
+
+@mcp_app.resource("practice://teleo-affective", mime_type="text/markdown")
+def resource_teleo_affective() -> str:
+    """The active projection's teleo-affective section."""
+    active = _active_for_resources()
+    if active is None:
+        return _NO_ACTIVE_MARKDOWN
+    parts: list[str] = ["## Teleo-affective", ""]
+    for el in active.teleo_affective:
+        parts.extend([f"### {el.name}", "", el.content, ""])
+    return "\n".join(parts)
+
+
+@mcp_app.resource("practice://understanding", mime_type="text/markdown")
+def resource_understanding() -> str:
+    """The active projection's understanding section."""
+    active = _active_for_resources()
+    if active is None:
+        return _NO_ACTIVE_MARKDOWN
+    parts: list[str] = ["## Understanding", ""]
+    for el in active.understanding:
+        parts.extend([f"### {el.name}", "", el.content, ""])
+    return "\n".join(parts)
+
+
+@mcp_app.resource("practice://rules", mime_type="text/markdown")
+def resource_rules() -> str:
+    """The active projection's rules section."""
+    active = _active_for_resources()
+    if active is None:
+        return _NO_ACTIVE_MARKDOWN
+    parts: list[str] = ["## Rules", ""]
+    for el in active.rules:
+        parts.append(f"- **{el.name}** — {el.content}")
+    parts.append("")
+    return "\n".join(parts)
+
+
+@mcp_app.resource("practice://affordances", mime_type="text/markdown")
+def resource_affordances() -> str:
+    """The active projection's affordances section."""
+    active = _active_for_resources()
+    if active is None:
+        return _NO_ACTIVE_MARKDOWN
+    parts: list[str] = ["## Affordances available", ""]
+    for aff in active.affordances:
+        parts.append(f"- `{aff.id}` ({aff.name}) — {aff.description}")
+    parts.append("")
+    return "\n".join(parts)
 
 
 async def _shutdown_handler() -> None:

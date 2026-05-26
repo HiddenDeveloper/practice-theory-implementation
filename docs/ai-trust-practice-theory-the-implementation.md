@@ -462,6 +462,19 @@ When the harness calls `invoke_affordance(affordance_id="recent_activity", mater
 
 The server does not need to know about the substrate or the registry. The active practice carries everything.
 
+### Server instructions and a `practice://*` resource surface
+
+Two MCP affordances sit alongside the tools and need brief mention here.
+
+The first is **server-level instructions**, passed to FastMCP at construction. Every harness that connects sees them on `initialize`: a short, mode-aware brief on what this server is (the apprenticeship server, somatic or autonomic), where to start (`user_engagement` then `list_practices` in somatic; `list_practices` in autonomic), and the fact that every invocation lands on the trail. The instructions are not the bundle's composition — they are the *meta* the harness needs before it has switched a practice in. Bundle composition still flows through `current_practice` and the resources below.
+
+The second is a **fixed resource surface**. Five `practice://*` resources are registered once and never change; the *content* of each changes whenever a practice is switched in:
+
+- **`practice://current`** — the active projection's full composition as Markdown (engagement merged in, in somatic mode).
+- **`practice://teleo-affective`**, **`practice://understanding`**, **`practice://rules`**, **`practice://affordances`** — the same composition split into its constitutive sections, one per resource, so a harness or auditor can read just the part it wants.
+
+The resource surface is an alternative read-path to the inline `composition` field on `current_practice`. Clients that prefer the MCP resource model (templated URIs, content-type metadata, the option to subscribe) get a clean read; clients that prefer a single tool round-trip still get the same content through `current_practice`. Both paths render through `compose_composition()`, so the two views never disagree.
+
 ### Transport
 
 The server supports two transports, chosen at startup via `PRACTICE_TRANSPORT`:
@@ -528,7 +541,7 @@ The catalog has one bundle for now. Step 6 (the apprenticeship layer) will add t
 
 Step 4 establishes the practice server:
 
-- `src/practice_theory_implementation/server.py` — the FastMCP `mcp_app` with the five-tool surface (`list_practices`, `switch_practice`, `current_practice`, `discover_affordances`, `invoke_affordance`). Supports stdio and HTTP transports via `PRACTICE_TRANSPORT`.
+- `src/practice_theory_implementation/server.py` — the FastMCP `mcp_app` with the five-tool surface (`list_practices`, `switch_practice`, `current_practice`, `discover_affordances`, `invoke_affordance`), a mode-aware `instructions=` brief surfaced to harnesses on `initialize`, and a fixed `practice://*` resource surface (`current`, `teleo-affective`, `understanding`, `rules`, `affordances`) reading from the active projection. Supports stdio and HTTP transports via `PRACTICE_TRANSPORT`.
 - `src/practice_theory_implementation/bundles/__init__.py` — the `BUNDLES: dict[str, Bundle]` catalog the server lists from. Holds Activities Management initially; later steps add more.
 - The MCP dependency in `pyproject.toml` (`mcp>=1.2.0`), the JSON-friendly date coercion in the Garmin mocks, and the verify in `__main__.py` rewired to subprocess the server and drive it over a real MCP client session.
 
