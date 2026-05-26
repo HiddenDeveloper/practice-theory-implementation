@@ -493,7 +493,7 @@ PRACTICE_TRANSPORT=http PRACTICE_HTTP_PORT=7180 \
   uv run python -m practice_theory_implementation.server
 ```
 
-A repo-root `.mcp.json` declares both `practice_server_somatic` and `practice_server_autonomic` as stdio entries so Codex (and other clients that read `.mcp.json`) can spawn them with one command.
+A repo-root `.mcp.json` declares `practice_server_somatic` as a stdio entry so Codex (and other clients that read `.mcp.json`) can spawn the somatic surface with one command. The autonomic server is deliberately *not* registered there: user-facing harnesses connecting via `.mcp.json` should not see the autonomic surface (exposing `judge_emit_friction` to the user seat is a footgun), and the autonomic runner reaches its server through other paths — `CodexExecAdapter` injects the autonomic config inline via `codex exec -c mcp_servers.…`, `ClaudeCliAdapter` via `--mcp-config`, `AnthropicSDKAdapter` via a spawned stdio subprocess or an HTTP URL. For a long-lived autonomic HTTP server, start it directly: `PRACTICE_TRANSPORT=http PRACTICE_SERVER_MODE=autonomic uv run python -m practice_theory_implementation.server`.
 
 ### Activities Management on the wire
 
