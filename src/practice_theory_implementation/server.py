@@ -1,0 +1,373 @@
+"""The practice server — MCP surface for projected practices.
+
+(The prior essays called this the apprenticeship server. At this stage of the
+build it apprentices the LLM in a practice and — when the engagement layer
+is projected (somatic mode) — about the user. The "apprenticeship server"
+name is fully earned only in somatic mode; an autonomic-mode server is
+narrower.)
+
+The server has a mode at startup: somatic (default) or autonomic, set via
+the PRACTICE_SERVER_MODE environment variable. The mode controls two things:
+the catalog the server exposes (filtered by Bundle.mode), and whether the
+engagement bundle is projected. Everything else — the five tools, the
+substrate, the projection rules, the trail — is identical across modes.
+
+Five fixed tools, exposed once and never changed:
+
+  list_practices         - what bundles are in the catalog
+  switch_practice        - project a bundle and make it the session's active practice
+  current_practice       - summary of what is active
+  discover_affordances   - the active practice's affordances, optionally filtered
+  invoke_affordance      - dispatch to the active practice's invoke()
+
+The five tools never change. Affordances surface dynamically through
+discover_affordances based on which practice is active. In stdio transport
+each connection is its own process, so the active practice is module-level
+state; HTTP transport would scope this per-session via a lifespan.
+
+Run directly to serve over stdio (the client launches this as a subprocess):
+
+    python -m practice_theory_implementation.server
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+
+from practice_theory_implementation.bundles import BUNDLES, ENGAGEMENT_BUNDLE
+from practice_theory_implementation.materials.judge import (
+    configure as configure_judge,
+)
+from practice_theory_implementation.materials.practice_management import (
+    configure as configure_practice_management,
+)
+from practice_theory_implementation.materials.smoother import (
+    configure as configure_smoother,
+)
+from practice_theory_implementation.pools import substrate
+from practice_theory_implementation.projection import (
+    ProjectedPractice,
+    compose_composition,
+    project,
+)
+from practice_theory_implementation.registry import FUNCTIONS
+from practice_theory_implementation.substrate_store import (
+    SubstrateStore,
+    apply_overlay_to_bundles,
+    apply_overlay_to_substrate,
+)
+from practice_theory_implementation.trail import EnactmentStore, time_call
+
+# Mode is set at startup via PRACTICE_SERVER_MODE; default is somatic.
+_MODE: str = os.environ.get("PRACTICE_SERVER_MODE", "somatic")
+if _MODE not in ("somatic", "autonomic"):
+    raise ValueError(
+        f"PRACTICE_SERVER_MODE must be 'somatic' or 'autonomic', got {_MODE!r}"
+    )
+
+# Transport is set at startup via PRACTICE_TRANSPORT; default stdio so the
+# verify works without configuration. HTTP transport (`http`) lets multiple
+# clients connect to one long-lived server process — the natural shape for
+# the autonomic deployment where workers connect concurrently.
+_TRANSPORT: str = os.environ.get("PRACTICE_TRANSPORT", "stdio")
+if _TRANSPORT not in ("stdio", "http"):
+    raise ValueError(
+        f"PRACTICE_TRANSPORT must be 'stdio' or 'http', got {_TRANSPORT!r}"
+    )
+_HTTP_HOST: str = os.environ.get("PRACTICE_HTTP_HOST", "127.0.0.1")
+_HTTP_PORT: int = int(os.environ.get("PRACTICE_HTTP_PORT", "7180"))
+
+mcp_app: FastMCP = FastMCP(
+    f"practice-server-{_MODE}",
+    host=_HTTP_HOST,
+    port=_HTTP_PORT,
+)
+
+_trail: EnactmentStore = EnactmentStore()
+
+# Open the substrate overlay store and merge runtime amendments into the
+# in-memory substrate and bundle catalog before anything else reads them.
+_substrate_store: SubstrateStore = SubstrateStore()
+apply_overlay_to_substrate(substrate, _substrate_store)
+apply_overlay_to_bundles(BUNDLES, _substrate_store)
+
+# Wire Practice Management's meta-materials to the live substrate, catalog,
+# and overlay store. Without this, pm_* materials raise RuntimeError.
+configure_practice_management(
+    substrate=substrate,
+    bundle_catalog=BUNDLES,
+    store=_substrate_store,
+)
+
+# Wire Judge and Smoother to the trail and (Judge) substrate/catalog. They
+# need to know the active enactment id at invoke time so they can record
+# Friction / mark-addressed against the right enactment; that comes via a
+# getter callable that reads our module-level _active_practice_enactment_id.
+configure_judge(
+    trail=_trail,
+    substrate=substrate,
+    bundle_catalog=BUNDLES,
+    observing_enactment_id_getter=lambda: _active_practice_enactment_id,
+)
+configure_smoother(
+    trail=_trail,
+    active_enactment_id_getter=lambda: _active_practice_enactment_id,
+)
+
+# The engagement is projected only in somatic mode. Autonomic practitioners
+# (Judge, Smoother in later steps) have no user-focus to inherit.
+_engagement: ProjectedPractice | None = None
+_engagement_enactment_id: str | None = None
+_engagement_affordance_ids: frozenset[str] = frozenset()
+
+if _MODE == "somatic":
+    _engagement = project(ENGAGEMENT_BUNDLE, substrate, FUNCTIONS)
+    _engagement_enactment_id = _trail.open_enactment(_engagement.id)
+    _engagement_affordance_ids = frozenset(a.id for a in _engagement.affordances)
+
+# A practice is optional — none active until switch_practice is called.
+_active_practice: ProjectedPractice | None = None
+_active_practice_enactment_id: str | None = None
+
+
+@mcp_app.tool()
+def list_practices() -> list[dict[str, str]]:
+    """Return the practice bundles in the catalog whose mode matches the server's."""
+    return [
+        {"id": b.id, "name": b.name, "description": b.description, "mode": b.mode}
+        for b in BUNDLES.values()
+        if b.mode == _MODE
+    ]
+
+
+@mcp_app.tool()
+def switch_practice(practice_id: str) -> dict[str, Any]:
+    """Project the named bundle (with the engagement merged in) and activate it.
+
+    Closes the current practice enactment (if any) and opens a new one whose
+    parent_enactment_id points at the engagement enactment, so the trail
+    records the layering.
+    """
+    global _active_practice, _active_practice_enactment_id
+    if practice_id not in BUNDLES:
+        return {
+            "error": f"unknown practice {practice_id!r}",
+            "available": [b.id for b in BUNDLES.values() if b.mode == _MODE],
+        }
+    bundle = BUNDLES[practice_id]
+    if bundle.mode != _MODE:
+        return {
+            "error": (
+                f"practice {practice_id!r} is {bundle.mode}; server is {_MODE}"
+            ),
+        }
+    if _active_practice_enactment_id is not None:
+        _trail.close_enactment(_active_practice_enactment_id)
+    _active_practice = project(
+        bundle, substrate, FUNCTIONS, engagement=_engagement
+    )
+    _active_practice_enactment_id = _trail.open_enactment(
+        _active_practice.id, parent_enactment_id=_engagement_enactment_id
+    )
+    return {
+        "active": _active_practice.id,
+        "name": _active_practice.name,
+        "mode": _MODE,
+        "engagement_enactment_id": _engagement_enactment_id,
+        "practice_enactment_id": _active_practice_enactment_id,
+    }
+
+
+@mcp_app.tool()
+def current_practice() -> dict[str, Any]:
+    """Return the active practice's projection, with composition.
+
+    Shape:
+      {
+        "mode": "somatic" | "autonomic",
+        "practice": {"id", "name", "description"} | None,
+        "enactment_id": str | None,
+        "composition": str | None,
+      }
+
+    On a fresh session, `practice`, `enactment_id`, and `composition` are
+    all `None` until `switch_practice` is called. In somatic mode the
+    engagement layer is always available via the separate `user_engagement`
+    tool; the composition returned here is the active practice's full
+    projection (engagement content merged in).
+    """
+    if _active_practice is None:
+        return {
+            "mode": _MODE,
+            "practice": None,
+            "enactment_id": None,
+            "composition": None,
+        }
+    p = _active_practice
+    return {
+        "mode": _MODE,
+        "practice": {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+        },
+        "enactment_id": _active_practice_enactment_id,
+        "composition": compose_composition(p),
+    }
+
+
+# user_engagement is a somatic-only tool — registered only when the server is
+# in somatic mode (and thus has a projected engagement). Autonomic mode does
+# not expose it, so the autonomic surface stays at five tools while the
+# somatic surface is six. The asymmetry is honest: engagement is a somatic
+# concept; the autonomic loop has no user to be engaged with.
+if _MODE == "somatic":
+
+    @mcp_app.tool()
+    def user_engagement() -> dict[str, Any]:
+        """Return the engagement layer's content (somatic only).
+
+        Renders the engagement bundle — its teleo-affective, understanding,
+        rules, and affordances — as a markdown composition, without the
+        active practice merged in. Always available regardless of whether
+        a practice is currently engaged. Use to read the apprenticeship as
+        a first-class thing before deciding which practice to engage.
+
+        Distinct from `current_practice`, which returns the active practice
+        with engagement merged in.
+        """
+        assert _engagement is not None  # somatic mode implies projection
+        e = _engagement
+        return {
+            "id": e.id,
+            "name": e.name,
+            "description": e.description,
+            "composition": compose_composition(e),
+        }
+
+
+@mcp_app.tool()
+def discover_affordances(query: str | None = None) -> list[dict[str, Any]]:
+    """List the active projection's affordances, optionally filtered.
+
+    Engagement affordances are always present (engagement is projected at
+    server startup); practice affordances appear once a practice is switched
+    in. `query` is a case-insensitive substring match against name and
+    description. Each result is tagged with `layer` so the caller can see
+    which is engagement and which is practice.
+    """
+    active = _active_practice or _engagement
+    if active is None:
+        return []
+    q = query.lower() if query else None
+    out: list[dict[str, Any]] = []
+    for aff in active.affordances:
+        if q is not None and q not in aff.name.lower() and q not in aff.description.lower():
+            continue
+        out.append(
+            {
+                "id": aff.id,
+                "name": aff.name,
+                "description": aff.description,
+                "materials": list(aff.materials),
+                "layer": (
+                    "engagement" if aff.id in _engagement_affordance_ids else "practice"
+                ),
+            }
+        )
+    return out
+
+
+@mcp_app.tool()
+def invoke_affordance(
+    affordance_id: str,
+    material_name: str,
+    arguments: dict[str, Any] | None = None,
+) -> Any:
+    """Dispatch through the active practice's invoke() and return the result.
+
+    Records a step on the active enactment's trail with the arguments, the
+    result (summarised), and the call's timing. Errors during invocation come
+    back as `{"error": "..."}` rather than as transport-level exceptions, so
+    the harness sees a clean tool result. Failed calls are still recorded.
+    """
+    args = arguments or {}
+    is_engagement_call = affordance_id in _engagement_affordance_ids
+    active = _active_practice or _engagement
+    if active is None:
+        return {"error": "no active practice; call switch_practice first"}
+    if not is_engagement_call and _active_practice is None:
+        return {"error": "no active practice; call switch_practice first"}
+    with time_call() as timing:
+        try:
+            result: Any = active.invoke(
+                affordance_id=affordance_id,
+                material_name=material_name,
+                arguments=args,
+            )
+        except (KeyError, ValueError) as exc:
+            result = {"error": str(exc)}
+    target_enactment = (
+        _engagement_enactment_id if is_engagement_call else _active_practice_enactment_id
+    )
+    if target_enactment is not None:
+        _trail.record_step(
+            enactment_id=target_enactment,
+            affordance_id=affordance_id,
+            material_name=material_name,
+            arguments=args,
+            result=result,
+            started_at=timing["started_at"],
+            completed_at=timing["completed_at"],
+            duration_ms=timing["duration_ms"],
+        )
+    return result
+
+
+async def _shutdown_handler() -> None:
+    """Close any still-open practice enactment so the dispatcher can route it."""
+    global _active_practice_enactment_id
+    if _active_practice_enactment_id is not None:
+        _trail.close_enactment(_active_practice_enactment_id)
+        _active_practice_enactment_id = None
+
+
+async def _serve_with_dispatcher() -> None:
+    """Run the MCP server (stdio or http) and the dispatcher concurrently.
+
+    The dispatcher can be turned off via PRACTICE_DISABLE_DISPATCHER — useful
+    when this process is a short-lived worker (e.g. an autonomic adapter's
+    per-dispatch subprocess) and the routing is owned by another long-lived
+    process or by a one-shot caller like the verify's route_now.
+    """
+    import asyncio as _asyncio
+    import logging as _logging
+
+    from practice_theory_implementation.autonomic_dispatcher import dispatcher_task
+
+    _logging.basicConfig(level=_logging.INFO, format="%(asctime)s %(name)s %(message)s")
+
+    stop = _asyncio.Event()
+    dispatcher_disabled = os.environ.get("PRACTICE_DISABLE_DISPATCHER", "").strip()
+    dispatcher: _asyncio.Task[None] | None = None
+    if not dispatcher_disabled:
+        dispatcher = _asyncio.create_task(dispatcher_task(stop, store=_trail))
+    try:
+        if _TRANSPORT == "http":
+            await mcp_app.run_streamable_http_async()
+        else:
+            await mcp_app.run_stdio_async()
+    finally:
+        await _shutdown_handler()
+        if dispatcher is not None:
+            stop.set()
+            await dispatcher
+
+
+if __name__ == "__main__":
+    import asyncio as _asyncio
+
+    _asyncio.run(_serve_with_dispatcher())

@@ -1,0 +1,131 @@
+"""Data shapes for the substrate, bundles, and the function registry.
+
+Step 2 redefines Bundle as a pure selection of IDs over the substrate's pools.
+Step 1's inline-content shape is gone — the bundle no longer carries its own
+content; it points into pools that the substrate holds.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Literal
+
+type JsonSchema = Mapping[str, object]
+type Mode = Literal["somatic", "autonomic"]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PoolElement:
+    """A content element in the teleo-affective, understanding, or rules pool.
+
+    Same shape for all three pools — small content unit with an id, a name,
+    and a body of prose.
+    """
+
+    id: str
+    name: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Material:
+    """A material's outward face. Captured surface only — no executable.
+
+    `name` is the unique handle: affordances reference materials by name, and
+    the function registry binds the callable by name. The actual function
+    lives in the registry; the material describes the function the registry
+    will bind.
+    """
+
+    name: str
+    description: str
+    input_schema: JsonSchema
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Affordance:
+    """A practice-perspectival capability framed over one or more materials.
+
+    `materials` is a tuple of Material names this affordance reaches for,
+    resolved against the substrate's material pool.
+    """
+
+    id: str
+    name: str
+    description: str
+    materials: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Bundle:
+    """A practice captured as a selection of pool IDs.
+
+    No inline content. Each id-tuple resolves into the corresponding pool to
+    produce the bundle's effective content. The bundle's effective materials
+    are derived from its affordances — materials are not listed on the bundle
+    directly.
+
+    `mode` declares whether the bundle is somatic (requires the user) or
+    autonomic (acts alone). A mode-aware server filters its catalog by this
+    field and only projects the engagement layer in somatic mode.
+    """
+
+    id: str
+    name: str
+    description: str
+    teleo_affective_ids: tuple[str, ...]
+    understanding_ids: tuple[str, ...]
+    rules_ids: tuple[str, ...]
+    affordance_ids: tuple[str, ...]
+    mode: Mode = "somatic"
+
+
+@dataclass(slots=True)
+class Substrate:
+    """The five pools at the substrate level, shared across all bundles.
+
+    Mutable so runtime additions (dynamic materials, dynamic affordances) are
+    supported. Step 2 hand-populates the substrate at module load time; later
+    steps may amend it.
+    """
+
+    teleo_affective: dict[str, PoolElement] = field(default_factory=dict)
+    understanding: dict[str, PoolElement] = field(default_factory=dict)
+    rules: dict[str, PoolElement] = field(default_factory=dict)
+    affordances: dict[str, Affordance] = field(default_factory=dict)
+    materials: dict[str, Material] = field(default_factory=dict)
+
+
+def validate_bundle(bundle: Bundle, substrate: Substrate) -> None:
+    """Check every id-tuple resolves into the corresponding substrate pool.
+
+    Materials are checked transitively via the bundle's affordances: each
+    referenced affordance's `materials` must resolve into the materials pool.
+    """
+    missing: list[str] = []
+
+    for ta_id in bundle.teleo_affective_ids:
+        if ta_id not in substrate.teleo_affective:
+            missing.append(f"teleo_affective id {ta_id!r}")
+    for u_id in bundle.understanding_ids:
+        if u_id not in substrate.understanding:
+            missing.append(f"understanding id {u_id!r}")
+    for r_id in bundle.rules_ids:
+        if r_id not in substrate.rules:
+            missing.append(f"rules id {r_id!r}")
+    for aff_id in bundle.affordance_ids:
+        if aff_id not in substrate.affordances:
+            missing.append(f"affordance id {aff_id!r}")
+            continue
+        aff = substrate.affordances[aff_id]
+        for mat_name in aff.materials:
+            if mat_name not in substrate.materials:
+                missing.append(
+                    f"material name {mat_name!r} (via affordance {aff_id!r})"
+                )
+
+    if missing:
+        raise ValueError(
+            f"bundle {bundle.id!r} has unresolved references: " + "; ".join(missing)
+        )

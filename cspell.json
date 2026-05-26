@@ -1,0 +1,29 @@
+{
+  "version": "0.2",
+  "language": "en,en-GB",
+  "dictionaries": ["en_US", "en_GB", "softwareTerms", "typescript", "node", "html", "css", "markdown", "fonts", "filetypes"],
+  "ignorePaths": [
+    "node_modules/**",
+    ".git/**",
+    "dist/**",
+    "build/**",
+    "**/*.lock",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.jpg"
+  ],
+  "words": [
+    "affordances",
+    "inspectable",
+    "MAPE",
+    "Monyet",
+    "ORCID",
+    "Reckwitz",
+    "Schatzki",
+    "skillset",
+    "Strava",
+    "teleo"
+  ],
+  "ignoreWords": [],
+  "flagWords": []
+}
