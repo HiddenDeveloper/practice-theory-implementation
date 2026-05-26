@@ -6,7 +6,9 @@ ORCID: 0009-0007-9002-5381\
 
 A follow-up to [*AI Trust and the Meaning Layer: A Practice Theory Reframe*](https://doi.org/10.5281/zenodo.20306761) and [*Practice Theory — The Apprenticeship and a Strange Loop*](https://doi.org/10.5281/zenodo.20354614).
 
-*Reader's note: this is the long technical paper of the series. The two prior essays make the conceptual case for the architecture in short prose; readers who want only the high-level argument can stop there. This essay shows the build itself, step by step alongside an accompanying repository, and is longer and denser than its predecessors by design.*
+*Reader's note: this is the long technical paper of the series. The two prior essays make the conceptual case for the architecture in short prose; readers who want only the high-level argument can stop there. This essay shows the build itself, twelve steps long, alongside an accompanying repository.*
+
+*A note on the steps: each step describes what it contributes to the architecture, and identifies the files that work touches. The repository reflects the **final state** at the end of step 12 — every file named in an early step exists at HEAD in its fully-evolved form, with everything later steps added to it. A single "Run with" instruction appears once, at the end of step 11, exercising the complete verify. The journey is in the prose; the artifact is at HEAD.*
 
 ## From theory to substrate
 
@@ -173,22 +175,15 @@ The **affordances** are high-level. *Intermittent walking analysis* is a thing a
 
 The **materials** describe a small, plain surface — four functions, each with a description and an argument shape. The bundle says what these functions do and what they take; it does not say how they are implemented. The implementation lives behind a name.
 
-### The code
+### What step 1 contributes
 
-The captured shape and the worked example above land in the accompanying repository as:
+Step 1 establishes:
 
-- `src/practice_theory_implementation/types.py` — the `Bundle`, `Affordance`, and `Material` dataclasses.
-- `src/practice_theory_implementation/bundles/activities_management.py` — the Activities Management bundle as Python literals, matching the worked example field-for-field.
-- `src/practice_theory_implementation/materials/garmin_mock.py` — the four mock material functions, each parameterised by date so output is stable per day.
-- `src/practice_theory_implementation/__main__.py` — loads the bundle, validates that every affordance's material reference resolves into the pool, and exercises the mocks.
+- The **captured bundle shape** in `src/practice_theory_implementation/types.py` (`Bundle`, `Affordance`, and `Material` dataclasses).
+- The **first worked bundle** — Activities Management — in `src/practice_theory_implementation/bundles/activities_management.py`, as Python literals matching the worked example field-for-field.
+- The **mock materials** the bundle reaches for in `src/practice_theory_implementation/materials/garmin_mock.py`, four functions parameterised by date for stable per-day output.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The bundle prints, the affordances list their material references, and the four mocks produce synthetic activities, a daily summary, and aggregate stats for the period.
+These files grow as later steps extend them: step 2 refactors `Bundle` to be a selection over pools, step 8 adds a `mode` field, and `__main__.py` (first written here to exercise the mocks) is rewritten progressively until it drives the full verify at step 11.
 
 ### What step 1 leaves for later
 
@@ -312,23 +307,16 @@ Registry
 
 When an affordance is invoked, the resolution path is: bundle → affordance → material name → registry → callable. Step 3 (projection) will tighten this into a single invocation surface.
 
-### The code
+### What step 2 contributes
 
-Step 2 lands in the repository as:
+Step 2 establishes:
 
-- `src/practice_theory_implementation/types.py` — updated. Adds `PoolElement` and `Substrate`; redefines `Bundle` as an ID-only selection; the old `material_by_name` and `validate()` methods come off `Bundle` and are replaced by a free `validate_bundle(bundle, substrate)` function.
-- `src/practice_theory_implementation/pools.py` — new. Hand-populates the five pools (`TELEO_AFFECTIVE`, `UNDERSTANDING`, `RULES`, `AFFORDANCES`, `MATERIALS`) with the content Activities Management selects from, and wraps them in a module-level `substrate` object.
-- `src/practice_theory_implementation/registry.py` — new. Module-level `FUNCTIONS: dict[str, Callable]`, hand-populated by importing `materials/garmin_mock.py` and binding each function by name. Includes `register()` for runtime additions, `resolve()` for lookup, and `validate_against(substrate)` for checking every captured material has a binding.
-- `src/practice_theory_implementation/bundles/activities_management.py` — slimmed. The bundle is now a thin selection of pool IDs; its inline prose has moved into the pools.
-- `src/practice_theory_implementation/__main__.py` — updated. Validates the bundle against the substrate and the registry against the substrate, walks the bundle's selections to resolve content out of the pools, derives the bundle's material set from its affordances, then invokes one of the affordances' materials through the registry.
+- The **substrate** type (`PoolElement` + `Substrate`) and the refactored **`Bundle` as a selection of IDs** in `types.py`; the old `material_by_name` / `validate()` methods come off `Bundle` and become a free `validate_bundle(bundle, substrate)` function.
+- The **seed pools** in `src/practice_theory_implementation/pools.py`, hand-populating `TELEO_AFFECTIVE`, `UNDERSTANDING`, `RULES`, `AFFORDANCES`, `MATERIALS` with the content Activities Management selects from.
+- The **function registry** in `src/practice_theory_implementation/registry.py`: a module-level `FUNCTIONS: dict[str, Callable]` with `register()`, `resolve()`, and `validate_against(substrate)`. The binding from material name to executable lives here.
+- The **re-expressed Activities Management bundle** in `bundles/activities_management.py`, now a thin selection of pool IDs rather than inline content.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The bundle's selections print, the resolved teleo-affective and rules print out of the pools, the affordance→materials mapping prints with the derived material set for the whole bundle, the registry invokes `garmin_list_activities` and returns synthetic activities for a recent window, and the registry's four bindings are listed.
+The five pools and the registry continue to be extended by almost every later step; the bundle-as-selection shape persists unchanged.
 
 ### What step 2 leaves for later
 
@@ -406,20 +394,15 @@ practice.invoke(
 
 Same bundle, same substrate, same registry as step 2 — just folded into one object that holds them all.
 
-### The code
+### What step 3 contributes
 
-Step 3 lands in the repository as:
+Step 3 establishes the **projection** in `src/practice_theory_implementation/projection.py`:
 
-- `src/practice_theory_implementation/projection.py` — new. Defines `ProjectedPractice` (a frozen dataclass) and `project(bundle, substrate, registry)`. The dataclass has `affordance_by_id(...)` and `invoke(affordance_id, material_name, arguments)` methods; the function does the bundle-against-substrate validation, derives the material set from the affordances, checks registry bindings exist, and snapshots everything into the returned ProjectedPractice.
-- `src/practice_theory_implementation/__main__.py` — updated. Calls `project(...)` once, then invokes through the projection rather than walking the substrate and registry by hand. The substrate and registry are not consulted after the projection call returns.
+- The `ProjectedPractice` frozen dataclass, carrying the bundle's resolved content and the registry's bound callables in one self-contained object.
+- The `project(bundle, substrate, registry)` function that does the bundle-against-substrate validation, derives materials from affordances, snapshots registry bindings, and returns the ProjectedPractice.
+- `ProjectedPractice.invoke(affordance_id, material_name, arguments)` — end-to-end resolution against the projection's own data, no further substrate or registry lookup needed.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The projected practice prints its element counts (1 teleo-affective, 1 understanding, 4 rules, 4 affordances, 4 derived materials, 4 bindings); the affordances list their material references; `practice.invoke(recent_activity, garmin_list_activities, ...)` returns the synthetic activities for the last 7 days; `practice.invoke(intermittent_walking_analysis, garmin_get_user_stats, ...)` returns aggregate stats. All invocation resolves through the projected practice's own data — no further substrate or registry lookups.
+Projection is extended at step 6 to accept an `engagement` parameter and merge it additively into the result.
 
 ### What step 3 leaves for later
 
@@ -536,23 +519,15 @@ With one bundle in the catalog (`activities_management`) the session looks like 
 
 The catalog has one bundle for now. Step 6 (the apprenticeship layer) will add the standing engagement bundle that wraps practices, and from then on the catalog has more than one and `switch_practice` does real switching.
 
-### The code
+### What step 4 contributes
 
-Step 4 lands in the repository as:
+Step 4 establishes the practice server:
 
-- `pyproject.toml` — adds `mcp>=1.2.0` as a dependency. FastMCP is part of that SDK and is what the server uses.
-- `src/practice_theory_implementation/bundles/__init__.py` — new. Defines `BUNDLES: dict[str, Bundle]`, the catalog the server lists from. Currently holds just Activities Management.
-- `src/practice_theory_implementation/materials/garmin_mock.py` — updated. Each mock now accepts either a `date` object (for in-process calls) or an ISO date string (for arguments crossing the MCP wire, which arrive as JSON). The coercion is a small `_as_date` helper at the top of the module.
-- `src/practice_theory_implementation/server.py` — new. Defines the FastMCP `mcp_app` and the five tools (`list_practices`, `switch_practice`, `current_practice`, `discover_affordances`, `invoke_affordance`). Holds the active practice as module-level state (fine for stdio; an HTTP deployment would scope this per-session via a lifespan). Runnable directly: `python -m practice_theory_implementation.server` serves over stdio.
-- `src/practice_theory_implementation/__main__.py` — updated. No longer a self-contained demo; instead, subprocesses `server.py` over stdio, opens an MCP client session, and exercises all five tools end-to-end. Demonstrates that the projected practice is now reachable through the standard MCP surface.
+- `src/practice_theory_implementation/server.py` — the FastMCP `mcp_app` with the five-tool surface (`list_practices`, `switch_practice`, `current_practice`, `discover_affordances`, `invoke_affordance`). Supports stdio and HTTP transports via `PRACTICE_TRANSPORT`.
+- `src/practice_theory_implementation/bundles/__init__.py` — the `BUNDLES: dict[str, Bundle]` catalog the server lists from. Holds Activities Management initially; later steps add more.
+- The MCP dependency in `pyproject.toml` (`mcp>=1.2.0`), the JSON-friendly date coercion in the Garmin mocks, and the verify in `__main__.py` rewired to subprocess the server and drive it over a real MCP client session.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The verify script lists the five tools, calls `list_practices` (one bundle in the catalog), calls `switch_practice('activities_management')`, calls `current_practice` (showing 1 teleo-affective, 1 understanding, 4 rules, 4 affordances, 4 materials), calls `discover_affordances` (all four affordances) and `discover_affordances(query='walking')` (just the IWT affordance), then calls `invoke_affordance(recent_activity, garmin_list_activities, {...})` and prints the synthetic activities. Every result returns through the MCP wire, decoded from JSON content blocks on the way back in.
+The five-tool surface gains `user_engagement` at step 6 (somatic only); the catalog grows and gains the autonomic / somatic mode filter at step 8.
 
 ### What step 4 leaves for later
 
@@ -626,24 +601,15 @@ Enactment a7c1...  practice=activities_management  opened 2026-05-25T...  closed
 
 For longer sessions the trail accumulates — one enactment per practice switched into, one step per affordance invoked. Step 9's Judge reads exactly this surface when it looks at what an enactment did.
 
-### The code
+### What step 5 contributes
 
-Step 5 lands in the repository as:
+Step 5 establishes the enactment trail:
 
-- `src/practice_theory_implementation/trail.py` — new. `EnactmentStore` wraps SQLite at `data/trail.db` (override with `PRACTICE_TRAIL_PATH`). Creates the schema on first use, exposes `open_enactment`, `close_enactment`, `record_step`, `recent_enactments`, `steps_for`. The `time_call()` context manager produces a small dict of started_at / completed_at / duration_ms around the call site, so the timing fields the trail stores are ground truth from the server.
-- `src/practice_theory_implementation/server.py` — updated. Owns a module-level `EnactmentStore` plus the current `_active_enactment_id`. `switch_practice` closes the previous enactment (if any) and opens a new one for the new practice. `invoke_affordance` wraps the dispatch in `time_call()` and writes a steps row with arguments, result, and timing. Errors are recorded too — failed calls leave evidence in the trail rather than being silent.
-- `src/practice_theory_implementation/__main__.py` — updated. The verify script now makes two `invoke_affordance` calls (so the trail shows more than one step), and after the MCP session closes it opens the trail directly via `EnactmentStore` and prints the most recent enactment with its steps.
-- `.gitignore` — adds `data/` so the trail database does not get committed.
+- `src/practice_theory_implementation/trail.py` — `EnactmentStore` wrapping SQLite at `data/trail.db`, with `open_enactment`, `close_enactment`, `record_step`, `recent_enactments`, `steps_for`, and a `time_call()` context manager for ground-truth timing.
+- The `enactments` and `steps` tables (the schema is added in `EnactmentStore.__init__`).
+- The wiring in `server.py`: `switch_practice` closes the previous enactment and opens a new one; `invoke_affordance` writes a steps row for every call, including failures.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The MCP session prints as before. After it ends, the verify reads the trail: one enactment for `activities_management`, two steps — `recent_activity/garmin_list_activities` and `intermittent_walking_analysis/garmin_get_user_stats` — each with the arguments that were passed, the result that came back (truncated to keep the print readable), and per-call timing.
-
-The trail at `data/trail.db` persists across runs; subsequent runs add new enactments rather than overwriting. Deleting the file is the only reset.
+The trail's `enactments` table gains a `parent_enactment_id` column at step 6, and a `friction_observations` table at step 9. Step 11 adds the `judge_inbox` and `smoother_inbox` tables to the same database.
 
 ### What step 5 leaves for later
 
@@ -720,29 +686,18 @@ The autonomic surface stays at five — engagement is a somatic concept, and the
 
 What is different now is what the projection contains: the harness LLM is apprenticed *about* the user (through the engagement's understanding and rules) as well as *in* the active practice (through the practice's own content). The server has earned the name the prior essays gave it: **the apprenticeship server.**
 
-### The code
+### What step 6 contributes
 
-Step 6 lands in the repository as:
+Step 6 establishes the apprenticeship layer:
 
-- `src/practice_theory_implementation/pools.py` — extended. New pool elements for the engagement layer (`te_user_focused_engagement`, `und_engagement_substrate`, `und_about_the_user`, three engagement rules, the `about_the_user` affordance and `consult_about_user` material), plus pool elements for the new Reflection practice (its teleo-affective, understanding, one rule, one affordance, one material).
-- `src/practice_theory_implementation/materials/about_user_mock.py` — new. Returns a fixed about-the-user record. In a real deployment this would be backed by an accreting store.
-- `src/practice_theory_implementation/materials/reflection_mock.py` — new. Stores a reflection in an in-process list and returns a record id.
-- `src/practice_theory_implementation/bundles/user_focused_engagement.py` — new. The engagement bundle, in its own module to make the structural distinction visible.
-- `src/practice_theory_implementation/bundles/reflection.py` — new. The second practice in the catalog.
-- `src/practice_theory_implementation/bundles/__init__.py` — updated. `BUNDLES` now holds two practices; `ENGAGEMENT_BUNDLE` is a separate slot, deliberately not in the catalog.
-- `src/practice_theory_implementation/registry.py` — updated. Adds bindings for `consult_about_user` and `store_reflection`.
-- `src/practice_theory_implementation/projection.py` — updated. `project()` takes an optional `engagement: ProjectedPractice | None` parameter; when provided, the engagement's teleo-affective, understanding, rules, and affordances are merged into the result (engagement-first, deduped by id); materials and bindings are derived from the merged affordance set.
-- `src/practice_theory_implementation/trail.py` — updated. `enactments` table gains a `parent_enactment_id` column referencing the same table; `open_enactment` and `EnactmentRow` carry the new field.
-- `src/practice_theory_implementation/server.py` — updated. At module load time the engagement is projected once and an engagement enactment is opened; `switch_practice` projects the practice with `engagement=_engagement` and opens a practice enactment whose `parent_enactment_id` is the engagement enactment; `discover_affordances` tags each affordance with its `layer` (engagement or practice); `invoke_affordance` records steps against the engagement enactment when the affordance is engagement-layer and against the active practice enactment otherwise.
-- `src/practice_theory_implementation/__main__.py` — updated. The verify exercises the engagement affordance first (with no practice active), then switches to Activities Management and invokes one of its affordances, then switches to Reflection and invokes its affordance. After the session ends it prints the trail with the engagement enactment as the parent and the two practice enactments nested underneath, each with its own steps.
+- The **engagement bundle** in `src/practice_theory_implementation/bundles/user_focused_engagement.py`, in a structurally separate slot from the practice catalog (`ENGAGEMENT_BUNDLE`, deliberately not in `BUNDLES`).
+- The **`about_the_user` affordance and `consult_about_user` material** behind it (mock in `materials/about_user_mock.py`).
+- A **second practice in the catalog**, Reflection — in `bundles/reflection.py` with one affordance backed by `materials/reflection_mock.py` — so switching between practices is real rather than demonstrative.
+- The **additive merge in projection**: `project(bundle, substrate, registry, engagement=eng)` folds the engagement's content into the result. Engagement first, deduped by id; materials and bindings derive from the merged affordance set.
+- The **`parent_enactment_id` column** on `enactments`, and the server logic that opens the engagement enactment at startup and links each practice enactment to it.
+- The **sixth tool** on the somatic surface — `user_engagement` — making the engagement bundle a first-class read.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The MCP session shows the engagement-layer affordance `about_the_user` available before any practice is switched in. After switching to Activities Management, `discover_affordances` returns both the engagement's affordance (tagged `layer: engagement`) and the practice's four (tagged `layer: practice`). After invoking through both layers and switching to Reflection, the trail prints a single engagement enactment as the parent, with two practice enactments (Activities Management, Reflection) nested under it, each carrying its own step.
+The engagement projection becomes mode-aware at step 8 (somatic-only).
 
 ### What step 6 leaves for later
 
@@ -812,26 +767,17 @@ Six of the seven steps record into the Practice Management enactment; the sevent
 
 Practice Management is itself a practice — same Bundle shape, same five elements, same projection rules. That means Practice Management can be enacted *through* Practice Management: a Smoother in step 10 can use `pm_amend_bundle` to amend Practice Management's own affordances, or `pm_create_element` to add a new rule to Practice Management's rules pool. The machinery improves itself through the same machinery it was built with. Step 12 names this explicitly; here we just notice that step 7 puts the mechanism in place.
 
-### The code
+### What step 7 contributes
 
-Step 7 lands in the repository as:
+Step 7 establishes Practice Management — the meta-practice for authoring practices at runtime:
 
-- `src/practice_theory_implementation/substrate_store.py` — new. `SubstrateStore` wraps SQLite at `data/substrate.db` (override with `PRACTICE_SUBSTRATE_PATH`). Schema is four overlay tables — `pool_element_overlay`, `affordance_overlay`, `material_overlay`, `bundle_overlay` — one row per entity, last-write-wins. Plus two free functions: `apply_overlay_to_substrate(...)` merges overlay rows into the in-memory `Substrate`, and `apply_overlay_to_bundles(...)` merges overlay bundles into the in-memory catalog.
-- `src/practice_theory_implementation/materials/practice_management.py` — new. The nine meta-material functions (`pm_read_pool`, `pm_create_element`, `pm_amend_element`, `pm_create_affordance`, `pm_amend_affordance`, `pm_create_material`, `pm_amend_material`, `pm_create_bundle`, `pm_amend_bundle`). Each writes to the overlay and updates the in-memory substrate. Wired to the live substrate/catalog/store at server startup via `configure(...)`.
-- `src/practice_theory_implementation/bundles/practice_management.py` — new. The Practice Management bundle with the nine PM-authoring affordances.
-- `src/practice_theory_implementation/pools.py` — extended. Adds seed pool entries for Practice Management: one teleo-affective (`te_practice_management`), one understanding (`und_practice_management`), three rules (`rule_pm_preview_before_apply`, `rule_pm_no_id_collision`, `rule_pm_amend_additively`), nine affordances (`read_pool`, `author_pool_element`, `amend_pool_element`, `author_affordance`, `amend_affordance`, `author_material`, `amend_material`, `author_bundle`, `amend_bundle`), and nine materials (the `pm_*` set).
-- `src/practice_theory_implementation/bundles/__init__.py` — extended. `BUNDLES` now includes Practice Management. The module docstring notes that the catalog is mutable; runtime additions land here.
-- `src/practice_theory_implementation/registry.py` — extended. Adds bindings for the nine `pm_*` functions.
-- `src/practice_theory_implementation/server.py` — extended. Before projecting the engagement, opens `SubstrateStore`, applies the overlay to the substrate and to the catalog, and configures the Practice Management module with references to all three. Order matters: substrate must be merged before the engagement is projected; PM must be configured before its materials are invoked.
-- `src/practice_theory_implementation/__main__.py` — extended. After the step 6 walk, switches to Practice Management, reads the rules pool, creates three new pool elements, creates a new affordance, creates a new bundle, switches to it, and invokes its affordance. After the session closes, the trail prints the Practice Management enactment (six PM steps) alongside the new bundle's own enactment (its one step).
+- The **substrate overlay** in `src/practice_theory_implementation/substrate_store.py`: `SubstrateStore` over SQLite at `data/substrate.db`, with overlay tables for pool elements, affordances, materials, and bundles, plus the two merge functions that apply the overlay over the seed at startup.
+- The **nine meta-materials** in `materials/practice_management.py` (`pm_read_pool`, `pm_create_element`, `pm_amend_element`, and parallel pairs for affordances, materials, and bundles).
+- The **Practice Management bundle** in `bundles/practice_management.py`, exposing the meta-materials as nine authoring affordances. PM is somatic — the user is in the loop for authoring.
+- Seed pool entries in `pools.py` for PM's teleo-affective, understanding, three rules, nine affordances, and nine materials.
+- The server's startup-time wiring: open the store, apply the overlay, configure PM with references to substrate / catalog / store.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The verify shows Practice Management authoring a Quick Glance practice end-to-end. The trail prints the engagement at the top with four practice enactments nested under it: Activities Management, Reflection, Practice Management (with six PM steps showing each substrate amendment), and the new Quick Glance bundle (with one step calling `garmin_get_daily_summary`). After the run, `data/substrate.db` carries the new pool elements, affordance, and bundle; a subsequent run would load Quick Glance into the catalog from the overlay before any user action.
+The Smoother at step 10 reuses six of PM's amendment affordances directly from the shared pool — the autonomic mirror of the same machinery.
 
 ### What step 7 leaves for later
 
@@ -896,25 +842,16 @@ For a real deployment with the user's harness and the autonomic loop both runnin
 
 This is the cleanest possible answer at step 8 — the autonomic surface exists, it knows what it is, and it has nothing to enact until the autonomic practitioners arrive. Step 9 (Judge) and step 10 (Smoother) populate it.
 
-### The code
+### What step 8 contributes
 
-Step 8 lands in the repository as:
+Step 8 establishes the somatic / autonomic split:
 
-- `src/practice_theory_implementation/types.py` — extended. Adds a `Mode = Literal["somatic", "autonomic"]` alias and a `mode` field on `Bundle` defaulting to `"somatic"`.
-- `src/practice_theory_implementation/bundles/{activities_management,reflection,practice_management}.py` — updated. Each explicitly declares `mode="somatic"`.
-- `src/practice_theory_implementation/substrate_store.py` — extended. `bundle_overlay` carries a `mode` column; `overlay_bundles()` and `upsert_bundle()` round-trip the field. Existing overlay databases without the column will need a wipe (`rm data/substrate.db`).
-- `src/practice_theory_implementation/materials/practice_management.py` — extended. `pm_create_bundle` accepts an optional `mode` argument (default `somatic`) so authoring autonomic bundles is supported when the time comes.
-- `src/practice_theory_implementation/pools.py` — updated. `pm_create_bundle` material's input schema lists the new `mode` field.
-- `src/practice_theory_implementation/server.py` — extended. Reads `PRACTICE_SERVER_MODE` at startup (somatic or autonomic). The FastMCP server name carries the mode (`practice-server-somatic` / `practice-server-autonomic`). The engagement is projected only in somatic mode; autonomic-mode `_engagement` is `None`. `list_practices` filters by mode; `switch_practice` rejects mismatched modes; `current_practice` and `discover_affordances` handle the no-engagement case cleanly.
-- `src/practice_theory_implementation/__main__.py` — refactored. `_server_params(mode)` builds `StdioServerParameters` with the mode env var. `verify_somatic()` runs the prior walk against a somatic server; `verify_autonomic()` runs against an autonomic server and demonstrates the filter, the rejection, and the no-engagement state.
+- A **`mode` field on `Bundle`** in `types.py` (`Mode = Literal["somatic", "autonomic"]`, defaulting to `"somatic"`); the three existing practice bundles each declare it explicitly.
+- A **mode column on `bundle_overlay`** in `substrate_store.py`, so runtime-authored bundles round-trip their mode; `pm_create_bundle` is extended to accept it.
+- A **mode-aware server**: `PRACTICE_SERVER_MODE` is read at startup; `list_practices` filters by mode; `switch_practice` rejects mismatched modes; the engagement is projected only in somatic mode (autonomic `_engagement` is `None`); `user_engagement` is registered only in somatic mode.
+- The verify is refactored into `verify_somatic()` and `verify_autonomic()`, each spawning its own server subprocess with the appropriate mode env var.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-The output is two sessions back-to-back. The somatic session does everything steps 6 and 7 already did — engagement projected at startup, three practices in the catalog plus the runtime-authored Quick Glance, layered trail showing the engagement parent and four practice enactments under it. The autonomic session shows `current_practice` returning `{"active": null, "mode": "autonomic"}`, `list_practices` returning an empty list, `switch_practice("activities_management")` returning the error *"practice 'activities_management' is somatic; server is autonomic"*, and `discover_affordances` returning nothing.
+The autonomic surface has nothing to switch to until step 9 (Judge) and step 10 (Smoother) populate it.
 
 ### What step 8 leaves for later
 
@@ -964,14 +901,16 @@ No heuristic is baked into the materials. A Judge enactment reads, compares, and
 
 The Judge's enactment itself is recorded in the trail like any other enactment. Step 12 (the strange loop) makes use of this: the Judge's enactments can be judged.
 
-### The code (step 9)
+### What step 9 contributes
 
-Step 9 lands in the repository as:
+Step 9 establishes the Judge:
 
-- `src/practice_theory_implementation/trail.py` — extended. New `friction_observations` table; `FrictionRow` dataclass; `EnactmentStore` gains `record_friction`, `pending_friction`, `all_friction`, `mark_friction_addressed`, and `most_recent_enactment_of(practice_id)`.
-- `src/practice_theory_implementation/materials/judge.py` — new. Four primitive functions: `judge_list_recent_enactments`, `judge_read_enactment_steps`, `judge_read_bundle`, `judge_emit_friction`. No heuristic logic. Wired by the server at startup via `configure(...)` with the trail, substrate, catalog, and a getter for the current observing enactment id.
-- `src/practice_theory_implementation/bundles/judge.py` — new. The Judge bundle (autonomic) with the four primitive affordances.
-- `src/practice_theory_implementation/pools.py` — extended. Adds `te_judge`, `und_judge` (heuristics-in-prose), three judge rules (`rule_judge_examine_before_naming`, `rule_judge_one_thing_per_friction`, `rule_judge_observe_not_remediate`), four primitive affordances, four primitive materials.
+- The **`friction_observations` table** in `trail.py`, with `FrictionRow` and the `EnactmentStore` methods `record_friction`, `pending_friction`, `all_friction`, `mark_friction_addressed`, `most_recent_enactment_of(practice_id)`.
+- The **four primitives** in `materials/judge.py`: `judge_list_recent_enactments`, `judge_read_enactment_steps`, `judge_read_bundle`, `judge_emit_friction`. No heuristic logic — the LLM enacting the bundle decides what to name.
+- The **Judge bundle** (autonomic) in `bundles/judge.py`, with the four primitive affordances and the heuristics-in-prose understanding.
+- Seed pool entries in `pools.py` for the Judge's teleo-affective, understanding, three rules, four affordances, four materials.
+
+The Judge's own enactments are recorded in the trail like any other; step 12 observes that they can be judged in turn.
 
 ### What step 9 leaves for later
 
@@ -1022,30 +961,19 @@ Step 11 (the autonomic harness) is what makes phases 2 and 3 happen with a real 
 
 The Smoother acts without the user; it amends the substrate the user's own practitioners will be projected against next time. That is the highest-trust-cost move in the architecture — an autonomous process changing the rules its principal operates under. The trail is how the move stays honest. Every Smoother enactment is recorded with the same structure as any other; the Friction it addressed carries `addressed_by_enactment_id` pointing back at the amending enactment; the amendment lands in the overlay, where it can be read alongside the seed. The user can examine, for any change that took effect: which Friction was named, by which Judge enactment, addressed by which Smoother enactment, with what amendment. Nothing about the autonomic move is hidden — the trust thesis from step 5 holds at the edge where it is hardest to hold.
 
-### The code (step 10)
+### What step 10 contributes
 
-Step 10 lands in the repository as:
+Step 10 establishes the Smoother:
 
-- `src/practice_theory_implementation/materials/smoother.py` — new. Two primitive functions: `smoother_read_pending_friction(limit)` and `smoother_mark_addressed(friction_id)`. Wired at startup via `configure(...)` with the trail and an active-enactment getter.
-- `src/practice_theory_implementation/bundles/smoother.py` — new. The Smoother bundle (autonomic) with eight affordances: two Smoother-specific (`read_pending_friction`, `mark_friction_addressed`) plus six reused from Practice Management (`read_pool`, `amend_pool_element`, `author_pool_element`, `amend_affordance`, `amend_material`, `amend_bundle`).
-- `src/practice_theory_implementation/pools.py` — extended. Adds `te_smoother`, `und_smoother` (heuristics-in-prose for friction interpretation), three smoother rules, two smoother-specific affordances, two smoother-specific materials. The six reused affordances and their `pm_*` materials are already in the pool from step 7.
-- `src/practice_theory_implementation/bundles/__init__.py` — extended. `BUNDLES` adds `judge` and `smoother` (both autonomic).
-- `src/practice_theory_implementation/registry.py` — extended. Adds bindings for the four Judge primitives and the two Smoother primitives.
-- `src/practice_theory_implementation/server.py` — extended. Calls `configure_judge(...)` and `configure_smoother(...)` at startup alongside `configure_practice_management(...)`.
-- `src/practice_theory_implementation/__main__.py` — extended. The verify scripts the Judge (four primitive calls) and the Smoother (read, decide, amend, mark) explicitly — standing in for the LLM enactment that step 11 will introduce. The trail printer shows top-level engagement plus the autonomic practice enactments; `_print_friction()` summarises Friction observations with their evidence and whether they have been addressed.
+- The **two Smoother primitives** in `materials/smoother.py`: `smoother_read_pending_friction(limit)` and `smoother_mark_addressed(friction_id)`. Amendment work is delegated to Practice Management's `pm_*` materials, not duplicated.
+- The **Smoother bundle** (autonomic) in `bundles/smoother.py` with eight affordances — two Smoother-specific plus six **reused from Practice Management's pool** (`read_pool`, `amend_pool_element`, `author_pool_element`, `amend_affordance`, `amend_material`, `amend_bundle`). This is the autonomic-somatic mirror: same materials, two enacted contexts.
+- Seed pool entries in `pools.py` for the Smoother's teleo-affective, understanding (heuristics-in-prose for interpreting Friction), three rules, two Smoother-specific affordances, two materials. The six reused PM affordances and materials are already in the pool from step 7 — no duplication.
+- Server-side `configure_smoother(...)` alongside the Judge wiring.
 
-Run with:
-
-```bash
-uv run python -m practice_theory_implementation
-```
-
-End-to-end the loop runs: somatic walk leaves an Activities Management enactment that used one of four affordances; the verify-as-Judge walks the four primitives and emits a `narrow_engagement` Friction with `observation_data` carrying used/unused affordance sets; the verify-as-Smoother reads the Friction, interprets the evidence, applies an amendment to the bundle's description via `amend_bundle`, marks the Friction addressed. The Friction summary at the end shows the observation moved from pending to addressed, with timestamps and the addressing enactment id.
-
-Two honest notes:
+Two honest notes carry forward to step 11:
 
 - **The verify scripts the LLM's role.** The Judge's "what kind of friction is this" and the Smoother's "what amendment fits this Friction" are both done in Python in the verify, deterministically. In production an LLM enactment of each bundle reads the bundle's understanding and rules and does the same work. Step 11's autonomic harness wires the real LLM enactment in.
-- **The amendment is not idempotent.** Re-running the verify against a substrate where the description has already been amended produces another Friction (because the next enactment is still narrow), and the Smoother appends the suggested text again. A real Judge enactment, reading the already-amended description, might or might not name a fresh Friction — that judgment is what LLM enactment brings.
+- **The amendment is not idempotent.** Re-running the verify against an already-amended substrate produces another Friction, and the Smoother appends the suggested text again. A real Judge enactment, reading the already-amended description, might or might not name a fresh Friction — that judgment is what LLM enactment brings.
 
 ### What step 10 leaves for later
 
@@ -1053,7 +981,7 @@ Steps 9 and 10 give the Judge and Smoother primitives the LLM needs to do its wo
 
 ## Step 11: The autonomic harness
 
-Steps 9 and 10 give the Judge and Smoother everything they need *as practices* — primitives in the materials, heuristics in the bundles' understanding, friction stored in the trail. What is still missing is the *driver*: something that watches for work, enacts each LLM turn, and exits when the inboxes are empty. Step 11 adds that driver. It has three pieces: an **inbox + dispatcher** pattern, a small **adapter ABC** with concrete subclasses for the two real LLM-driving primitives we care about, and one **shared run-loop** that uses them both.
+Steps 9 and 10 give the Judge and Smoother everything they need *as practices* — primitives in the materials, heuristics in the bundles' understanding, friction stored in the trail. What is still missing is the *driver*: something that watches for work, enacts each LLM turn, and exits when the inboxes are empty. Step 11 adds that driver. It has three pieces: an **inbox + dispatcher** pattern, a small **adapter ABC** with concrete subclasses spanning two providers and two process shapes, and one **shared run-loop** that uses them all.
 
 ### Inbox tables and the dispatcher
 
@@ -1154,25 +1082,26 @@ The runner drives both Judge and Smoother concurrently via `asyncio.gather(run_r
 
 For the somatic side, the user's harness connects to the somatic server the same way: Codex via the `.mcp.json` entry `practice_server_somatic`, Claude Code via its MCP-server config pointing at an HTTP somatic server (`PRACTICE_TRANSPORT=http PRACTICE_SERVER_MODE=somatic`).
 
-### The code
+### What step 11 contributes
 
-Step 11 lands in the repository as:
+Step 11 establishes the autonomic harness:
 
-- `src/practice_theory_implementation/trail.py` — extended. Adds `judge_inbox` and `smoother_inbox` tables with claim/lease columns; `JudgeInboxRow` and `SmootherInboxRow` dataclasses; `EnactmentStore` gains `route_closed_enactments_to_judge_inbox`, `route_friction_to_smoother_inbox`, `next_judge_work` / `next_smoother_work` (atomic claim with lease), `consume_judge_inbox` / `consume_smoother_inbox`, plus `pending_*_count` helpers.
-- `src/practice_theory_implementation/autonomic_dispatcher.py` — new. `dispatcher_task(stop_event, store)` runs as an asyncio task in the server, polls every `PRACTICE_DISPATCHER_POLL_INTERVAL_SECONDS` (default 2.0), calls the routing methods idempotently. `route_now(store)` is a synchronous one-shot for tests and the verify.
-- `src/practice_theory_implementation/autonomic_adapters.py` — new. `WorkItem` and `AdapterConfig` dataclasses; `compose_brief(bundle, substrate)` formats bundle content as a system prompt; `AutonomicAdapter` ABC; four concrete subclasses — `ScriptedAdapter`, `AnthropicSDKAdapter`, `ClaudeCliAdapter`, `CodexExecAdapter`; `RolePolicy(role)` with Judge/Smoother logic for `next_work` and `mark_consumed`; `drain(adapter, policy, store, …, max_items)` for bounded use; `run_role_loop(adapter, policy, store, *, stop, worker_id, idle_seconds)` for long-running use.
-- `src/practice_theory_implementation/autonomic_runner.py` — new. Entry point for running the real adapters: reads `PRACTICE_AUTONOMIC_PROVIDER` (anthropic|codex), builds an adapter for each role, runs both `run_role_loop` calls concurrently via `asyncio.gather`, exits on SIGINT/SIGTERM or the quit sentinel file.
-- `src/practice_theory_implementation/server.py` — extended. The server now runs via `asyncio.run(_serve_with_dispatcher())` and starts the dispatcher task alongside `mcp_app.run_stdio_async()`; a shutdown handler closes any open practice enactment so the dispatcher can route it.
-- `src/practice_theory_implementation/__main__.py` — refactored. The two manual `verify_autonomic_judge` / `verify_autonomic_smoother` functions are replaced by `verify_autonomic_loop` which uses `ScriptedAdapter` + `drain` to run the same work through the harness. The scripted handlers `_scripted_judge_handler` and `_scripted_smoother_handler` are what an LLM enactment would do, written explicitly.
-- `pyproject.toml` — extended. Optional `anthropic` dependency group adds `claude-agent-sdk`. Codex needs no Python dep — just the `codex` CLI on PATH (or `PRACTICE_CODEX_BIN`).
+- The **inbox tables** in `trail.py`: `judge_inbox` and `smoother_inbox` with claim/lease columns; `EnactmentStore` gains the routing methods (`route_closed_enactments_to_judge_inbox`, `route_friction_to_smoother_inbox`), the atomic claim methods (`next_judge_work` / `next_smoother_work` with lease), the consume methods, and `pending_*_count` helpers.
+- The **dispatcher** in `autonomic_dispatcher.py`: an asyncio task polling on a configurable interval, plus `route_now(store)` as a synchronous one-shot for tests and the verify.
+- The **adapter ABC and its four concrete subclasses** in `autonomic_adapters.py`: `ScriptedAdapter`, `AnthropicSDKAdapter`, `ClaudeCliAdapter`, `CodexExecAdapter`. `compose_brief(bundle, substrate)` builds each role's system prompt from the bundle's own content. `RolePolicy(role)` knows how to read each inbox; `drain(...)` and `run_role_loop(...)` are the two consumer shapes.
+- The **autonomic runner** in `autonomic_runner.py`: an entry point that builds an adapter for each role and drives both concurrently via `asyncio.gather`.
+- Server startup wiring: `asyncio.run(_serve_with_dispatcher())` runs the dispatcher alongside MCP; a shutdown handler closes any open practice enactment so the dispatcher can route it. The verify in `__main__.py` is refactored to use `ScriptedAdapter` + `drain` end-to-end.
+- An optional `anthropic` dependency group in `pyproject.toml` for `claude-agent-sdk`. The two CLI adapters require their respective binaries on PATH (configurable via `PRACTICE_CLAUDE_BIN` and `PRACTICE_CODEX_BIN`).
 
-Run the verify with:
+### Run the verify
 
 ```bash
 uv run python -m practice_theory_implementation
 ```
 
-It uses ScriptedAdapter end-to-end and prints the routed counts, drained counts, trail, and Friction summary.
+The verify uses `ScriptedAdapter` end-to-end and prints, in order: the somatic walk (engagement projected, four practices enacted), the routed inbox counts after the somatic side closes, the Judge drain producing a Friction observation, the Smoother drain consuming it, the trail showing every enactment top-level or nested, and the Friction summary moving the observation from pending to addressed.
+
+The substrate at `data/substrate.db` and the trail at `data/trail.db` persist across runs. To reset, delete both.
 
 ### What step 11 leaves for later
 
