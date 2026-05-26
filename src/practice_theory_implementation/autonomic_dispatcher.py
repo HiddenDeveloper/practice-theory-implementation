@@ -11,9 +11,9 @@ so historical events from previous process lifetimes are re-routed harmlessly
 and a fresh autonomic server can pick up closed somatic enactments left
 behind by an earlier run.
 
-The dispatcher is server-side. The autonomic adapters (Anthropic, Codex,
-Scripted) are workers that read the inboxes via the MCP autonomic surface;
-they have no awareness of the dispatcher itself.
+The dispatcher is server-side. The autonomic adapters (Anthropic SDK,
+Claude CLI, Codex, Scripted) are workers that read the inboxes via the MCP
+autonomic surface; they have no awareness of the dispatcher itself.
 """
 
 from __future__ import annotations
