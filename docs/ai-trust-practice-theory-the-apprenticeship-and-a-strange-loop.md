@@ -2,9 +2,9 @@
 
 Monyet Batu\
 ORCID: 0009-0007-9002-5381\
-23 May 2026
+27 May 2026
 
-*Editor's note: the third essay in this series refines the term "practice recipe" to "practice bundle", separating the artefact (the bundle of five constitutive elements) from the means of its transmission (apprenticeship). This essay predates that distinction and uses the earlier term throughout; see "Practice Theory — The Implementation" for the revised vocabulary.*
+*Editor's note: subsequent essays in this series sharpened two terms used here. "Practice recipe" was refined to "practice bundle", separating the artefact (the bundle of five constitutive elements) from the means of its transmission (apprenticeship). And what the first essay called "the meaning layer" was refined to **situated awareness** (Suchman's sense): the bundle's five elements are the captured structure of a practitioner's situated awareness about a practice. This essay predates both refinements and uses the earlier terms throughout. Earlier Zenodo versions preserve the original vocabulary as part of the working; see "Practice Theory — The Implementation" and "Practice Theory — A Worked Example" for the sharpened vocabulary in use.*
 
 ## Apprenticeship — the missing layer
 

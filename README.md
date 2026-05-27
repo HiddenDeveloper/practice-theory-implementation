@@ -1,10 +1,11 @@
 # practice-theory-implementation
 
-A working implementation of the AI-trust-via-practice-theory architecture described in the essay series. See `docs/`:
+A working implementation of the AI-trust-via-practice-theory architecture described in the essay series. The series names the missing layer in current agents as **situated awareness** (in Suchman's sense — a practitioner's grasp of where they are in the work, what the goal is, what is at hand, what would be a legitimate next step), and the practice bundle's five elements (teleo-affective, understanding, rules, affordances, materials) as the captured structure that delivers it. See `docs/`:
 
-1. *AI Trust and the Meaning Layer: A Practice Theory Reframe*
+1. *AI Trust and Situated Awareness: A Practice Theory Reframe*
 2. *Practice Theory — The Apprenticeship and a Strange Loop*
 3. *Practice Theory — The Implementation* (this repo's companion paper; the twelve-step build)
+4. *Practice Theory — A Worked Example* (Calendar Stewardship: one practice against the calendar-move failure mode)
 
 The repository reflects the final state at the end of step 12 — every file an early step names exists at HEAD in its fully-evolved form. The journey is in the prose; the artifact is here.
 

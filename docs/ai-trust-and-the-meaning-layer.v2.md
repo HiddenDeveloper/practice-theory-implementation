@@ -1,16 +1,18 @@
-# AI Trust and the Meaning Layer: A Practice Theory Reframe
+# AI Trust and Situated Awareness: A Practice Theory Reframe
 
 Monyet Batu\
 ORCID: 0009-0007-9002-5381\
-23 May 2026
+27 May 2026
 
-## A missing meaning layer
+*Editor's note: this essay was originally titled "AI Trust and the Meaning Layer: A Practice Theory Reframe". Subsequent essays in the series sharpened the term — what was reached for as "the meaning layer" is more precisely a form of **situated awareness** in the sense Suchman gave it in [Plans and Situated Actions](https://doi.org/10.1017/CBO9780511808418) (1987), and the practice bundle's five elements are the captured structure of that situated awareness. Earlier Zenodo versions preserve the original "meaning layer" framing as part of the working; this revision threads the sharpened vocabulary through the text. The substantive argument is unchanged.*
 
-I recently watched a [video](https://www.youtube.com/watch?v=b1fxYGPbHeo&t=935s) on the Nate B Jones channel arguing that the real strategic layer for agent-assisted work isn't the ability to click buttons, fill forms, or make API calls — it's the meaning layer. Three dimensions matter, the video proposes: access (can the agent reach the system), meaning (does the agent understand what the action signifies), and authority (who decides whether the action happens). Computer use solves access, but access alone isn't enough.
+## A missing situated awareness
 
-An agent clicking a refund button doesn't know whether it's refunding from Stripe or Shopify, reversing a one-time charge or breaking a subscription, touching money or just shifting a draft status. The agent can guess, and the guesses are getting better — but for high-consequence work, the semantic work primitive (the refund, the reschedule, the deploy-to-production) should be exposed directly, with its meaning, permissions, and semantics intact, rather than hidden behind a UI the agent has to interpret.
+I recently watched a [video](https://www.youtube.com/watch?v=b1fxYGPbHeo&t=935s) on the Nate B Jones channel arguing that the real strategic layer for agent-assisted work isn't the ability to click buttons, fill forms, or make API calls — it's what he called the *meaning layer*. Three dimensions matter, the video proposes: access (can the agent reach the system), meaning (does the agent understand what the action signifies), and authority (who decides whether the action happens). Computer use solves access, but access alone isn't enough.
 
-The video goes on to propose what that better representation looks like: richer schemas, typed actions, meaning made explicit as data — so the agent can reason about it correctly.
+What he names as *meaning* is, more precisely, **situated awareness** — the practitioner's grasp, in the moment, of where they are in the work, what the goal is, what is at hand, and what would be a legitimate next step. An agent clicking a refund button doesn't have it: it doesn't know whether it's refunding from Stripe or Shopify, reversing a one-time charge or breaking a subscription, touching money or just shifting a draft status. The agent can guess, and the guesses are getting better — but for high-consequence work, what is needed is not richer types alone but richer awareness. The semantic work primitive (the refund, the reschedule, the deploy-to-production) needs to be exposed with the situated awareness a practitioner would bring to it, not hidden behind a UI the agent has to interpret.
+
+The video goes on to propose what that better representation looks like: richer schemas, typed actions, meaning made explicit as data — so the agent can reason about it correctly. That points in the right direction but doesn't go far enough. Schemas alone are still plans-on-paper; situated awareness is the practitioner's working sense of the practice as it unfolds. Lucy Suchman made the distinction explicit in 1987: plans do not *cause* action; they are a *resource* people use while acting in situ. What the agent is missing is not the plan but the resource — the captured form of a practitioner's situated awareness about this kind of work.
 
 ## Something's missing: my own experience
 

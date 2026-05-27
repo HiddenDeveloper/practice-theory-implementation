@@ -2,9 +2,9 @@
 
 Monyet Batu\
 ORCID: 0009-0007-9002-5381\
-25 May 2026
+27 May 2026
 
-A follow-up to [*AI Trust and the Meaning Layer: A Practice Theory Reframe*](https://doi.org/10.5281/zenodo.20306761) and [*Practice Theory — The Apprenticeship and a Strange Loop*](https://doi.org/10.5281/zenodo.20354614).
+A follow-up to [*AI Trust and Situated Awareness: A Practice Theory Reframe*](https://doi.org/10.5281/zenodo.20306761) and [*Practice Theory — The Apprenticeship and a Strange Loop*](https://doi.org/10.5281/zenodo.20354614).
 
 *Reader's note: this is the long technical paper of the series. The two prior essays make the conceptual case for the architecture in short prose; readers who want only the high-level argument can stop there. This essay shows the build itself, twelve steps long, alongside an accompanying repository.*
 
@@ -12,13 +12,13 @@ A follow-up to [*AI Trust and the Meaning Layer: A Practice Theory Reframe*](htt
 
 ## From theory to substrate
 
-The previous essays describe how AI Trust can be engineered by applying practice theory. The meaning layer is captured in a **practice recipe** that apprentices the harness LLM in both the practice itself and the user it serves; the LLM, in enacting the recipe, becomes the practitioner. The arrangement is then made self-maintaining and self-improving through an autonomic loop that observes the system's own operation.
+The previous essays describe how AI Trust can be engineered by applying practice theory. The **situated awareness** an LLM needs to act as a practitioner — its grasp of where it is in the work, what the goal is, what is at hand, what would be a legitimate next step — is captured in a **practice recipe** that apprentices the harness LLM in both the practice itself and the user it serves; the LLM, in enacting the recipe, becomes the practitioner. The arrangement is then made self-maintaining and self-improving through an autonomic loop that observes the system's own operation.
 
 This essay turns those ideas into a working implementation, built step by step alongside an accompanying repository.
 
 ## A note on terminology
 
-In the previous essays I used **practice recipe** to describe the five-element meaning layer that lets an LLM be cued into a practice. Having sat with the ideas for a while, I now describe these as a **practice bundle** in Schatzki's inner sense — the interlocked ensemble of the five constitutive elements — not in the practice-cluster sense the term often carries.
+In the previous essays I used **practice recipe** to describe the five-element structure that lets an LLM be cued into a practice — what was earlier framed as a "meaning layer" and is more precisely the captured form of a practitioner's **situated awareness**. Having sat with the ideas for a while, I now describe these as a **practice bundle** in Schatzki's inner sense — the interlocked ensemble of the five constitutive elements — not in the practice-cluster sense the term often carries.
 
 The change is more than cosmetic. *Recipe* was carrying two things at once: the thing transmitted, and the means of transmission. *Bundle* names only the thing transmitted; **apprenticeship** names the means. A human apprentice receives a practice bundle through years of bodily participation; an LLM apprentice receives a practice bundle through engaging with its captured form. Same process, two media. So:
 
@@ -1198,7 +1198,7 @@ The structure that makes all of this work — the trail, the inboxes, the dispat
 
 ## Practice makes perfect — and the loop maintains the practice
 
-The first essay reframed the meaning layer as a practice. The second essay built apprenticeship around it and named the autonomic loop. This essay implemented both, step by step.
+The first essay named the missing layer as a practitioner's situated awareness, and reframed its delivery as a practice. The second essay built apprenticeship around it and named the autonomic loop. This essay implemented both, step by step.
 
 What we have at the end is a substrate of five pools and a catalog of bundles; a projection that turns a bundle plus the engagement into a self-contained practice an LLM can enact; an MCP server presenting that projection through a fixed tool surface in two modes (somatic for the user, autonomic for the loop); a trail that records every step against an enactment; meta-materials that let practices author other practices at runtime; a Judge bundle and a Smoother bundle whose primitives are small and whose heuristics live as prose in the bundles' understanding; a dispatcher and an inbox pattern that routes pending work; and an adapter abstraction with concrete subclasses for the Anthropic SDK, the Claude CLI, and the OpenAI Codex CLI, so the loop can run against either provider in either process shape without the substrate needing to know.
 
