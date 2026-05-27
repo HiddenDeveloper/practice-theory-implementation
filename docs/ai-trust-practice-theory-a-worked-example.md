@@ -10,17 +10,11 @@ A follow-up to [*AI Trust and the Meaning Layer: A Practice Theory Reframe*](htt
 
 ## A failure most readers have felt
 
-In a recent video on his YouTube channel, Nate B Jones picked an example anyone who has used a calendar-connected agent has felt:
+A common pattern with calendar-connected agents: ask it to move a meeting an hour later, watch it move the meeting. On the surface that looks like changing a time and clicking save. Underneath, the action notifies the attendees in real time, moves the prep block the user set aside the day before, breaks a commitment one of those attendees had made to a customer, and turns a private conversation into a meeting that now conflicts with something more important on the other end. The agent did exactly what was asked. The damage is what the agent didn't understand it was doing.
 
-> Imagine an AI agent moving a calendar invite … that looks like changing a time and clicking save. But the action is not really click save. It may notify five people. It may move prep time. It may break a commitment someone made to a customer. It may turn a private conversation into a meeting that now conflicts with something more important.
+This is the failure mode the first essay in this series called *access without meaning*. The agent had access to the calendar API. It did not have a practice — a teleo-affective, an understanding of what a meeting *is* to the people on it, rules about staging before issuing, affordances that name the user's stance as a thing to be invited rather than assumed. Without those, every calendar action is one step long: edit the event, send the invites, done.
 
-His framing names three layers an agent can touch — **access**, **meaning**, and **authority**. The progress through 2025 and into 2026 was on access: agents can now drive browsers, control desktops, call APIs. The fight that matters next is on the middle layer:
-
-> The future is not an AI that gets really good at clicking buttons for you … The real fight is over who defines what the button means.
-
-He goes further and asks the open question directly: *who controls the work primitive?* He doesn't answer. He observes that whoever does ends up with platform power, and that current agent stacks don't have anything obvious to offer.
-
-The three prior essays in this series are the answer he names but does not build. The meaning layer is a **practice**; what makes it transmissible is **apprenticeship**; what makes it self-maintaining is the **autonomic loop**; the substrate that holds all of this is the implementation in the companion repo. This essay narrows from the architecture to *one practice*, applied to *exactly the failure Nate describes*, and walks through what changes.
+The three prior essays argued that the missing layer is a practice, that the practice is transmitted through apprenticeship, that the system is kept honest by an autonomic loop. This essay narrows from the architecture to *one practice* — Calendar Stewardship — and walks through what changes when it is projected against exactly this scenario.
 
 ## What's missing in one sentence
 
@@ -195,10 +189,10 @@ This essay is short, but the case it makes sits inside a fifty-year tradition. S
 
 ## What this essay claims, and what it doesn't
 
-It claims one thing: **the meaning layer Nate B Jones names as missing from current agents is something a small practice bundle can carry, today, against a real API surface, with the discipline inspectable from the trail.** The bundle in this essay is forty lines of captured content. The mock is a hundred lines of Python. The verify is twenty lines of MCP tool calls. The whole worked example is small.
+It claims one thing: **the meaning layer the calendar-move failure points at is something a small practice bundle can carry, today, against a real API surface, with the discipline inspectable from the trail.** The bundle in this essay is forty lines of captured content. The mock is a hundred lines of Python. The verify is twenty lines of MCP tool calls. The whole worked example is small.
 
 It does not claim that bundles are sufficient for every agent failure. It does not claim that the autonomic loop converges in production without further work — essay 3's Step 12 names that gap. It does not claim Calendar Stewardship is a finished design; a real deployment would extend it with rules around cross-time-zone moves, recurrence handling, conflict detection, and a dozen other things a working EA holds in their head.
 
-What it claims is that the *shape of the answer* is in your hands. Nate asked who controls the meaning of work. Essay 1 of this series argued the controller is a practice. Essay 2 argued that practice is transmitted through apprenticeship. Essay 3 built the substrate. This essay narrows to a single practice and shows what the answer looks like at the smallest scale that still makes a meaningful claim.
+What it claims is that the *shape of the answer* is in your hands. Essay 1 of this series argued the controller of meaning is a practice. Essay 2 argued that practice is transmitted through apprenticeship. Essay 3 built the substrate. This essay narrows to a single practice and shows what the answer looks like at the smallest scale that still makes a meaningful claim.
 
 The bundle is the unit of meaning. The trail is the unit of trust. Both are at HEAD in the repository — runnable with one command.
