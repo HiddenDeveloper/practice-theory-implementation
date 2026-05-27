@@ -1,0 +1,204 @@
+# AI Trust: Practice Theory — A Worked Example
+
+Monyet Batu\
+ORCID: 0009-0007-9002-5381\
+27 May 2026
+
+A follow-up to [*AI Trust and the Meaning Layer: A Practice Theory Reframe*](https://doi.org/10.5281/zenodo.20306761), [*Practice Theory — The Apprenticeship and a Strange Loop*](https://doi.org/10.5281/zenodo.20354614), and *Practice Theory — The Implementation*.
+
+*Reader's note: the first three essays in this series made the conceptual case, named the strange loop, and built the substrate. This essay does something narrower. It picks one concrete failure that connected agents are running into right now, and shows what a single small practice looks like as the answer. The artifact is in the companion repository; the trail it produces is on the page. The worked example is Calendar Stewardship; the failure mode is the one most readers have already felt.*
+
+## A failure most readers have felt
+
+In a recent video on his YouTube channel, Nate B Jones picked an example anyone who has used a calendar-connected agent has felt:
+
+> Imagine an AI agent moving a calendar invite … that looks like changing a time and clicking save. But the action is not really click save. It may notify five people. It may move prep time. It may break a commitment someone made to a customer. It may turn a private conversation into a meeting that now conflicts with something more important.
+
+His framing names three layers an agent can touch — **access**, **meaning**, and **authority**. The progress through 2025 and into 2026 was on access: agents can now drive browsers, control desktops, call APIs. The fight that matters next is on the middle layer:
+
+> The future is not an AI that gets really good at clicking buttons for you … The real fight is over who defines what the button means.
+
+He goes further and asks the open question directly: *who controls the work primitive?* He doesn't answer. He observes that whoever does ends up with platform power, and that current agent stacks don't have anything obvious to offer.
+
+The three prior essays in this series are the answer he names but does not build. The meaning layer is a **practice**; what makes it transmissible is **apprenticeship**; what makes it self-maintaining is the **autonomic loop**; the substrate that holds all of this is the implementation in the companion repo. This essay narrows from the architecture to *one practice*, applied to *exactly the failure Nate describes*, and walks through what changes.
+
+## What's missing in one sentence
+
+Access without meaning. The agent can call `update_event(send_updates='all')`. It cannot tell, from the API alone, that doing so is irreversible at the messaging layer, that it puts notifications in three external inboxes, that it changes a commitment between people. A bundle is what carries that knowing — the **teleo-affective** (what the practitioner is here to do), the **understanding** (what they know about the work), the **rules** (the bright lines), the **affordances** (the framed verbs of the practice), the **materials** (the executables behind them). The rest of this essay shows the bundle. Then it shows the trail.
+
+## One small practice: Calendar Stewardship
+
+```text
+Bundle: Calendar Stewardship
+  id          : calendar_stewardship
+  mode        : somatic
+  description : Tend the user's calendar as a record of commitments to
+                people — not as fields to be edited. Stage proposed changes;
+                invite the user's stance before any change that notifies
+                attendees; issue deliberately, never silently.
+
+  teleo_affective:
+    Steward of the user's time and commitments — Tend the user's calendar
+    as a record of commitments to people, not as fields to be edited. A
+    meeting on the calendar is something the user agreed to with other
+    people who have arranged their day around it. Moving it has
+    consequences for them. Be the practitioner who makes those consequences
+    visible to the user before acting, not the one who acts and tells them
+    after.
+
+  understanding:
+    A meeting is a commitment, not a slot — A calendar event is not a row
+    in a database; it is a commitment made to the people listed as
+    attendees. When an attendee is external (outside the user's
+    organisation), rescheduling means a notification lands in their inbox,
+    their day shifts, and the user's relationship with them shifts too.
+    The mechanical act of editing the event is trivial; the relational act
+    of moving the meeting is not. Two surfaces exist for any change:
+    staging (no one is notified yet; the change is a proposal for the user
+    to review) and issuing (the change is on the wire and cannot be
+    unsent). Treat them as different things — because they are.
+
+  rules:
+    - Stage before you issue — Never issue a calendar change without a
+      prior staging on the same event. Staging is the review window;
+      issuing without it bypasses the user.
+    - Invite the user's stance before issuing — Before issuing any
+      reschedule of an event with external attendees, name the choice and
+      hand back. Do not issue past a choice the user has not made.
+    - No silent attendee changes — If a change affects attendees, the
+      issuance must use send_updates='all'. Suppressing notifications on a
+      change attendees would feel is a violation, even if technically
+      possible.
+
+  affordances:
+    - read_calendar — List upcoming events in a date range; see what is
+      there before proposing any change. Surfaces attendee counts and an
+      external-attendee flag.
+    - propose_reschedule — Stage a reschedule on an event. No attendees
+      notified; no invite changes on the wire. Always the first step.
+    - invite_stance — Name the choice that belongs to the user and hand
+      back. Required between propose and issue for external-attendee
+      changes.
+    - issue_reschedule — Convert a staged reschedule into an issued
+      change. Notifications go to every attendee. Irreversible at the
+      messaging layer. Requires a prior propose and (for external
+      attendees) a prior invite_stance.
+
+  materials:
+    - cal_list_events, cal_propose_reschedule, cal_invite_stance,
+      cal_issue_reschedule
+      (Google-Calendar-shaped mock; side effects printed as
+      [CALENDAR MOCK] WOULD NOTIFY: … rather than actually sent.)
+```
+
+A few things to notice in this captured form, none of them about the calendar.
+
+The **teleo-affective** does not describe the API. It describes a stance: steward, not editor; the practitioner makes consequences visible before acting. An LLM engaging this bundle is being cued into that posture before any function call is mentioned.
+
+The **understanding** teaches the LLM the *two surfaces* that matter for any change — staging and issuing — and names the asymmetry between them. *The mechanical act is trivial; the relational act is not.* This is the kind of thing an apprentice would absorb through years of watching a calendar-running executive assistant work. Here it has to be written, once.
+
+The **rules** are three bright lines. Each is short. Each is independently checkable from the trail.
+
+The **affordances** are not a one-to-one mapping over API methods. There is no `update_event` affordance, because *update_event is not a thing in this practice* — the practice has split it into a proposal and an issuance, with an explicit pause in between. Same single underlying API call; very different framings.
+
+The **materials** are the executables. The mock is shaped like the real Google Calendar API; the side effects are *printed* with a `[CALENDAR MOCK]` prefix instead of actually leaving the process. The print is the demonstration: the saved harm made visible.
+
+## The same calendar move, with the bundle projected
+
+The companion repo's verify exercises Calendar Stewardship end-to-end. The relevant fragment of the trail it produces:
+
+```text
+enactment <id>  bundle=calendar_stewardship  parent=<engagement-enactment>
+  [4] read_calendar / cal_list_events
+      arguments  : {start_date: "2026-05-27", end_date: "2026-06-03"}
+      result     : [{id: "evt-customer-review", attendee_count: 3,
+                     has_external_attendees: true}, …]
+
+  [5] propose_reschedule / cal_propose_reschedule
+      arguments  : {event_id: "evt-customer-review",
+                    new_start: "2026-05-29T15:00:00+00:00",
+                    new_end:   "2026-05-29T16:00:00+00:00",
+                    reason:    "User has a conflict at the original time;
+                                moving an hour later in the same day."}
+      result     : {staging_id: "stg-…", send_updates: "none",
+                    notified: []}
+
+  [6] invite_stance / cal_invite_stance
+      arguments  : {question: "Acme customer review has external attendees
+                                (alice@acme.example, bob@acme.example).
+                                Issue the reschedule and notify them?",
+                    options:  ["Issue with notifications", "Hold",
+                               "Cancel reschedule"]}
+      result     : {id: "stance-…", asked_at: "…"}
+
+  [7] issue_reschedule / cal_issue_reschedule
+      arguments  : {staging_id: "stg-…"}
+      result     : {send_updates: "all",
+                    notified: ["alice@acme.example",
+                               "bob@acme.example",
+                               "carol@us.example"]}
+```
+
+And what the mock prints alongside those steps:
+
+```text
+[CALENDAR MOCK] STAGED reschedule of 'Customer review with Acme'
+                …send_updates='none' (0 attendees notified)
+[CALENDAR MOCK] STANCE REQUESTED: 'Acme customer review has external
+                attendees (alice@acme.example, bob@acme.example). Issue
+                the reschedule and notify them?'; options=[…]
+[CALENDAR MOCK] ISSUED reschedule of 'Customer review with Acme';
+                send_updates='all'; WOULD NOTIFY:
+                ['alice@acme.example', 'bob@acme.example',
+                 'carol@us.example']
+```
+
+Four steps, in that order. The *0 attendees notified* at step 5 is the staging window. The recorded question at step 6 is *the user's voice being awaited* — not assumed. The three names at step 7 are not what was sent; the mock saved them from being sent. They are *what would have left the process if this were the real API binding, after the user authorised it*. The trail makes both halves visible.
+
+Contrast with the bare-LLM path. The bare LLM, given only the raw Google Calendar API, calls `update_event(eventId, send_updates='all')` once. The trail records one step. Three notifications fly. The user finds out when their phone buzzes thirty seconds later and one of the external attendees has already replied with *"this conflicts with my other meeting."*
+
+The discipline is the difference between one step and four. And you can read it off the trail.
+
+## What the Judge would catch if it slipped
+
+The strange loop named in essay 2 and built in essay 3 isn't only for the architecture's own bundles. It applies here too.
+
+Suppose a future enactment of Calendar Stewardship cuts a corner — calls `issue_reschedule` directly, without a prior `propose_reschedule`. Two things happen.
+
+**The mock errors out.** `cal_issue_reschedule` requires a `staging_id`, and there isn't one. The step fails. The trail records the failure. Nothing was notified.
+
+**A Judge enactment, reading the trail later, names the violation as Friction.** The Judge bundle's understanding describes a `rule_neglect` kind for exactly this case: a rule is in the practice, the trail shows it was not honoured, the Judge emits an observation with the evidence (the rule's id, the missing step, the enactment it would have belonged to). A Smoother enactment then has the option of amending the bundle's content — adding a rule that names a more specific safeguard, sharpening an affordance description that turned out to be too easy to misread, even amending the material so its error message tells future enactments where the staging step would have gone.
+
+So the rule is enforced at the **data layer** (the mock will not accept a free-standing issuance), the discipline is held at the **architectural layer** (the bundle's three rules constrain the enactment shape), and the enforcement itself is inspectable at the **trail layer** (a reader can walk from any step back to the rule it should have honoured). Three layers of constraint, none of them prose-only, all of them readable from the same trail. *Trust as enacted structure*, applied to a single calendar move.
+
+## Going up a level: a Personal Secretary
+
+Calendar Stewardship is small on purpose. The architecture's scaling story lives in *composition* — practices that compose the affordances of other practices, the way an experienced executive assistant holds calendar work and email work as one continuous attendance.
+
+A Personal Secretary bundle would have its own teleo-affective ("attend to the user's correspondence-and-time as one thing"), its own understanding (the email and the calendar are two surfaces of the same standing relationships), its own rules (no commitment on the user's behalf; drafts are offerings; staging applies to both invites and replies). Its affordances would include `propose_reschedule` and `issue_reschedule` from Calendar Stewardship, plus draft-not-send affordances for email, plus an `invite_stance` that spans both surfaces, plus an `ultra_vires` affordance that lets the practice declare its own limit and hand back when a step would require more authority than the bundle carries.
+
+A working version of exactly this composing shape — Correspondent — already exists in the companion `practice-projection` repo, running against the real Gmail and Google Calendar APIs. Its discipline is Calendar Stewardship's, scaled across two domains: drafts stay drafts, calendar moves stage before issuing, the user's stance is invited rather than assumed, and the ultra-vires move is built in. The point isn't that one team built one such practice. The point is that scaling is *cheap* — same Bundle shape, same projection rules, same trail, same Judge. A Personal Secretary that holds calendar + email + procurement + customer-success-handoff is the same shape as Calendar Stewardship; it just selects more from the pools.
+
+## A note on the mock and the swap to real
+
+The materials shown here print rather than send. That choice is structural, not provisional. The bundle's *capture* (description, schema, framing) is independent of the *executable* behind each material's name — Step 1 of the implementation essay names this separation explicitly. Swap `cal_issue_reschedule`'s callable for one that hits the real Google Calendar API and the bundle, the projection, the trail, and the Judge all keep working unchanged. The only difference is that the `WOULD NOTIFY` print becomes an actual notification.
+
+The print form has one virtue the real binding doesn't have: **it makes the failure mode reproducible without harm**. The case study can show what would have happened in the bare-LLM run without sending three real emails to people who didn't ask to receive them. That's a useful property for a published worked example. The architecture supports both; the demonstration uses the safer form.
+
+## A lineage worth naming
+
+The figure most directly behind this essay's argument is one the series has not yet named: **Donald Schön**, whose 1983 *The Reflective Practitioner* studied how professionals actually think — *knowing-in-action* (the tacit competence a practitioner has while doing the work) and *reflection-in-action* (stepping back mid-doing to examine and adjust). The bundle's *understanding* is Schön's knowing-in-action made explicit and transmissible; the Judge and Smoother are reflection-in-action at the system scale; the trail is the substrate that makes reflection possible at all. Schön needed *something to reflect on*; prose-only systems give the practitioner nothing. The trail is what.
+
+Lucy Suchman's *Plans and Situated Actions* (1987) is the other half of the lineage. Plans, she argued, do not *cause* action; they are a *resource* people use while acting in situ. That is exactly the practice/situation interplay this essay shows. The Calendar Stewardship bundle is the resource. The customer review with Acme is the situation. The four-step enactment is the *situated action* through which the resource meets the world.
+
+This essay is short, but the case it makes sits inside a fifty-year tradition. Schatzki named practice as the unit of ontological analysis; Schön named the practitioner's reflective competence; Suchman named the situated character of action against any plan. The architecture in the companion repo is what happens when those three are taken seriously for the LLM case.
+
+## What this essay claims, and what it doesn't
+
+It claims one thing: **the meaning layer Nate B Jones names as missing from current agents is something a small practice bundle can carry, today, against a real API surface, with the discipline inspectable from the trail.** The bundle in this essay is forty lines of captured content. The mock is a hundred lines of Python. The verify is twenty lines of MCP tool calls. The whole worked example is small.
+
+It does not claim that bundles are sufficient for every agent failure. It does not claim that the autonomic loop converges in production without further work — essay 3's Step 12 names that gap. It does not claim Calendar Stewardship is a finished design; a real deployment would extend it with rules around cross-time-zone moves, recurrence handling, conflict detection, and a dozen other things a working EA holds in their head.
+
+What it claims is that the *shape of the answer* is in your hands. Nate asked who controls the meaning of work. Essay 1 of this series argued the controller is a practice. Essay 2 argued that practice is transmitted through apprenticeship. Essay 3 built the substrate. This essay narrows to a single practice and shows what the answer looks like at the smallest scale that still makes a meaningful claim.
+
+The bundle is the unit of meaning. The trail is the unit of trust. Both are at HEAD in the repository — runnable with one command.
