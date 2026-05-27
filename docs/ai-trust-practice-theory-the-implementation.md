@@ -1124,9 +1124,9 @@ Step 11 establishes the autonomic harness:
 uv run python -m practice_theory_implementation
 ```
 
-The verify uses `ScriptedAdapter` end-to-end and prints, in order: the somatic walk (engagement projected, four practices enacted), the routed inbox counts after the somatic side closes, the Judge drain producing a Friction observation, the Smoother drain consuming it, the trail showing every enactment top-level or nested, and the Friction summary moving the observation from pending to addressed.
+The verify uses `ScriptedAdapter` end-to-end and prints, in order: the somatic walk (engagement projected, five practices enacted — Activities Management, Reflection, Calendar Stewardship, Practice Management, and the runtime-authored Quick Glance), the routed inbox counts after the somatic side closes, the Judge drain producing a Friction observation, the Smoother drain consuming it, the trail showing every enactment top-level or nested, and the Friction summary moving the observation from pending to addressed.
 
-The substrate at `data/substrate.db` and the trail at `data/trail.db` persist across runs. To reset, delete both.
+The verify is hermetic by default: it writes the trail and substrate to a fresh temp directory on every run so the printed walk matches the documented narrative without depending on any prior state. Set `PRACTICE_TRAIL_PATH` and `PRACTICE_SUBSTRATE_PATH` together to opt into persistent local files (the trail-as-substrate-of-trust story this essay describes lives there); setting only one is rejected at startup, since a mixed persistent/temp setup leaks stale state between the two halves.
 
 ### What step 11 leaves for later
 
