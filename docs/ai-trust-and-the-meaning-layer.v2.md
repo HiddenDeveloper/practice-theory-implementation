@@ -56,6 +56,8 @@ Carpentry is a learnt thing. I can't just pull someone off the street, say this 
 
 The practice recipe doesn't bypass apprenticeship so much as replace it. What an apprentice would have absorbed slowly through years of participation, the LLM receives in the recipe itself: the teleo-affective structure, the rules, the affordances, the practical understandings. Apprenticeship and recipe do the same work in different media — the former in bodies and time, the latter in text and engagement.
 
+*(Note in hindsight: this sentence uses "recipe" to name both the artifact transmitted and the act of transmission. The third essay in the series splits those — **practice bundle** for the artifact, **apprenticeship** for the means — and the more accurate restatement is: an apprentice receives the bundle through apprenticeship, in bodies and time; an LLM receives the bundle through apprenticeship, by engaging with its captured form. Same process, two media. The argument is unchanged; the vocabulary is sharpened.)*
+
 By engaging with the recipe, the LLM is cued into the practice; in the enacting, it becomes the practitioner.
 
 ## A practitioner for whom?

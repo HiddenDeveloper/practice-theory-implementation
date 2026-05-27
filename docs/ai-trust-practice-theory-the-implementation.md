@@ -424,16 +424,17 @@ The straightforward mapping would expose affordances directly as MCP tools — s
 
 The problem with that is portability. MCP clients vary in how well they handle `tools/list_changed` notifications; some clients ignore them, some re-list lazily, some refuse to refresh until the session reconnects. A surface that changes shape mid-session works against the lowest-common-denominator client.
 
-The practice server takes a different approach: **the tool surface stays fixed, and affordances are reached through it as data.** Six tools are exposed in somatic mode and never change for the life of the session (autonomic mode has five — `user_engagement` is somatic-only, since the autonomic loop has no user-engagement layer):
+The practice server takes a different approach: **the tool surface stays fixed, and affordances are reached through it as data.** At this step, five tools are exposed and never change for the life of the session:
 
 - **`list_practices`** — names every practice bundle in the catalog (id, name, description).
 - **`switch_practice(practice_id)`** — replaces the session's active practice; the bundle is projected against the substrate and registry and the resulting ProjectedPractice becomes what the rest of the session works against.
-- **`current_practice`** — returns the currently active practice: `{mode, practice: {id, name, description} | null, enactment_id, composition}`. The `composition` is the active practice's full projection rendered as markdown (engagement content merged in). Null when no practice has been switched into.
-- **`user_engagement`** (somatic only) — returns the engagement layer's content (id, name, description, composition) without any practice merged in. Always available regardless of whether a practice is engaged. Use to read the apprenticeship as a first-class thing before deciding which practice to engage.
+- **`current_practice`** — returns the currently active practice: `{mode, practice: {id, name, description} | null, enactment_id, composition}`. The `composition` is the active practice's full projection rendered as markdown (engagement content merged in once Step 6 lands the engagement layer). Null when no practice has been switched into.
 - **`discover_affordances(query?)`** — returns the active practice's affordances, optionally filtered by a query string against name and description. This is the dynamic surface — what affordances are available depends on which practice is active.
 - **`invoke_affordance(affordance_id, material_name, arguments)`** — dispatches through the active ProjectedPractice's `invoke()` and returns the result.
 
-The tool list never changes (once registered). Affordances change through `discover_affordances`. Every MCP client knows how to call a tool, so the changing surface is reachable on every client without depending on notifications. The asymmetry between somatic (six tools) and autonomic (five) is honest: engagement is a somatic concept; the autonomic loop has no user to be engaged with.
+The tool list never changes (once registered). Affordances change through `discover_affordances`. Every MCP client knows how to call a tool, so the changing surface is reachable on every client without depending on notifications.
+
+A sixth tool — `user_engagement` — is added in Step 6 alongside the engagement layer, registered only in somatic mode. The autonomic surface stays at five. That asymmetry between somatic (six tools by the end of Step 6) and autonomic (five) is honest: engagement is a somatic concept; the autonomic loop has no user to be engaged with. At this step, the surface is five tools for both modes; Step 8's mode split is what makes the asymmetry visible.
 
 ### Active practice per session
 
@@ -1037,7 +1038,7 @@ Four concrete subclasses are provided. Three drive a real LLM, spanning two prov
 
 **`ScriptedAdapter`** — deterministic, no LLM. Takes a Python async callable that opens its own MCP session, drives the autonomic surface, and returns the consumer enactment id. Used by the verify so the loop runs without API keys or external tooling. The handler is what an LLM enactment *would* do, written explicitly.
 
-**`AnthropicSDKAdapter`** — Anthropic, in-process. Uses `claude-agent-sdk` to open a long-lived `ClaudeSDKClient` per role with the bundle's brief as the system prompt; the conversation and cached prompt persist across work items. Each `dispatch` sends a single query naming the inbox row and drains the response. Requires `claude-agent-sdk` installed and Claude credentials (subscription or API key). Anthropic's subscription terms for SDK use are scheduled to change on **2026-06-15**; check current policy before relying on the subscription path beyond that date.
+**`AnthropicSDKAdapter`** — Anthropic, in-process. Uses `claude-agent-sdk` to open a long-lived `ClaudeSDKClient` per role with the bundle's brief as the system prompt; the conversation and cached prompt persist across work items. Each `dispatch` sends a single query naming the inbox row and drains the response. Requires `claude-agent-sdk` installed and Claude credentials (subscription or API key). *Billing/auth note: per Anthropic's [help center](https://support.anthropic.com/), from **15 June 2026** Claude Agent SDK and `claude -p` usage is metered separately from normal Claude-plan limits, with distinct Agent SDK credit behaviour. The adapter does not change; this is an operator-side cost question. Confirm the current policy at the help-centre link before pointing the adapter at a paid account.*
 
 **`ClaudeCliAdapter`** — Anthropic, subprocess. Invokes `claude -p` (Claude Code's print mode) as a subprocess per work item. Stateless across dispatches; same provider as the SDK adapter but no Python dependency. Each call spawns a fresh `claude` process with the bundle's brief as `--system-prompt` and the dispatch message as the prompt argument; MCP config is injected via `--mcp-config` as JSON. Uses whatever credentials the CLI itself has — subscription OAuth by default, or `ANTHROPIC_API_KEY` if set. Requires the `claude` binary on PATH (configurable via `PRACTICE_CLAUDE_BIN`).
 
@@ -1064,7 +1065,9 @@ The output of the verify shows the inbox counts going up and down: `judge_inbox 
 
 ### Running with a real LLM
 
-The three real adapters are present and runnable via `autonomic_runner.py`. The shape of the MCP transport follows from the shape of the adapter:
+The three real adapters are present and runnable via `autonomic_runner.py`. The shape of the MCP transport follows from the shape of the adapter.
+
+**One caveat to land before any of these commands.** The dispatcher as written routes every closed enactment — somatic *and* autonomic — into `judge_inbox` with the same SQL. The verify avoids runaway recursion through bounded drains and a controlled `route_now` between passes; a continuously-polling production dispatcher does not have that gate. A Judge enactment that emits zero Friction still closes, still gets routed, still becomes another Judge work item. Without a routing cadence or filter layered over the dispatcher, the run-loop will judge the Judge's judgement of the Judge indefinitely. Step 12 ("One mechanism, two cadences") names the gap and sketches the three plausible production answers (slower routing cadence for autonomic enactments, a routing filter that drops no-Friction Judge enactments, or `PRACTICE_DISABLE_DISPATCHER=1` plus an explicit scheduler). The commands below run the *underlying mechanism* against a real LLM; the production-cadence work is still ahead. Worth knowing before you point one of these at a paid API.
 
 **`AnthropicSDKAdapter` — long-lived in-process.** The SDK keeps a long-lived `ClaudeSDKClient` per role. The MCP transport is configurable: by default (`PRACTICE_AUTONOMIC_MCP_URL` unset) each adapter instance spawns its own stdio MCP server subprocess, which sidesteps the shared module-level state today. With `PRACTICE_AUTONOMIC_MCP_URL` set, the adapter connects to a long-lived HTTP server — the intended shape once per-session state lands. Stdio default:
 
