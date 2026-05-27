@@ -209,6 +209,103 @@ async def verify_somatic() -> None:
                 _content_to_value(r.content),
             )
 
+            # --- Calendar Stewardship: stage, invite stance, issue ---------
+            # Worked-example practice for the case study essay. The bundle's
+            # discipline turns "move the meeting" into three distinct steps:
+            # stage (no notifications), invite stance (name the choice and
+            # hand back), issue (notifications go out). The mock prints what
+            # would have left the process at each step so the saved harm is
+            # visible.
+            print("=" * 60)
+            print("Calendar Stewardship: stage, invite stance, issue")
+            print("=" * 60)
+            print()
+
+            r = await session.call_tool(
+                "switch_practice", {"practice_id": "calendar_stewardship"}
+            )
+            _print_value(
+                "switch_practice('calendar_stewardship')",
+                _content_to_value(r.content),
+            )
+
+            r = await session.call_tool(
+                "invoke_affordance",
+                {
+                    "affordance_id": "read_calendar",
+                    "material_name": "cal_list_events",
+                    "arguments": {
+                        "start_date": "2026-05-27",
+                        "end_date": "2026-06-03",
+                    },
+                },
+            )
+            _print_value(
+                "invoke_affordance(read_calendar, cal_list_events, ...)",
+                _content_to_value(r.content),
+            )
+
+            r = await session.call_tool(
+                "invoke_affordance",
+                {
+                    "affordance_id": "propose_reschedule",
+                    "material_name": "cal_propose_reschedule",
+                    "arguments": {
+                        "event_id": "evt-customer-review",
+                        "new_start": "2026-05-29T15:00:00+00:00",
+                        "new_end": "2026-05-29T16:00:00+00:00",
+                        "reason": (
+                            "User has a conflict at the original time; "
+                            "moving an hour later in the same day."
+                        ),
+                    },
+                },
+            )
+            _print_value(
+                "invoke_affordance(propose_reschedule, cal_propose_reschedule, ...)",
+                _content_to_value(r.content),
+            )
+            staging_id = None
+            for block in r.content:
+                v = _content_to_value([block])
+                if isinstance(v, dict) and v.get("staging_id"):
+                    staging_id = v["staging_id"]
+                    break
+
+            r = await session.call_tool(
+                "invoke_affordance",
+                {
+                    "affordance_id": "invite_stance",
+                    "material_name": "cal_invite_stance",
+                    "arguments": {
+                        "question": (
+                            "Acme customer review has external attendees "
+                            "(alice@acme.example, bob@acme.example). "
+                            "Issue the reschedule and notify them?"
+                        ),
+                        "options": ["Issue with notifications", "Hold", "Cancel reschedule"],
+                    },
+                },
+            )
+            _print_value(
+                "invoke_affordance(invite_stance, cal_invite_stance, ...)",
+                _content_to_value(r.content),
+            )
+
+            if staging_id:
+                r = await session.call_tool(
+                    "invoke_affordance",
+                    {
+                        "affordance_id": "issue_reschedule",
+                        "material_name": "cal_issue_reschedule",
+                        "arguments": {"staging_id": staging_id},
+                    },
+                )
+                _print_value(
+                    "invoke_affordance(issue_reschedule, cal_issue_reschedule, ...)",
+                    _content_to_value(r.content),
+                )
+
             # --- Step 7: Practice Management authors a new bundle ----------
             print("=" * 60)
             print("Step 7: Practice Management authors a new bundle at runtime")

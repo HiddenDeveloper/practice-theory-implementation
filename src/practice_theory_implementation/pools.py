@@ -54,6 +54,20 @@ TELEO_AFFECTIVE: dict[str, PoolElement] = {
                 "compliance."
             ),
         ),
+        # Calendar Stewardship — worked-example practice for the case study.
+        PoolElement(
+            id="te_calendar_stewardship",
+            name="Steward of the user's time and commitments",
+            content=(
+                "Tend the user's calendar as a record of commitments to "
+                "people, not as fields to be edited. A meeting on the "
+                "calendar is something the user agreed to with other people "
+                "who have arranged their day around it. Moving it has "
+                "consequences for them. Be the practitioner who makes those "
+                "consequences visible to the user before acting, not the "
+                "one who acts and tells them after."
+            ),
+        ),
         PoolElement(
             id="te_reflection",
             name="Recorder of reflection",
@@ -141,6 +155,25 @@ UNDERSTANDING: dict[str, PoolElement] = {
                 'in shape — "what did I do yesterday", "how is this week going", '
                 '"am I overdoing it" — and each calls for a different read of the '
                 "same underlying record."
+            ),
+        ),
+        # Calendar Stewardship.
+        PoolElement(
+            id="und_meetings_as_commitments",
+            name="A meeting is a commitment, not a slot",
+            content=(
+                "A calendar event is not a row in a database; it is a "
+                "commitment made to the people listed as attendees. When an "
+                "attendee is external (outside the user's organisation), "
+                "rescheduling means a notification lands in their inbox, "
+                "their day shifts, and the user's relationship with them "
+                "shifts too. The mechanical act of editing the event is "
+                "trivial; the relational act of moving the meeting is not. "
+                "Two surfaces exist for any change: staging (no one is "
+                "notified yet; the change is a proposal for the user to "
+                "review) and issuing (the change is on the wire and cannot "
+                "be unsent). Treat them as different things — because they "
+                "are."
             ),
         ),
         PoolElement(
@@ -288,6 +321,36 @@ RULES: dict[str, PoolElement] = {
             name="Never expose activity data outside the apprenticeship",
             content="Never expose activity data outside the apprenticeship.",
         ),
+        # Calendar Stewardship rules.
+        PoolElement(
+            id="rule_stage_before_issue",
+            name="Stage before you issue",
+            content=(
+                "Never issue a calendar change without a prior staging "
+                "(propose_reschedule) on the same event. Staging is the "
+                "review window; issuing without it bypasses the user."
+            ),
+        ),
+        PoolElement(
+            id="rule_invite_stance_before_issue",
+            name="Invite the user's stance before issuing",
+            content=(
+                "Before issuing any reschedule of an event with external "
+                "attendees, invoke invite_stance to name the choice and "
+                "hand back. Do not issue past a choice the user has not "
+                "made."
+            ),
+        ),
+        PoolElement(
+            id="rule_no_silent_attendee_changes",
+            name="No silent attendee changes",
+            content=(
+                "If a change affects attendees (time, location, or removal), "
+                "the issuance step must use send_updates='all'. Suppressing "
+                "notifications on a change attendees would feel is a "
+                "violation, even if technically possible."
+            ),
+        ),
         PoolElement(
             id="rule_reflection_verbatim",
             name="Store reflections verbatim",
@@ -393,6 +456,52 @@ AFFORDANCES: dict[str, Affordance] = {
                 "the apprenticeship carries across practices and sessions."
             ),
             materials=("consult_about_user",),
+        ),
+        # Calendar Stewardship affordances.
+        Affordance(
+            id="read_calendar",
+            name="Read the calendar",
+            description=(
+                "List upcoming events in a date range to see what is on the "
+                "calendar before proposing any change. Returns attendee "
+                "counts and an external-attendee flag so the practitioner "
+                "knows what a change would touch."
+            ),
+            materials=("cal_list_events",),
+        ),
+        Affordance(
+            id="propose_reschedule",
+            name="Propose a reschedule",
+            description=(
+                "Stage a reschedule on an event. No attendees are notified; "
+                "no invite changes on the wire. The result is a staging "
+                "the user can review before it becomes real. Always the "
+                "first step in any reschedule — see rule_stage_before_issue."
+            ),
+            materials=("cal_propose_reschedule",),
+        ),
+        Affordance(
+            id="invite_stance",
+            name="Invite the user's stance",
+            description=(
+                "Name the choice that belongs to the user and hand back. "
+                "Do not draft past the choice. For any reschedule that "
+                "touches external attendees, this affordance must be "
+                "invoked between propose_reschedule and issue_reschedule."
+            ),
+            materials=("cal_invite_stance",),
+        ),
+        Affordance(
+            id="issue_reschedule",
+            name="Issue a staged reschedule",
+            description=(
+                "Convert a staged reschedule into an issued change. "
+                "Notifications go to every attendee. Irreversible at the "
+                "messaging layer (you cannot unsend the invite). Requires "
+                "a prior propose_reschedule and, for external attendees, "
+                "a prior invite_stance step."
+            ),
+            materials=("cal_issue_reschedule",),
         ),
         Affordance(
             id="record_reflection",
@@ -586,6 +695,67 @@ MATERIALS: dict[str, Material] = {
                 "Return the standing about-the-user record the engagement holds."
             ),
             input_schema={"type": "object", "properties": {}},
+        ),
+        # Calendar Stewardship materials — Google-Calendar-shaped mock.
+        Material(
+            name="cal_list_events",
+            description=(
+                "List the user's upcoming events in a date range, with "
+                "attendee counts and an external-attendee flag."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "start_date": {"type": "string", "format": "date"},
+                    "end_date": {"type": "string", "format": "date"},
+                },
+                "required": ["start_date", "end_date"],
+            },
+        ),
+        Material(
+            name="cal_propose_reschedule",
+            description=(
+                "Stage a reschedule on an event. No attendees notified "
+                "(send_updates='none'). Returns a staging id."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string"},
+                    "new_start": {"type": "string"},
+                    "new_end": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["event_id", "new_start", "new_end", "reason"],
+            },
+        ),
+        Material(
+            name="cal_invite_stance",
+            description=(
+                "Record a question for the user with named options; no "
+                "commitment is made on their behalf."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "options": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["question", "options"],
+            },
+        ),
+        Material(
+            name="cal_issue_reschedule",
+            description=(
+                "Convert a staged reschedule into an issued change. "
+                "Notifications go to every attendee (send_updates='all'). "
+                "Requires a staging id from a prior cal_propose_reschedule."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"staging_id": {"type": "string"}},
+                "required": ["staging_id"],
+            },
         ),
         # Reflection-practice material: stores a written reflection.
         Material(

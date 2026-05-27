@@ -1,5 +1,5 @@
 {
-  "_comment": "MCP server config for Codex (and any other client that reads .mcp.json). Two server entries — somatic and autonomic — each spawned over stdio. For HTTP transport (Anthropic SDK or anything that wants a long-lived server), start the server directly: PRACTICE_TRANSPORT=http PRACTICE_SERVER_MODE=autonomic uv run python -m practice_theory_implementation.server",
+  "_comment": "MCP server config for Codex (and any other client that reads .mcp.json). The somatic server is spawned over stdio. The autonomic server is intentionally not registered here; for HTTP transport (Anthropic SDK or anything that wants a long-lived server), start the server directly: PRACTICE_TRANSPORT=http PRACTICE_SERVER_MODE=autonomic uv run python -m practice_theory_implementation.server",
   "mcpServers": {
     "practice_server_somatic": {
       "type": "stdio",
@@ -12,20 +12,6 @@
       ],
       "env": {
         "PRACTICE_SERVER_MODE": "somatic",
-        "PRACTICE_TRANSPORT": "stdio"
-      }
-    },
-    "practice_server_autonomic": {
-      "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "python",
-        "-m",
-        "practice_theory_implementation.server"
-      ],
-      "env": {
-        "PRACTICE_SERVER_MODE": "autonomic",
         "PRACTICE_TRANSPORT": "stdio"
       }
     }

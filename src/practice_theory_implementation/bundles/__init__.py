@@ -16,6 +16,9 @@ from __future__ import annotations
 from practice_theory_implementation.bundles.activities_management import (
     ACTIVITIES_MANAGEMENT,
 )
+from practice_theory_implementation.bundles.calendar_stewardship import (
+    CALENDAR_STEWARDSHIP,
+)
 from practice_theory_implementation.bundles.judge import JUDGE
 from practice_theory_implementation.bundles.practice_management import (
     PRACTICE_MANAGEMENT,
@@ -30,6 +33,7 @@ from practice_theory_implementation.types import Bundle
 BUNDLES: dict[str, Bundle] = {
     # somatic
     ACTIVITIES_MANAGEMENT.id: ACTIVITIES_MANAGEMENT,
+    CALENDAR_STEWARDSHIP.id: CALENDAR_STEWARDSHIP,
     REFLECTION.id: REFLECTION,
     PRACTICE_MANAGEMENT.id: PRACTICE_MANAGEMENT,
     # autonomic

@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 from practice_theory_implementation.materials import (
     about_user_mock,
+    calendar_mock,
     garmin_mock,
     judge,
     practice_management,
@@ -33,6 +34,11 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "garmin_get_activity": garmin_mock.garmin_get_activity,
     "garmin_get_daily_summary": garmin_mock.garmin_get_daily_summary,
     "garmin_get_user_stats": garmin_mock.garmin_get_user_stats,
+    # Calendar Stewardship — Google-Calendar-shaped mock
+    "cal_list_events": calendar_mock.cal_list_events,
+    "cal_propose_reschedule": calendar_mock.cal_propose_reschedule,
+    "cal_invite_stance": calendar_mock.cal_invite_stance,
+    "cal_issue_reschedule": calendar_mock.cal_issue_reschedule,
     # Reflection
     "store_reflection": reflection_mock.store_reflection,
     # Practice Management — meta-materials
