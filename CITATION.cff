@@ -1,0 +1,96 @@
+# Citation File Format (https://citation-file-format.github.io/)
+#
+# When a tagged release is published, Zenodo's GitHub integration reads this
+# file and mints a software DOI with this metadata. Update `version` and
+# `date-released` before tagging. After the four essays are on Zenodo,
+# replace the "PENDING-ESSAY-N" DOIs under `references` with the minted
+# concept DOIs and re-tag if needed.
+
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata below, and
+  consider co-citing the accompanying essay series.
+title: "Practice Theory: A Working Implementation"
+abstract: >-
+  A working implementation of the AI-trust-via-practice-theory
+  architecture. A substrate of five pools captures the structure of a
+  practitioner's situated awareness about a practice (teleo-affective,
+  understanding, rules, affordances, materials); projection rules
+  assemble a runnable practice from a bundle plus the engagement; an MCP
+  server presents the projected practice through a fixed tool surface
+  and a practice://* resource surface; an enactment trail records what
+  was actually invoked; meta-materials let practices author other
+  practices at runtime; an autonomic loop (Judge and Smoother) reads
+  the trail and amends the substrate through the same machinery.
+  Companion software to the four-essay AI Trust series by the same
+  author.
+type: software
+authors:
+  - family-names: Batu
+    given-names: Monyet
+    orcid: "https://orcid.org/0009-0007-9002-5381"
+repository-code: "https://github.com/HiddenDeveloper/practice-theory-implementation"
+url: "https://github.com/HiddenDeveloper/practice-theory-implementation"
+version: "1.0.0"
+date-released: "2026-05-27"
+keywords:
+  - AI trust
+  - practice theory
+  - situated awareness
+  - apprenticeship
+  - agent harness
+  - Model Context Protocol
+  - MCP
+  - autonomic computing
+  - strange loop
+  - meaning layer
+  - Schatzki
+  - Suchman
+  - Schön
+# license: <SPDX identifier — to be decided>
+references:
+  - type: article
+    title: "AI Trust and Situated Awareness: A Practice Theory Reframe"
+    authors:
+      - family-names: Batu
+        given-names: Monyet
+        orcid: "https://orcid.org/0009-0007-9002-5381"
+    doi: "10.5281/zenodo.20306761"
+    notes: >-
+      First essay in the AI Trust series. Concept DOI (resolves to the
+      latest version). Names the missing layer in current agents as
+      situated awareness and reframes its delivery as a practice.
+  - type: article
+    title: "Practice Theory — The Apprenticeship and a Strange Loop"
+    authors:
+      - family-names: Batu
+        given-names: Monyet
+        orcid: "https://orcid.org/0009-0007-9002-5381"
+    doi: "10.5281/zenodo.20354614"
+    notes: >-
+      Second essay in the AI Trust series. Concept DOI. Names
+      apprenticeship as the transmission of situated awareness, and
+      the autonomic loop that keeps the bundle honest.
+  - type: article
+    title: "Practice Theory — The Implementation"
+    authors:
+      - family-names: Batu
+        given-names: Monyet
+        orcid: "https://orcid.org/0009-0007-9002-5381"
+    doi: "10.5281/zenodo.PENDING-ESSAY-3"
+    notes: >-
+      Third essay in the AI Trust series — the twelve-step build that
+      this software accompanies. Replace the DOI above with the minted
+      concept DOI after the Zenodo deposit is published.
+  - type: article
+    title: "Practice Theory — A Worked Example"
+    authors:
+      - family-names: Batu
+        given-names: Monyet
+        orcid: "https://orcid.org/0009-0007-9002-5381"
+    doi: "10.5281/zenodo.PENDING-ESSAY-4"
+    notes: >-
+      Fourth essay in the AI Trust series — Calendar Stewardship as a
+      worked example against the calendar-move failure mode. Replace
+      the DOI above with the minted concept DOI after the Zenodo
+      deposit is published.
