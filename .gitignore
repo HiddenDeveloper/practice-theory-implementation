@@ -9,3 +9,7 @@ dist/
 # runtime data — the trail, etc.
 data/
 
+# macOS / editor / harness scratch
+.DS_Store
+.codex/
+
