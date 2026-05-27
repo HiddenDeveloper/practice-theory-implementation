@@ -5,7 +5,7 @@ A working implementation of the AI-trust-via-practice-theory architecture descri
 1. *AI Trust and Situated Awareness: A Practice Theory Reframe*
 2. *Practice Theory — The Apprenticeship and a Strange Loop*
 3. *Practice Theory — The Implementation* (this repo's companion paper; the twelve-step build)
-4. *Practice Theory — A Worked Example* (Calendar Stewardship: one practice against the calendar-move failure mode)
+4. *Practice Theory — A Worked Example (Calendar Stewardship)* — one practice against the calendar-move failure mode
 
 The repository reflects the final state at the end of step 12 — every file an early step names exists at HEAD in its fully-evolved form. The journey is in the prose; the artifact is here.
 

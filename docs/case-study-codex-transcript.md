@@ -1,7 +1,7 @@
 # Case study transcript — Calendar Stewardship under a real LLM harness
 
 A real-LLM enactment of the Calendar Stewardship practice described in
-[*Practice Theory — A Worked Example*](ai-trust-practice-theory-a-worked-example.md).
+[*Practice Theory — A Worked Example (Calendar Stewardship)*](ai-trust-practice-theory-a-worked-example.md).
 The harness is OpenAI Codex CLI (`codex` interactive) connected to this
 repo's somatic MCP server via the `.mcp.json` entry `practice_server_somatic`.
 No scaffolding in the user's prompts; no bundle content surfaced to the user

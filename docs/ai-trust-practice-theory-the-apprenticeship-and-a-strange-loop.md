@@ -4,7 +4,7 @@ Monyet Batu\
 ORCID: 0009-0007-9002-5381\
 27 May 2026
 
-*Editor's note: subsequent essays in this series sharpened two terms used here. "Practice recipe" was refined to "practice bundle", separating the artefact (the bundle of five constitutive elements) from the means of its transmission (apprenticeship). And what the first essay called "the meaning layer" was refined to **situated awareness** (Suchman's sense): the bundle's five elements are the captured structure of a practitioner's situated awareness about a practice. This essay predates both refinements and uses the earlier terms throughout. Earlier Zenodo versions preserve the original vocabulary as part of the working; see "Practice Theory — The Implementation" and "Practice Theory — A Worked Example" for the sharpened vocabulary in use.*
+*Editor's note: subsequent essays in this series sharpened two terms used here. "Practice recipe" was refined to "practice bundle", separating the artefact (the bundle of five constitutive elements) from the means of its transmission (apprenticeship). And what the first essay called "the meaning layer" was refined to **situated awareness** (Suchman's sense): the bundle's five elements are the captured structure of a practitioner's situated awareness about a practice. This essay predates both refinements and uses the earlier terms throughout. Earlier Zenodo versions preserve the original vocabulary as part of the working; see "Practice Theory — The Implementation" and "Practice Theory — A Worked Example (Calendar Stewardship)" for the sharpened vocabulary in use.*
 
 ## Apprenticeship — the missing layer
 
@@ -132,6 +132,6 @@ This is the second of four essays in the AI Trust series:
 1. *AI Trust and Situated Awareness: A Practice Theory Reframe* — [DOI](https://doi.org/10.5281/zenodo.20306761).
 2. **This essay.** *Practice Theory — The Apprenticeship and a Strange Loop* — [DOI](https://doi.org/10.5281/zenodo.20354614).
 3. *Practice Theory — The Implementation* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 3 concept DOI link -->
-4. *Practice Theory — A Worked Example* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 4 concept DOI link -->
+4. *Practice Theory — A Worked Example (Calendar Stewardship)* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 4 concept DOI link -->
 
 Companion software: `practice-theory-implementation` — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with repo concept DOI link --> Source at <https://github.com/HiddenDeveloper/practice-theory-implementation>.
