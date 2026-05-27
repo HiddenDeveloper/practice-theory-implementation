@@ -1,5 +1,7 @@
 # practice-theory-implementation
 
+[![DOI](https://zenodo.org/badge/1249919423.svg)](https://doi.org/10.5281/zenodo.20405235)
+
 A working implementation of the AI-trust-via-practice-theory architecture described in the essay series. The series names the missing layer in current agents as **situated awareness** (in Suchman's sense — a practitioner's grasp of where they are in the work, what the goal is, what is at hand, what would be a legitimate next step), and the practice bundle's five elements (teleo-affective, understanding, rules, affordances, materials) as the captured structure that delivers it. See `docs/`:
 
 1. *AI Trust and Situated Awareness: A Practice Theory Reframe*

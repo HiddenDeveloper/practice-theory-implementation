@@ -134,4 +134,4 @@ This is the second of four essays in the AI Trust series:
 3. *Practice Theory — The Implementation* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 3 concept DOI link -->
 4. *Practice Theory — A Worked Example (Calendar Stewardship)* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 4 concept DOI link -->
 
-Companion software: `practice-theory-implementation` — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with repo concept DOI link --> Source at <https://github.com/HiddenDeveloper/practice-theory-implementation>.
+Companion software: `practice-theory-implementation` — [DOI 10.5281/zenodo.20405235](https://doi.org/10.5281/zenodo.20405235) (concept DOI — resolves to the latest version). Source at <https://github.com/HiddenDeveloper/practice-theory-implementation>.
