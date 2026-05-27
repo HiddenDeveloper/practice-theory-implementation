@@ -326,21 +326,46 @@ def discover_affordances(query: str | None = None) -> list[dict[str, Any]]:
     in. `query` is a case-insensitive substring match against name and
     description. Each result is tagged with `layer` so the caller can see
     which is engagement and which is practice.
+
+    Each affordance's `materials` field is a list of
+    `{name, description, input_schema}` objects rather than just names.
+    The per-material `input_schema` matters because the harness LLM
+    constructing the `arguments` payload for `invoke_affordance` needs to
+    know what shape to send, and the generic tool surface does not
+    otherwise expose per-material schemas — surfacing them here puts the
+    schema in front of the LLM at the same moment it learns the affordance
+    exists.
     """
     active = _active_practice or _engagement
     if active is None:
         return []
     q = query.lower() if query else None
+    materials_by_name = {m.name: m for m in active.materials}
     out: list[dict[str, Any]] = []
     for aff in active.affordances:
         if q is not None and q not in aff.name.lower() and q not in aff.description.lower():
             continue
+        material_views: list[dict[str, Any]] = []
+        for mat_name in aff.materials:
+            mat = materials_by_name.get(mat_name)
+            if mat is None:
+                material_views.append(
+                    {"name": mat_name, "description": None, "input_schema": None}
+                )
+            else:
+                material_views.append(
+                    {
+                        "name": mat.name,
+                        "description": mat.description,
+                        "input_schema": dict(mat.input_schema),
+                    }
+                )
         out.append(
             {
                 "id": aff.id,
                 "name": aff.name,
                 "description": aff.description,
-                "materials": list(aff.materials),
+                "materials": material_views,
                 "layer": (
                     "engagement" if aff.id in _engagement_affordance_ids else "practice"
                 ),

@@ -429,7 +429,7 @@ The practice server takes a different approach: **the tool surface stays fixed, 
 - **`list_practices`** — names every practice bundle in the catalog (id, name, description).
 - **`switch_practice(practice_id)`** — replaces the session's active practice; the bundle is projected against the substrate and registry and the resulting ProjectedPractice becomes what the rest of the session works against.
 - **`current_practice`** — returns the currently active practice: `{mode, practice: {id, name, description} | null, enactment_id, composition}`. The `composition` is the active practice's full projection rendered as markdown (engagement content merged in once Step 6 lands the engagement layer). Null when no practice has been switched into.
-- **`discover_affordances(query?)`** — returns the active practice's affordances, optionally filtered by a query string against name and description. This is the dynamic surface — what affordances are available depends on which practice is active.
+- **`discover_affordances(query?)`** — returns the active practice's affordances, optionally filtered by a query string against name and description. This is the dynamic surface — what affordances are available depends on which practice is active. Each affordance result carries its materials inline as `{name, description, input_schema}` objects (not just material names), so the harness LLM sees the argument shape it needs for `invoke_affordance` at the same moment it learns the affordance exists. The schema is on the material; surfacing it here closes the gap that a fixed generic tool surface would otherwise leave for per-material schemas.
 - **`invoke_affordance(affordance_id, material_name, arguments)`** — dispatches through the active ProjectedPractice's `invoke()` and returns the result.
 
 The tool list never changes (once registered). Affordances change through `discover_affordances`. Every MCP client knows how to call a tool, so the changing surface is reachable on every client without depending on notifications.
@@ -522,7 +522,16 @@ With one bundle in the catalog (`activities_management`) the session looks like 
   [
     { "id": "recent_activity", "name": "Recent activity",
       "description": "Look at activities over a recent window...",
-      "materials": ["garmin_list_activities"] },
+      "materials": [
+        { "name": "garmin_list_activities",
+          "description": "List the user's activities within a date range.",
+          "input_schema": { "type": "object",
+            "properties": {
+              "start_date":    { "type": "string", "format": "date" },
+              "end_date":      { "type": "string", "format": "date" },
+              "activity_type": { "type": "string" } },
+            "required": ["start_date", "end_date"] } }
+      ] },
     ...
   ]
 
