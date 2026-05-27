@@ -206,3 +206,14 @@ Practices improve through use; the architecture makes the improvement legible; a
 What it claims is that the *shape of the answer* is in your hands. Essay 1 of this series named the missing layer as situated awareness and argued that its carrier is a practice. Essay 2 argued that the practice is transmitted through apprenticeship. Essay 3 built the substrate. This essay narrows to a single practice and shows what the answer looks like at the smallest scale that still makes a meaningful claim.
 
 The bundle is the unit of situated awareness. The trail is the unit of trust. Both are at HEAD in the repository — runnable with one command.
+
+## Series
+
+This is the fourth of four essays in the AI Trust series:
+
+1. *AI Trust and Situated Awareness: A Practice Theory Reframe* — [DOI](https://doi.org/10.5281/zenodo.20306761).
+2. *Practice Theory — The Apprenticeship and a Strange Loop* — [DOI](https://doi.org/10.5281/zenodo.20354614).
+3. *Practice Theory — The Implementation* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 3 concept DOI link -->
+4. **This essay.** *Practice Theory — A Worked Example* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 4 concept DOI link -->
+
+Companion software: `practice-theory-implementation` — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with repo concept DOI link --> Source at <https://github.com/HiddenDeveloper/practice-theory-implementation>.

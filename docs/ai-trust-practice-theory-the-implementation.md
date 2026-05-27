@@ -1217,3 +1217,14 @@ What we have at the end is a substrate of five pools and a catalog of bundles; a
 The bundle maintains the practice. The loop maintains the bundle. The strange loop maintains the loop.
 
 The repository is a working starting point. The next move is not another step in this essay — it is using the apparatus, watching it, seeing where it falls short, and letting it amend itself.
+
+## Series
+
+This is the third of four essays in the AI Trust series:
+
+1. *AI Trust and Situated Awareness: A Practice Theory Reframe* — [DOI](https://doi.org/10.5281/zenodo.20306761).
+2. *Practice Theory — The Apprenticeship and a Strange Loop* — [DOI](https://doi.org/10.5281/zenodo.20354614).
+3. **This essay.** *Practice Theory — The Implementation* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 3 concept DOI link -->
+4. *Practice Theory — A Worked Example* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 4 concept DOI link -->
+
+Companion software: `practice-theory-implementation` — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with repo concept DOI link --> Source at <https://github.com/HiddenDeveloper/practice-theory-implementation>.

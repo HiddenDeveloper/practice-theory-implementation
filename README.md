@@ -134,4 +134,4 @@ src/practice_theory_implementation/
 
 ## License
 
-TBD.
+Apache-2.0 — see [`LICENSE`](LICENSE). The essays deposited on Zenodo carry their own deposit licenses (typically CC-BY-4.0); the source tree here is Apache-2.0.

@@ -79,3 +79,14 @@ The pattern is a familiar one: monitor, analyse, plan, execute, over a shared st
 A virtuous circle, running under its own power. How the loop works in detail — what the Judge attends to, what the Smoother is allowed to change, and how the bootstrap is performed — is the subject of a [follow-up essay on the autonomic recipe loop](https://doi.org/10.5281/zenodo.20354614).
 
 Practice makes perfect.
+
+## Series
+
+This is the first of four essays in the AI Trust series:
+
+1. **This essay.** *AI Trust and Situated Awareness: A Practice Theory Reframe* — [DOI](https://doi.org/10.5281/zenodo.20306761).
+2. *Practice Theory — The Apprenticeship and a Strange Loop* — [DOI](https://doi.org/10.5281/zenodo.20354614).
+3. *Practice Theory — The Implementation* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 3 concept DOI link -->
+4. *Practice Theory — A Worked Example* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 4 concept DOI link -->
+
+Companion software: `practice-theory-implementation` — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with repo concept DOI link --> Source at <https://github.com/HiddenDeveloper/practice-theory-implementation>.

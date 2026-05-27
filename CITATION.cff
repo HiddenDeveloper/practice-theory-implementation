@@ -47,7 +47,7 @@ keywords:
   - Schatzki
   - Suchman
   - Schön
-# license: <SPDX identifier — to be decided>
+license: Apache-2.0
 references:
   - type: article
     title: "AI Trust and Situated Awareness: A Practice Theory Reframe"

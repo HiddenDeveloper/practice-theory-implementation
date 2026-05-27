@@ -124,3 +124,14 @@ As the somatic practices are enacted, autonomic practitioners identify and attem
 A system that holds itself open to revision, including revision of how it revises. The recipe maintains the practice. The loop maintains the recipe. The strange loop maintains the loop.
 
 A virtuous circle indeed.
+
+## Series
+
+This is the second of four essays in the AI Trust series:
+
+1. *AI Trust and Situated Awareness: A Practice Theory Reframe* — [DOI](https://doi.org/10.5281/zenodo.20306761).
+2. **This essay.** *Practice Theory — The Apprenticeship and a Strange Loop* — [DOI](https://doi.org/10.5281/zenodo.20354614).
+3. *Practice Theory — The Implementation* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 3 concept DOI link -->
+4. *Practice Theory — A Worked Example* — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with essay 4 concept DOI link -->
+
+Companion software: `practice-theory-implementation` — DOI pending Zenodo deposit. <!-- TODO(zenodo): replace with repo concept DOI link --> Source at <https://github.com/HiddenDeveloper/practice-theory-implementation>.
