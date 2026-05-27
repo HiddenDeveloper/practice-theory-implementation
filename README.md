@@ -102,13 +102,15 @@ ps aux | grep -E "codex exec|claude -p" | grep -v grep
 
 ### Resetting the trail and substrate
 
-The verify uses a temp directory by default (hermetic), so there's nothing to reset between verify runs. If you've set `PRACTICE_TRAIL_PATH` / `PRACTICE_SUBSTRATE_PATH` to use persistent local paths and want to start fresh, delete those files:
+The verify uses a temp directory by default (hermetic), so there's nothing to reset between verify runs.
+
+If you've set `PRACTICE_TRAIL_PATH` and `PRACTICE_SUBSTRATE_PATH` to persistent local paths and want to start fresh, delete the files at exactly those paths (and SQLite's WAL/SHM siblings if present). For example, if you set them inside `data/`:
 
 ```bash
-rm -f data/trail.db data/trail.db-shm data/trail.db-wal data/substrate.db
+rm -f "$PRACTICE_TRAIL_PATH" "$PRACTICE_TRAIL_PATH"-shm "$PRACTICE_TRAIL_PATH"-wal "$PRACTICE_SUBSTRATE_PATH"
 ```
 
-The next run recreates both from the seed pools.
+The next run recreates both from the seed pools. Note: the trail and substrate must be paired — the verify requires both env vars to be set together, or neither (mixed persistent/temp setups leak stale state and are rejected at startup).
 
 ## Layout
 

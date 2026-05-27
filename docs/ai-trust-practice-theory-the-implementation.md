@@ -1156,17 +1156,17 @@ In the verify run, this is what happens (drains are bounded to the inbox-pending
 
 ```text
 First pass:
-  pending judge_inbox  : 4         # the four closed somatic enactments
-  Judge drained 4 work item(s)
+  pending judge_inbox  : 5         # the five closed somatic enactments
+  Judge drained 5 work item(s)
   pending smoother_inbox: 1        # the one narrow_engagement Friction
   Smoother drained 1 work item(s)
 
 Second pass (strange loop — Judge examines Judge/Smoother enactments):
-  pending judge_inbox  : 5         # the 4 Judge enactments + 1 Smoother enactment from pass 1
-  Judge drained 5 work item(s) on the second pass
+  pending judge_inbox  : 6         # the 5 Judge enactments + 1 Smoother enactment from pass 1
+  Judge drained 6 work item(s) on the second pass
 ```
 
-Five new judge_inbox rows — the four Judge enactments from pass 1 (one per somatic practice judged) plus the one Smoother enactment. Judge processed each in turn. No new Friction came back, because the verify's deterministic heuristic (`narrow_engagement` when `used <= 1` of multiple available affordances) does not fire for the Judge's own enactments: each Judge enactment used at least two affordances (`read_enactment_steps` plus `read_bundle`). The loop ran, found nothing to name, and went still.
+Six new judge_inbox rows — the five Judge enactments from pass 1 (one per somatic practice judged: Activities Management, Reflection, Calendar Stewardship, Practice Management, and the runtime-authored Quick Glance) plus the one Smoother enactment that addressed the `narrow_engagement` Friction. Judge processed each in turn. No new Friction came back, because the verify's deterministic heuristic (`narrow_engagement` when `used <= 1` of multiple available affordances) does not fire for the Judge's own enactments: each Judge enactment used at least two affordances (`read_enactment_steps` plus `read_bundle`). The loop ran, found nothing to name, and went still.
 
 That stillness matters. Within a bounded reflective pass, the Judge's discipline — observe, do not invent — is what lets the pass quiet when nothing genuinely needs attention. A real Judge enactment, reading the bundle's understanding, would apply the same discipline; the verify's heuristic is a small-but-honest stand-in.
 

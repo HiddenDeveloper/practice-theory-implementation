@@ -793,20 +793,35 @@ def _ensure_hermetic_db_paths() -> None:
     `data/trail.db` and `data/substrate.db` across runs leaks prior state and
     makes the output diverge from the documented walk.
 
-    Default behaviour is now: hermetic by default. Set PRACTICE_TRAIL_PATH
-    or PRACTICE_SUBSTRATE_PATH to opt into persistent local state.
+    Default behaviour is hermetic. The trail and substrate are paired — a
+    mixed setup (one persistent, the other temp) leaves stale Practice
+    Management content pointing at a fresh trail or vice versa, which is
+    worse than either pure mode. So either both env vars are set, or
+    neither: setting only one is a misconfiguration and is rejected with a
+    clear error.
     """
     import tempfile
     from pathlib import Path
 
-    if "PRACTICE_TRAIL_PATH" in os.environ or "PRACTICE_SUBSTRATE_PATH" in os.environ:
-        return  # user opted into custom paths; respect that.
+    trail_set = "PRACTICE_TRAIL_PATH" in os.environ
+    substrate_set = "PRACTICE_SUBSTRATE_PATH" in os.environ
+    if trail_set and substrate_set:
+        return  # user opted into custom paths for both; respect that.
+    if trail_set or substrate_set:
+        which_set = "PRACTICE_TRAIL_PATH" if trail_set else "PRACTICE_SUBSTRATE_PATH"
+        which_missing = "PRACTICE_SUBSTRATE_PATH" if trail_set else "PRACTICE_TRAIL_PATH"
+        raise RuntimeError(
+            f"{which_set} is set but {which_missing} is not. The trail and "
+            "substrate must be paired — mixed persistent/temp setups leak "
+            "stale state. Set both env vars to opt into persistent local "
+            "state, or unset both to use the hermetic temp directory."
+        )
     tmpdir = Path(tempfile.mkdtemp(prefix="practice-verify-"))
     os.environ["PRACTICE_TRAIL_PATH"] = str(tmpdir / "trail.db")
     os.environ["PRACTICE_SUBSTRATE_PATH"] = str(tmpdir / "substrate.db")
     print(f"[verify] using hermetic temp DBs at {tmpdir}")
     print(
-        "[verify] set PRACTICE_TRAIL_PATH and PRACTICE_SUBSTRATE_PATH "
+        "[verify] set both PRACTICE_TRAIL_PATH and PRACTICE_SUBSTRATE_PATH "
         "to persist state across runs"
     )
     print()
