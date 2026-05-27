@@ -784,7 +784,36 @@ def _print_friction() -> None:
         store.close()
 
 
+def _ensure_hermetic_db_paths() -> None:
+    """If neither path is set, point both at a fresh temp directory.
+
+    The verify's printed narrative assumes a clean slate — the trail starts
+    empty, no Friction is pending from a previous run, Practice Management's
+    create-element calls don't collide with prior IDs. Reusing the default
+    `data/trail.db` and `data/substrate.db` across runs leaks prior state and
+    makes the output diverge from the documented walk.
+
+    Default behaviour is now: hermetic by default. Set PRACTICE_TRAIL_PATH
+    or PRACTICE_SUBSTRATE_PATH to opt into persistent local state.
+    """
+    import tempfile
+    from pathlib import Path
+
+    if "PRACTICE_TRAIL_PATH" in os.environ or "PRACTICE_SUBSTRATE_PATH" in os.environ:
+        return  # user opted into custom paths; respect that.
+    tmpdir = Path(tempfile.mkdtemp(prefix="practice-verify-"))
+    os.environ["PRACTICE_TRAIL_PATH"] = str(tmpdir / "trail.db")
+    os.environ["PRACTICE_SUBSTRATE_PATH"] = str(tmpdir / "substrate.db")
+    print(f"[verify] using hermetic temp DBs at {tmpdir}")
+    print(
+        "[verify] set PRACTICE_TRAIL_PATH and PRACTICE_SUBSTRATE_PATH "
+        "to persist state across runs"
+    )
+    print()
+
+
 def main() -> None:
+    _ensure_hermetic_db_paths()
     asyncio.run(verify_all())
     print()
     _print_trail()

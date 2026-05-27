@@ -163,7 +163,7 @@ Suppose a future enactment of Calendar Stewardship cuts a corner — calls `issu
 
 **A Judge enactment, reading the trail later, names the violation as Friction.** The Judge bundle's understanding describes a `rule_neglect` kind for exactly this case: a rule is in the practice, the trail shows it was not honoured, the Judge emits an observation with the evidence (the rule's id, the missing step, the enactment it would have belonged to). A Smoother enactment then has the option of amending the bundle's content — adding a rule that names a more specific safeguard, sharpening an affordance description that turned out to be too easy to misread, even amending the material so its error message tells future enactments where the staging step would have gone.
 
-So the rule is enforced at the **data layer** (the mock will not accept a free-standing issuance), the discipline is held at the **architectural layer** (the bundle's three rules constrain the enactment shape), and the enforcement itself is inspectable at the **trail layer** (a reader can walk from any step back to the rule it should have honoured). Three layers of constraint, none of them prose-only, all of them readable from the same trail. *Trust as enacted structure*, applied to a single calendar move.
+One part of the discipline is enforced mechanically at the **data layer** (`cal_issue_reschedule` will not accept a free-standing issuance without a staging id), and the rest is held at the **bundle layer** — the three rules constrain the enactment shape an LLM enacting the bundle will follow, and the trail records the steps so the discipline is inspectable. The Judge can read the trail and name violations of rules that aren't mechanically enforced; the Smoother can amend the bundle (or harden the material) in response. So: one rule is enforced in code, all three are inspectable from the trail, and the gap between *inspectable* and *enforced* is exactly the space the autonomic loop is built to close. *Trust as enacted structure*, applied to a single calendar move.
 
 ## Going up a level: a Personal Secretary
 
@@ -189,7 +189,7 @@ The case this essay makes sits inside a forty-year tradition. Schatzki named pra
 
 ## What this essay claims, and what it doesn't
 
-It claims one thing: **the situated awareness the calendar-move failure points at is something a small practice bundle can carry, today, against a real API surface, with the discipline inspectable from the trail.** The bundle in this essay is forty lines of captured content. The mock is a hundred lines of Python. The verify is twenty lines of MCP tool calls. The whole worked example is small.
+It claims one thing: **the situated awareness the calendar-move failure points at is something a small practice bundle can carry, today, against a Google-Calendar-shaped surface, with the discipline inspectable from the trail and a real binding swappable behind the material name.** The bundle in this essay is forty lines of captured content. The mock is a hundred lines of Python. The verify is twenty lines of MCP tool calls. The whole worked example is small.
 
 It does not claim that bundles are sufficient for every agent failure. It does not claim that the autonomic loop converges in production without further work — essay 3's Step 12 names that gap. It does not claim Calendar Stewardship is a finished design; a real deployment would extend it with rules around cross-time-zone moves, recurrence handling, conflict detection, and a dozen other things a working EA holds in their head.
 

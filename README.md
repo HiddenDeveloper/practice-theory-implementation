@@ -16,7 +16,7 @@ uv sync
 uv run python -m practice_theory_implementation
 ```
 
-That runs the verify: somatic walk → autonomic Judge → autonomic Smoother, all via the `ScriptedAdapter` so no API keys or external tooling are needed. The trail and substrate land in `data/trail.db` and `data/substrate.db`. Delete both to reset.
+That runs the verify: somatic walk → autonomic Judge → autonomic Smoother, all via the `ScriptedAdapter` so no API keys or external tooling are needed. The verify is **hermetic by default** — it creates a fresh temp directory for the trail and substrate every run, so the printed walk matches the documented narrative every time. Set `PRACTICE_TRAIL_PATH` and `PRACTICE_SUBSTRATE_PATH` to persist state across runs (the persistent-trail story essay 3 names lives there; for the deterministic demo, the hermetic default is the right choice).
 
 ## Running with a real LLM
 
@@ -101,6 +101,8 @@ ps aux | grep -E "codex exec|claude -p" | grep -v grep
 ```
 
 ### Resetting the trail and substrate
+
+The verify uses a temp directory by default (hermetic), so there's nothing to reset between verify runs. If you've set `PRACTICE_TRAIL_PATH` / `PRACTICE_SUBSTRATE_PATH` to use persistent local paths and want to start fresh, delete those files:
 
 ```bash
 rm -f data/trail.db data/trail.db-shm data/trail.db-wal data/substrate.db

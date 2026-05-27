@@ -488,7 +488,7 @@ Both transports run the same tool surface (six in somatic, five in autonomic —
 # stdio (default) — for verify, Codex, anything that wants a subprocess
 uv run python -m practice_theory_implementation.server
 
-# HTTP — for long-lived server, multiple concurrent clients
+# HTTP — long-lived server; one client per server until per-session state lands
 PRACTICE_TRANSPORT=http PRACTICE_HTTP_PORT=7180 \
   uv run python -m practice_theory_implementation.server
 ```
