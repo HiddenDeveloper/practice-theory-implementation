@@ -9,7 +9,7 @@ Usage (Anthropic SDK, stdio default):
     PRACTICE_AUTONOMIC_PROVIDER=anthropic \
         uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
 
-Usage (Anthropic SDK, HTTP — gated on per-session lifespan state):
+Usage (Anthropic SDK, experimental HTTP — one client per server process):
     PRACTICE_AUTONOMIC_PROVIDER=anthropic \
         PRACTICE_AUTONOMIC_MCP_URL=http://127.0.0.1:7181/mcp/ \
         uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
@@ -26,7 +26,8 @@ PRACTICE_AUTONOMIC_MCP_URL is optional. Unset, each adapter instance spawns
 its own stdio MCP server subprocess (Anthropic SDK) or invokes the autonomic
 MCP server inline (Claude CLI via `--mcp-config`, Codex via inline
 `-c mcp_servers.…`). Set, the adapter connects to a long-lived HTTP MCP
-server instead.
+server instead. The HTTP server itself requires PRACTICE_EXPERIMENTAL_HTTP=1
+until active practice state is scoped per session.
 
 All three real adapters drive the same `run_role_loop` against the same
 trail inboxes. The choice of adapter is the only difference; everything else

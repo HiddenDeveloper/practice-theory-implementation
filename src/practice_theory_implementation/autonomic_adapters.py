@@ -179,8 +179,9 @@ class AnthropicSDKAdapter(AutonomicAdapter):
 
     `mcp_url` on AdapterConfig is optional. Unset (the default), the adapter
     uses stdio — each adapter instance spawns its own server subprocess.
-    Set, the adapter connects to a long-lived HTTP MCP server. HTTP is the
-    intended shape once per-session lifespan state lands on the server.
+    Set, the adapter connects to a long-lived HTTP MCP server. The server's
+    HTTP path is experimental and requires PRACTICE_EXPERIMENTAL_HTTP=1 until
+    per-session lifespan state lands.
     """
 
     def __init__(

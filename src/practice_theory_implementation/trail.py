@@ -395,7 +395,9 @@ class EnactmentStore:
 
     # --- inbox reads + claims (workers use these) ---------------------------
 
-    def next_judge_work(self, *, worker_id: str, lease_seconds: int = 600) -> JudgeInboxRow | None:
+    def next_judge_work(
+        self, *, worker_id: str, lease_seconds: int = 600
+    ) -> JudgeInboxRow | None:
         """Atomically claim the oldest unclaimed, unconsumed judge_inbox row.
 
         Returns None if no work is available. The claim sets claim_expires_at
@@ -438,19 +440,17 @@ class EnactmentStore:
         )
         with self._cursor() as cur:
             cur.execute(
-                f"SELECT * FROM {table} WHERE consumed_at IS NULL "
+                f"UPDATE {table} SET claimed_at = ?, claimed_by = ?, "
+                f"claim_expires_at = ? WHERE {id_column} = ("
+                f"SELECT {id_column} FROM {table} WHERE consumed_at IS NULL "
                 f"AND (claim_expires_at IS NULL OR claim_expires_at < ?) "
-                f"ORDER BY routed_at LIMIT 1",
-                (now_iso,),
+                f"ORDER BY routed_at LIMIT 1"
+                f") RETURNING *",
+                (now_iso, worker_id, expires_iso, now_iso),
             )
             row = cur.fetchone()
             if row is None:
                 return None
-            cur.execute(
-                f"UPDATE {table} SET claimed_at = ?, claimed_by = ?, "
-                f"claim_expires_at = ? WHERE {id_column} = ?",
-                (now_iso, worker_id, expires_iso, row[id_column]),
-            )
         return row_factory(**dict(row))
 
     def consume_judge_inbox(

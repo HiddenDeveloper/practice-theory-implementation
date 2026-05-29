@@ -31,7 +31,7 @@ PRACTICE_AUTONOMIC_PROVIDER=anthropic \
   uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
 ```
 
-Each adapter instance spawns its own stdio MCP server subprocess. Set `PRACTICE_AUTONOMIC_MCP_URL=http://…/mcp/` to use a long-lived HTTP server instead (gated on per-session lifespan state landing — see the essay).
+Each adapter instance spawns its own stdio MCP server subprocess. A long-lived HTTP server is still experimental because active practice state is not yet per-session; start it only with `PRACTICE_EXPERIMENTAL_HTTP=1` and use one client per server process until that lands.
 
 ### Claude CLI
 

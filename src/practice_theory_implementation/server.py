@@ -35,8 +35,9 @@ switched in. Resources are an alternative read-path to the inline
 MCP resource model can subscribe and read.
 
 In stdio transport each connection is its own process, so the active
-practice is module-level state; HTTP transport would scope this per-session
-via a lifespan.
+practice is module-level state. HTTP transport is still experimental here:
+until per-session lifespan state lands, it is safe only for one client per
+server process and must be opted into explicitly.
 
 Run directly to serve over stdio (the client launches this as a subprocess):
 
@@ -82,13 +83,19 @@ if _MODE not in ("somatic", "autonomic"):
     )
 
 # Transport is set at startup via PRACTICE_TRANSPORT; default stdio so the
-# verify works without configuration. HTTP transport (`http`) lets multiple
-# clients connect to one long-lived server process — the natural shape for
-# the autonomic deployment where workers connect concurrently.
+# verify works without configuration. HTTP is useful for manual experiments
+# with a long-lived server, but this module still keeps active projection
+# state in globals, so concurrent HTTP clients would race on that state.
 _TRANSPORT: str = os.environ.get("PRACTICE_TRANSPORT", "stdio")
 if _TRANSPORT not in ("stdio", "http"):
     raise ValueError(
         f"PRACTICE_TRANSPORT must be 'stdio' or 'http', got {_TRANSPORT!r}"
+    )
+if _TRANSPORT == "http" and os.environ.get("PRACTICE_EXPERIMENTAL_HTTP") != "1":
+    raise ValueError(
+        "PRACTICE_TRANSPORT=http is experimental because active practice state "
+        "is process-global. Set PRACTICE_EXPERIMENTAL_HTTP=1 to opt in, and "
+        "use only one client per server process until per-session state lands."
     )
 _HTTP_HOST: str = os.environ.get("PRACTICE_HTTP_HOST", "127.0.0.1")
 _HTTP_PORT: int = int(os.environ.get("PRACTICE_HTTP_PORT", "7180"))
@@ -177,7 +184,7 @@ configure_practice_management(
 configure_judge(
     trail=_trail,
     substrate=substrate,
-    bundle_catalog=BUNDLES,
+    bundle_catalog={**BUNDLES, ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE},
     observing_enactment_id_getter=lambda: _active_practice_enactment_id,
 )
 configure_smoother(
@@ -505,11 +512,14 @@ def resource_affordances() -> str:
 
 
 async def _shutdown_handler() -> None:
-    """Close any still-open practice enactment so the dispatcher can route it."""
-    global _active_practice_enactment_id
+    """Close still-open enactments so the dispatcher can route a complete trail."""
+    global _active_practice_enactment_id, _engagement_enactment_id
     if _active_practice_enactment_id is not None:
         _trail.close_enactment(_active_practice_enactment_id)
         _active_practice_enactment_id = None
+    if _engagement_enactment_id is not None:
+        _trail.close_enactment(_engagement_enactment_id)
+        _engagement_enactment_id = None
 
 
 async def _serve_with_dispatcher() -> None:
