@@ -28,10 +28,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 DEFAULT_TRAIL_PATH = Path("data/trail.db")
 TRAIL_PATH_ENV = "PRACTICE_TRAIL_PATH"
+T = TypeVar("T")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS enactments (
@@ -428,10 +429,10 @@ class EnactmentStore:
         *,
         table: str,
         id_column: str,
-        row_factory: type,
+        row_factory: type[T],
         worker_id: str,
         lease_seconds: int,
-    ) -> object | None:
+    ) -> T | None:
         from datetime import timedelta
         now_dt = datetime.now(UTC)
         now_iso = now_dt.isoformat(timespec="microseconds")

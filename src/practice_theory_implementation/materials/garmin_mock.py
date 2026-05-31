@@ -9,6 +9,7 @@ them up by name.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import cast
 
 
 def _seeded(d: date) -> int:
@@ -98,8 +99,8 @@ def garmin_get_user_stats(
     end_date = _as_date(end_date)
     days = (end_date - start_date).days + 1
     activities = garmin_list_activities(start_date, end_date)
-    total_minutes = sum(int(a["duration_min"]) for a in activities)
-    total_distance = round(sum(float(a["distance_km"]) for a in activities), 2)
+    total_minutes = sum(cast(int, a["duration_min"]) for a in activities)
+    total_distance = round(sum(cast(float, a["distance_km"]) for a in activities), 2)
     by_type: dict[str, int] = {}
     for a in activities:
         by_type[str(a["type"])] = by_type.get(str(a["type"]), 0) + 1

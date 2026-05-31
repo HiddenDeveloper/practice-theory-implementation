@@ -26,5 +26,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.409",
     "ruff>=0.15.15",
 ]

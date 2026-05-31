@@ -113,7 +113,8 @@ def _filter(
 
 
 def _episode_from_hit(hit: dict[str, Any]) -> dict[str, Any]:
-    payload = hit.get("payload") if isinstance(hit.get("payload"), dict) else {}
+    raw_payload = hit.get("payload")
+    payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
     text = str(payload.get("text") or "")
     episode: dict[str, Any] = {
         "score": hit.get("score"),

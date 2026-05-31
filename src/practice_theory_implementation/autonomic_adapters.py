@@ -45,7 +45,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from practice_theory_implementation.projection import compose_composition, project
 from practice_theory_implementation.trail import EnactmentStore
@@ -240,7 +240,7 @@ class AnthropicSDKAdapter(AutonomicAdapter):
             setting_sources=[],
             strict_mcp_config=True,
             skills=[],
-            mcp_servers={mcp_label: server_cfg},
+            mcp_servers=cast(Any, {mcp_label: server_cfg}),
             allowed_tools=allowed_tools,
             permission_mode="bypassPermissions",
             max_turns=self._max_turns,
@@ -590,8 +590,10 @@ class RolePolicy:
                 str(primary_id), consumer_enactment_id=consumer_enactment_id
             )
         elif self.role == "smoother":
+            if not isinstance(primary_id, int):
+                raise TypeError("smoother inbox primary_id must be an integer")
             store.consume_smoother_inbox(
-                int(primary_id), consumer_enactment_id=consumer_enactment_id
+                primary_id, consumer_enactment_id=consumer_enactment_id
             )
 
 
