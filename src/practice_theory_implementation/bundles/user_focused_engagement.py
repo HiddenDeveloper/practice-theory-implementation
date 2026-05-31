@@ -28,7 +28,6 @@ USER_FOCUSED_ENGAGEMENT = Bundle(
         "und_engagement_substrate",
         "und_engagement_landing_nodes",
         "und_memory_stores",
-        "und_about_the_user",
     ),
     rules_ids=(
         "rule_dont_displace",

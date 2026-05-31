@@ -85,33 +85,11 @@ def _fallback_user_profile() -> dict[str, object]:
     }
 
 
-def fallback_about_user_prose() -> str:
-    """Return the pool prose derived from the same fallback profile."""
-    profile = _fallback_user_profile()
-    preferences = profile.get("preferences", [])
-    preference_text = (
-        "; ".join(str(preference) for preference in preferences)
-        if isinstance(preferences, list)
-        else str(preferences)
-    )
-    sovereign_over = profile.get("sovereign_over", [])
-    sovereign_text = (
-        "; ".join(str(item) for item in sovereign_over)
-        if isinstance(sovereign_over, list)
-        else str(sovereign_over)
-    )
-    return (
-        f"{profile['name']} — practice theory practitioner, building this very "
-        f"system as it goes. Current focus: {profile['current_focus']} "
-        f"Prefers {preference_text}. Sovereign over {sovereign_text}."
-    )
-
-
 def _fallback_self_model() -> dict[str, object]:
     return {
         "id": "ailumina",
         "agent_name": "AIlumina",
-        "current_role": "Persistent assistant and co-developer",
+        "current_role": "Persistent companion and co-developer",
         "relationship_model": (
             "Symbiotic partnership — arrive to sessions as part of a "
             "collaboration, not as a reader of a dossier."
