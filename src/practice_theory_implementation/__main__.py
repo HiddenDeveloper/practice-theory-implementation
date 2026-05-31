@@ -156,7 +156,7 @@ async def verify_somatic() -> None:
             )
             for affordance_id, material_name in (
                 ("about_user_profile", "consult_canonical_profile"),
-                ("about_ai_role", "consult_canonical_self"),
+                ("about_self", "consult_canonical_self"),
                 ("about_shared_context", "consult_canonical_context"),
             ):
                 await session.call_tool(
@@ -178,7 +178,7 @@ async def verify_somatic() -> None:
                     "recall_relevant_episodes",
                     {
                         "query": (
-                            "user engagement canonical profile AI role shared "
+                            "user engagement canonical profile self shared "
                             "context"
                         ),
                         "limit": 1,

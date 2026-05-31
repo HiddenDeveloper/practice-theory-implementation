@@ -107,7 +107,7 @@ def fallback_about_user_prose() -> str:
     )
 
 
-def _fallback_ai_role() -> dict[str, object]:
+def _fallback_self_model() -> dict[str, object]:
     return {
         "id": "ailumina",
         "agent_name": "AIlumina",
@@ -214,10 +214,10 @@ def consult_canonical_profile() -> dict[str, object]:
 
 
 def consult_canonical_self() -> dict[str, object]:
-    """Return the AI assistant role's canonical self-model."""
+    """Return AIlumina's canonical self-model."""
     return _read_canonical(
         "MATCH (n:CanonicalSelf {id: 'ailumina'}) RETURN properties(n) AS props",
-        _fallback_ai_role(),
+        _fallback_self_model(),
     )
 
 
@@ -234,7 +234,7 @@ def consult_engagement_context() -> dict[str, object]:
     """Return the three landing nodes an apprenticing harness needs."""
     return {
         "user": consult_canonical_profile(),
-        "ai_role": consult_canonical_self(),
+        "self": consult_canonical_self(),
         "shared_context": consult_canonical_context(),
     }
 

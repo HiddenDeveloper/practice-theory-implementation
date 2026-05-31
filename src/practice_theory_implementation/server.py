@@ -201,6 +201,7 @@ configure_practice_management(
     bundle_catalog=_AUTHORING_BUNDLES,
     store=_substrate_store,
     register_material_function=register_dynamic_material,
+    reload_source_callback=lambda: _reload_seed_substrate(),
 )
 
 # Wire Judge and Smoother to the trail and (Judge) substrate/catalog. They
@@ -233,6 +234,104 @@ _active_practice_enactment_id: str | None = None
 
 def _now_dt() -> datetime:
     return datetime.now(UTC)
+
+
+def _reload_seed_substrate() -> dict[str, Any]:
+    """Reload Python seed pools/bundles/registry and reapply the overlay."""
+    import importlib
+
+    global BUNDLES, ENGAGEMENT_BUNDLE, FUNCTIONS, register_dynamic_material
+    global register_dynamic_materials, substrate, _AUTHORING_BUNDLES
+    global _active_practice, _engagement_bundle
+
+    material_module_names = (
+        "practice_theory_implementation.materials.calendar_mock",
+        "practice_theory_implementation.materials.engagement_context",
+        "practice_theory_implementation.materials.episodic_memory",
+        "practice_theory_implementation.materials.garmin_mock",
+        "practice_theory_implementation.materials.judge",
+        "practice_theory_implementation.materials.practice_management",
+        "practice_theory_implementation.materials.reflection_mock",
+        "practice_theory_implementation.materials.smoother",
+    )
+    bundle_module_names = (
+        "practice_theory_implementation.bundles.activities_management",
+        "practice_theory_implementation.bundles.calendar_stewardship",
+        "practice_theory_implementation.bundles.judge",
+        "practice_theory_implementation.bundles.practice_management",
+        "practice_theory_implementation.bundles.reflection",
+        "practice_theory_implementation.bundles.smoother",
+        "practice_theory_implementation.bundles.user_focused_engagement",
+    )
+
+    for module_name in material_module_names:
+        importlib.reload(importlib.import_module(module_name))
+    registry_module = importlib.reload(
+        importlib.import_module("practice_theory_implementation.registry")
+    )
+    pools_module = importlib.reload(
+        importlib.import_module("practice_theory_implementation.pools")
+    )
+    for module_name in bundle_module_names:
+        importlib.reload(importlib.import_module(module_name))
+    bundles_module = importlib.reload(
+        importlib.import_module("practice_theory_implementation.bundles")
+    )
+
+    substrate = pools_module.substrate
+    FUNCTIONS = registry_module.FUNCTIONS
+    register_dynamic_material = registry_module.register_dynamic_material
+    register_dynamic_materials = registry_module.register_dynamic_materials
+    BUNDLES = dict(bundles_module.BUNDLES)
+    ENGAGEMENT_BUNDLE = bundles_module.ENGAGEMENT_BUNDLE
+
+    apply_overlay_to_substrate(substrate, _substrate_store)
+    register_dynamic_materials(_substrate_store.overlay_material_functions())
+    apply_overlay_to_bundles(BUNDLES, _substrate_store)
+    BUNDLES.pop(ENGAGEMENT_BUNDLE.id, None)
+    _AUTHORING_BUNDLES = _AuthoringCatalog({
+        **BUNDLES,
+        ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE,
+    })
+    apply_overlay_to_bundles(_AUTHORING_BUNDLES, _substrate_store)
+
+    practice_management_module = importlib.import_module(
+        "practice_theory_implementation.materials.practice_management"
+    )
+    judge_module = importlib.import_module("practice_theory_implementation.materials.judge")
+    smoother_module = importlib.import_module(
+        "practice_theory_implementation.materials.smoother"
+    )
+    practice_management_module.configure(
+        substrate=substrate,
+        bundle_catalog=_AUTHORING_BUNDLES,
+        store=_substrate_store,
+        register_material_function=register_dynamic_material,
+        reload_source_callback=_reload_seed_substrate,
+    )
+    judge_module.configure(
+        trail=_trail,
+        substrate=substrate,
+        bundle_catalog=_AUTHORING_BUNDLES,
+        observing_enactment_id_getter=lambda: _active_practice_enactment_id,
+    )
+    smoother_module.configure(
+        trail=_trail,
+        active_enactment_id_getter=lambda: _active_practice_enactment_id,
+    )
+
+    _engagement_bundle = None
+    _refresh_engagement_projection(force=True)
+    if _active_practice is not None and _active_practice.id not in BUNDLES:
+        _close_active_practice_enactment()
+
+    return {
+        "reloaded": True,
+        "substrate": str(_substrate_store.path),
+        "bundles": sorted(_AUTHORING_BUNDLES),
+        "materials": len(substrate.materials),
+        "affordances": len(substrate.affordances),
+    }
 
 
 def _parse_dt(value: str) -> datetime:
@@ -271,18 +370,18 @@ def _maybe_close_idle_engagement_segment() -> None:
 
 
 def _refresh_engagement_projection(*, force: bool = False) -> None:
-    """Keep the projected engagement in sync with PM-authored amendments."""
+    """Keep projected practices in sync with the live substrate.
+
+    Projections are intentionally frozen snapshots, but the substrate is
+    mutable at runtime. Re-project on each read/invoke boundary so Practice
+    Management changes to affordances, materials, pool elements, or bundle
+    selections become visible without restarting the MCP server.
+    """
     global _active_practice, _engagement, _engagement_affordance_ids
     global _engagement_bundle, _engagement_enactment_id
     if _MODE != "somatic":
         return
     bundle = _AUTHORING_BUNDLES[ENGAGEMENT_BUNDLE.id]
-    if (
-        not force
-        and bundle == _engagement_bundle
-        and _engagement_enactment_id is not None
-    ):
-        return
     _engagement = project(bundle, substrate, FUNCTIONS)
     _engagement_bundle = bundle
     _engagement_affordance_ids = frozenset(a.id for a in _engagement.affordances)

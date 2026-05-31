@@ -33,6 +33,7 @@ PRACTICE_MANAGEMENT = Bundle(
         "amend_material",
         "author_bundle",
         "amend_bundle",
+        "reload_seed_substrate",
     ),
     mode="somatic",
 )

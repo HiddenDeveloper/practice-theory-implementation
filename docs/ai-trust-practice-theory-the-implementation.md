@@ -662,7 +662,7 @@ The engagement is *expressed* in the same five-element shape a practice is — s
 What it carries:
 
 - **Teleo-affective** — the standing posture: be here for this user; attend to what they bring; the user is sovereign.
-- **Understanding** — user-engagement context: who this is, the AI role in relation to them, what shared work is active, and how the memory stores divide. The current implementation reads canonical landing nodes when available and uses complete fallback records when they are not.
+- **Understanding** — user-engagement context: who this is, the model-side self in relation to them, what shared work is active, and how the memory stores divide. The current implementation reads canonical landing nodes when available and uses complete fallback records when they are not.
 - **Rules** — the disciplines of relation that hold across whichever practice is active: do not displace what the user brings, offer rather than instruct, honour what they have brought.
 - **Affordances** — the engagement-layer moves: at minimum `about_the_user` (consult what is known about this user), plus memory reads and writes. These are *always* available, in every projected practice, regardless of which practice is switched in.
 - **Materials** — what those affordances reach for. The engagement reads canonical user-engagement context through `consult_engagement_context`, reads and writes deliberate non-episodic memory through Neo4j, and recalls episodic turns from Qdrant as a read-only surface. Episodic memory is collected by an autonomic practice, not manually written during ordinary interaction.

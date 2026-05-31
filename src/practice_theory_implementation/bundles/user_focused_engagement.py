@@ -39,7 +39,7 @@ USER_FOCUSED_ENGAGEMENT = Bundle(
     affordance_ids=(
         "about_the_user",
         "about_user_profile",
-        "about_ai_role",
+        "about_self",
         "about_shared_context",
         "read_non_episodic_memory",
         "write_non_episodic_memory",

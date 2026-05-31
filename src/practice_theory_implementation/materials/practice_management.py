@@ -36,6 +36,7 @@ _substrate: Substrate | None = None
 _bundle_catalog: dict[str, Bundle] | None = None
 _store: SubstrateStore | None = None
 _register_material_function: Callable[[str, Mapping[str, Any]], None] | None = None
+_reload_source_callback: Callable[[], Mapping[str, Any]] | None = None
 
 
 def configure(
@@ -44,13 +45,16 @@ def configure(
     bundle_catalog: dict[str, Bundle],
     store: SubstrateStore,
     register_material_function: Callable[[str, Mapping[str, Any]], None],
+    reload_source_callback: Callable[[], Mapping[str, Any]] | None = None,
 ) -> None:
     """Wire the meta-materials to the live substrate, catalog, and overlay store."""
+    global _reload_source_callback
     global _substrate, _bundle_catalog, _store, _register_material_function
     _substrate = substrate
     _bundle_catalog = bundle_catalog
     _store = store
     _register_material_function = register_material_function
+    _reload_source_callback = reload_source_callback
 
 
 def _need_substrate() -> tuple[Substrate, dict[str, Bundle], SubstrateStore]:
@@ -67,6 +71,14 @@ def _need_function_registrar() -> Callable[[str, Mapping[str, Any]], None]:
             "practice_management materials not configured; call configure() first"
         )
     return _register_material_function
+
+
+def _need_source_reloader() -> Callable[[], Mapping[str, Any]]:
+    if _reload_source_callback is None:
+        raise RuntimeError(
+            "practice_management source reloader not configured; call configure() first"
+        )
+    return _reload_source_callback
 
 
 # --- read ------------------------------------------------------------------
@@ -104,6 +116,11 @@ def pm_read_pool(pool: str) -> list[dict[str, Any]]:
         f"unknown pool {pool!r}; must be one of "
         f"{list(POOL_ELEMENT_POOLS) + ['affordances', 'materials']}"
     )
+
+
+def pm_reload_seed_substrate() -> Mapping[str, Any]:
+    """Reload seed pools, bundles, and registry from Python source."""
+    return _need_source_reloader()()
 
 
 # --- pool element create / amend ------------------------------------------

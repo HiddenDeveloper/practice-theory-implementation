@@ -130,7 +130,7 @@ UNDERSTANDING: dict[str, PoolElement] = {
                 "What is known about this user engagement lives in three "
                 "canonical landing nodes, consultable via the engagement's "
                 "affordances: CanonicalProfile for the user, CanonicalSelf "
-                "for the AI role, and CanonicalContext for the work shared "
+                "for AIlumina's self-model, and CanonicalContext for the work shared "
                 "between them. Before assuming what the user wants, read the "
                 "relational context already in force."
             ),
@@ -141,9 +141,9 @@ UNDERSTANDING: dict[str, PoolElement] = {
             content=(
                 "The user engagement layer orients a harness LLM to a "
                 "relationship, not a dossier. CanonicalProfile names Monyet "
-                "Batu, the user. CanonicalSelf names AIlumina, the AI "
-                "assistant role. CanonicalContext names what they are working "
-                "on together now. A somatic practice inherits all three."
+                "Batu, the user. CanonicalSelf names AIlumina's self-model. "
+                "CanonicalContext names what they are working on together now. "
+                "A somatic practice inherits all three."
             ),
         ),
         PoolElement(
@@ -485,8 +485,8 @@ AFFORDANCES: dict[str, Affordance] = {
             name="About the user",
             description=(
                 "Consult the full user-engagement context the apprenticeship carries "
-                "across practices and sessions: user profile, AI role, and "
-                "shared operating context."
+                "across practices and sessions: user profile, self-model, "
+                "and shared operating context."
             ),
             materials=("consult_engagement_context",),
         ),
@@ -499,11 +499,11 @@ AFFORDANCES: dict[str, Affordance] = {
             materials=("consult_canonical_profile",),
         ),
         Affordance(
-            id="about_ai_role",
-            name="About the AI role",
+            id="about_self",
+            name="About self",
             description=(
-                "Consult CanonicalSelf — the assistant role the harness is "
-                "apprenticing into."
+                "Consult CanonicalSelf — the model-side self that the harness "
+                "is apprenticing into."
             ),
             materials=("consult_canonical_self",),
         ),
@@ -512,7 +512,7 @@ AFFORDANCES: dict[str, Affordance] = {
             name="About the shared context",
             description=(
                 "Consult CanonicalContext — the current objectives, projects, "
-                "and open threads shared by the user and assistant role."
+                "and open threads shared by the user and AIlumina."
             ),
             materials=("consult_canonical_context",),
         ),
@@ -735,6 +735,15 @@ AFFORDANCES: dict[str, Affordance] = {
             description="Change which pool ids an existing bundle selects.",
             materials=("pm_amend_bundle",),
         ),
+        Affordance(
+            id="reload_seed_substrate",
+            name="Reload seed substrate",
+            description=(
+                "Reload the Python source-defined pools, bundles, and registry, "
+                "then reapply the persisted overlay without restarting the MCP server."
+            ),
+            materials=("pm_reload_seed_substrate",),
+        ),
         # Judge's primitive affordances.
         Affordance(
             id="list_recent_enactments",
@@ -818,7 +827,7 @@ MATERIALS: dict[str, Material] = {
         Material(
             name="consult_canonical_self",
             description=(
-                "Return CanonicalSelf for the AI assistant role."
+                "Return CanonicalSelf for AIlumina's model-side self."
             ),
             input_schema={"type": "object", "properties": {}},
         ),
@@ -1255,6 +1264,14 @@ MATERIALS: dict[str, Material] = {
                 },
                 "required": ["id"],
             },
+        ),
+        Material(
+            name="pm_reload_seed_substrate",
+            description=(
+                "Reload source-defined pools, bundles, and registry, reapply "
+                "the persisted overlay, and force projection refresh."
+            ),
+            input_schema={"type": "object", "properties": {}},
         ),
         # Judge primitives.
         Material(

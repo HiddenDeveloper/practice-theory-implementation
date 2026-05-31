@@ -104,6 +104,7 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "pm_amend_material": practice_management.pm_amend_material,
     "pm_create_bundle": practice_management.pm_create_bundle,
     "pm_amend_bundle": practice_management.pm_amend_bundle,
+    "pm_reload_seed_substrate": practice_management.pm_reload_seed_substrate,
     # Judge — primitives
     "judge_list_recent_enactments": judge.judge_list_recent_enactments,
     "judge_read_enactment_steps": judge.judge_read_enactment_steps,
