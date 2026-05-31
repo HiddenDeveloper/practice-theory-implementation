@@ -30,12 +30,11 @@ class PoolElement:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Material:
-    """A material's outward face. Captured surface only — no executable.
+    """A material's outward face in the substrate.
 
     `name` is the unique handle: affordances reference materials by name, and
-    the function registry binds the callable by name. The actual function
-    lives in the registry; the material describes the function the registry
-    will bind.
+    the function registry binds the callable by name. The callable may be a
+    hand-written function or a dynamic implementation registered at runtime.
     """
 
     name: str

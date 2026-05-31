@@ -146,12 +146,12 @@ async def verify_somatic() -> None:
                 "invoke_affordance",
                 {
                     "affordance_id": "about_the_user",
-                    "material_name": "consult_about_user",
+                    "material_name": "consult_engagement_context",
                     "arguments": {},
                 },
             )
             _print_value(
-                "invoke_affordance(about_the_user, consult_about_user, ...)",
+                "invoke_affordance(about_the_user, consult_engagement_context, ...)",
                 _content_to_value(r.content),
             )
             for affordance_id, material_name in (
@@ -168,6 +168,11 @@ async def verify_somatic() -> None:
                     },
                 )
             for affordance_id, material_name, arguments in (
+                (
+                    "read_non_episodic_memory",
+                    "read_non_episodic_memory",
+                    {"limit": 1},
+                ),
                 (
                     "recall_relevant_episodes",
                     "recall_relevant_episodes",
@@ -434,6 +439,36 @@ async def verify_somatic() -> None:
             r = await session.call_tool(
                 "invoke_affordance",
                 {
+                    "affordance_id": "author_material",
+                    "material_name": "pm_create_material",
+                    "arguments": {
+                        "name": "quick_glance_note",
+                        "description": (
+                            "Return one dynamically-authored quick-glance datum."
+                        ),
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"date": {"type": "string"}},
+                            "required": ["date"],
+                        },
+                        "implementation": {
+                            "kind": "expression",
+                            "expression": (
+                                '{"date": args["date"], '
+                                '"note": "dynamic material function invoked"}'
+                            ),
+                        },
+                    },
+                },
+            )
+            _print_value(
+                "pm_create_material(quick_glance_note)",
+                _content_to_value(r.content),
+            )
+
+            r = await session.call_tool(
+                "invoke_affordance",
+                {
                     "affordance_id": "author_affordance",
                     "material_name": "pm_create_affordance",
                     "arguments": {
@@ -442,7 +477,7 @@ async def verify_somatic() -> None:
                         "description": (
                             "Show today's wellness summary, plain — no analysis."
                         ),
-                        "materials": ["garmin_get_daily_summary"],
+                        "materials": ["quick_glance_note"],
                     },
                 },
             )
@@ -476,15 +511,15 @@ async def verify_somatic() -> None:
             _print_value("switch_practice('quick_glance')", _content_to_value(r.content))
 
             r = await session.call_tool(
-                "invoke_affordance",
-                {
-                    "affordance_id": "quick_glance_today",
-                    "material_name": "garmin_get_daily_summary",
-                    "arguments": {"date": "2026-05-25"},
-                },
-            )
+                    "invoke_affordance",
+                    {
+                        "affordance_id": "quick_glance_today",
+                        "material_name": "quick_glance_note",
+                        "arguments": {"date": "2026-05-25"},
+                    },
+                )
             _print_value(
-                "invoke_affordance(quick_glance_today, garmin_get_daily_summary, ...)",
+                "invoke_affordance(quick_glance_today, quick_glance_note, ...)",
                 _content_to_value(r.content),
             )
 

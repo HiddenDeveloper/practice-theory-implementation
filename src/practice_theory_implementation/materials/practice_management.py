@@ -15,7 +15,7 @@ anything for a step-7 implementation.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from practice_theory_implementation.substrate_store import (
@@ -35,6 +35,7 @@ from practice_theory_implementation.types import (
 _substrate: Substrate | None = None
 _bundle_catalog: dict[str, Bundle] | None = None
 _store: SubstrateStore | None = None
+_register_material_function: Callable[[str, Mapping[str, Any]], None] | None = None
 
 
 def configure(
@@ -42,12 +43,14 @@ def configure(
     substrate: Substrate,
     bundle_catalog: dict[str, Bundle],
     store: SubstrateStore,
+    register_material_function: Callable[[str, Mapping[str, Any]], None],
 ) -> None:
     """Wire the meta-materials to the live substrate, catalog, and overlay store."""
-    global _substrate, _bundle_catalog, _store
+    global _substrate, _bundle_catalog, _store, _register_material_function
     _substrate = substrate
     _bundle_catalog = bundle_catalog
     _store = store
+    _register_material_function = register_material_function
 
 
 def _need_substrate() -> tuple[Substrate, dict[str, Bundle], SubstrateStore]:
@@ -56,6 +59,14 @@ def _need_substrate() -> tuple[Substrate, dict[str, Bundle], SubstrateStore]:
             "practice_management materials not configured; call configure() first"
         )
     return _substrate, _bundle_catalog, _store
+
+
+def _need_function_registrar() -> Callable[[str, Mapping[str, Any]], None]:
+    if _register_material_function is None:
+        raise RuntimeError(
+            "practice_management materials not configured; call configure() first"
+        )
+    return _register_material_function
 
 
 # --- read ------------------------------------------------------------------
@@ -187,30 +198,41 @@ def pm_create_material(
     name: str,
     description: str,
     input_schema: Mapping[str, Any],
+    implementation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     s, _, store = _need_substrate()
     if name in s.materials:
         return {"error": f"material {name!r} already exists"}
+    if implementation is not None:
+        try:
+            _need_function_registrar()(name, implementation)
+        except (TypeError, ValueError) as exc:
+            return {"error": f"invalid material implementation: {exc}"}
     mat = Material(name=name, description=description, input_schema=dict(input_schema))
     store.upsert_material(mat)
+    if implementation is not None:
+        store.upsert_material_function(name, dict(implementation))
     s.materials[name] = mat
-    return {
-        "created": {"material": name},
-        "note": (
-            "The material's captured surface is registered. Its function must "
-            "exist in registry.FUNCTIONS for any bundle using it to be projectable."
-        ),
-    }
+    created: dict[str, Any] = {"material": name}
+    if implementation is not None:
+        created["function"] = implementation.get("kind")
+    return {"created": created}
 
 
 def pm_amend_material(
     name: str,
     description: str | None = None,
     input_schema: Mapping[str, Any] | None = None,
+    implementation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     s, _, store = _need_substrate()
     if name not in s.materials:
         return {"error": f"material {name!r} not found"}
+    if implementation is not None:
+        try:
+            _need_function_registrar()(name, implementation)
+        except (TypeError, ValueError) as exc:
+            return {"error": f"invalid material implementation: {exc}"}
     current = s.materials[name]
     amended = Material(
         name=name,
@@ -218,6 +240,8 @@ def pm_amend_material(
         input_schema=dict(input_schema) if input_schema is not None else current.input_schema,
     )
     store.upsert_material(amended)
+    if implementation is not None:
+        store.upsert_material_function(name, dict(implementation))
     s.materials[name] = amended
     return {"amended": {"material": name}}
 

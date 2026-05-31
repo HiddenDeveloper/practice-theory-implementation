@@ -18,6 +18,9 @@ bundles, validation, and (in step 3) projection pass around.
 
 from __future__ import annotations
 
+from practice_theory_implementation.materials.engagement_context import (
+    fallback_about_user_prose,
+)
 from practice_theory_implementation.types import (
     Affordance,
     Material,
@@ -124,7 +127,7 @@ UNDERSTANDING: dict[str, PoolElement] = {
             id="und_engagement_substrate",
             name="The relational substrate",
             content=(
-                "What is known about this companionship lives in three "
+                "What is known about this user engagement lives in three "
                 "canonical landing nodes, consultable via the engagement's "
                 "affordances: CanonicalProfile for the user, CanonicalSelf "
                 "for the AI role, and CanonicalContext for the work shared "
@@ -133,28 +136,32 @@ UNDERSTANDING: dict[str, PoolElement] = {
             ),
         ),
         PoolElement(
-            id="und_companion_landing_nodes",
-            name="The companion landing nodes",
+            id="und_engagement_landing_nodes",
+            name="The engagement landing nodes",
             content=(
                 "The user engagement layer orients a harness LLM to a "
                 "relationship, not a dossier. CanonicalProfile names Monyet "
                 "Batu, the user. CanonicalSelf names AIlumina, the AI "
-                "companion role. CanonicalContext names what they are working "
+                "assistant role. CanonicalContext names what they are working "
                 "on together now. A somatic practice inherits all three."
             ),
         ),
-        # About-the-user content. In a real deployment this would be backed by
-        # a richer store; here it is a single content element to demonstrate.
+        PoolElement(
+            id="und_memory_stores",
+            name="Non-episodic and episodic memory stores",
+            content=(
+                "Non-episodic memory lives in Neo4j as durable canonical or "
+                "semantic context that can be deliberately read and written. "
+                "Episodic conversation turns live in Qdrant and are read-only "
+                "from this engagement surface; they are collected by an "
+                "autonomic practice, not written manually during ordinary "
+                "interaction."
+            ),
+        ),
         PoolElement(
             id="und_about_the_user",
             name="About this user",
-            content=(
-                "Monyet Batu — practice theory practitioner, building this very "
-                "system as it goes. Currently focused on the third essay in the "
-                "series and the implementation that accompanies it. Prefers "
-                "plain, direct prose over ornate phrasing. Sovereign over their "
-                "own work and time."
-            ),
+            content=fallback_about_user_prose(),
         ),
         PoolElement(
             id="und_activities_management",
@@ -208,8 +215,8 @@ UNDERSTANDING: dict[str, PoolElement] = {
                 "Pool entries have unique ids within their pool. Affordances "
                 "reference materials by name. Bundles select pool ids. "
                 "Amendments are last-write-wins; nothing is soft-deleted. The "
-                "captured surface of a material can be authored; its executable "
-                "binding lives in the function registry, independently."
+                "captured surface of a material can be authored, and a dynamic "
+                "implementation can be registered into the function registry."
             ),
         ),
         # Judge's understanding.
@@ -309,6 +316,15 @@ RULES: dict[str, PoolElement] = {
             content=(
                 "Honour what the user has brought. The conversation that "
                 "preceded this moment is part of the work; do not lose it."
+            ),
+        ),
+        PoolElement(
+            id="rule_episodic_memory_read_only",
+            name="Do not write episodic memory directly",
+            content=(
+                "Do not write conversation-turn episodes into Qdrant from the "
+                "engagement surface. Use Neo4j for deliberate non-episodic "
+                "memory writes; episodic memory is collected autonomically."
             ),
         ),
         PoolElement(
@@ -465,11 +481,11 @@ AFFORDANCES: dict[str, Affordance] = {
             id="about_the_user",
             name="About the user",
             description=(
-                "Consult the full companion context the apprenticeship carries "
+                "Consult the full user-engagement context the apprenticeship carries "
                 "across practices and sessions: user profile, AI role, and "
                 "shared operating context."
             ),
-            materials=("consult_about_user",),
+            materials=("consult_engagement_context",),
         ),
         Affordance(
             id="about_user_profile",
@@ -483,7 +499,7 @@ AFFORDANCES: dict[str, Affordance] = {
             id="about_ai_role",
             name="About the AI role",
             description=(
-                "Consult CanonicalSelf — the companion role the harness is "
+                "Consult CanonicalSelf — the assistant role the harness is "
                 "apprenticing into."
             ),
             materials=("consult_canonical_self",),
@@ -493,9 +509,27 @@ AFFORDANCES: dict[str, Affordance] = {
             name="About the shared context",
             description=(
                 "Consult CanonicalContext — the current objectives, projects, "
-                "and open threads shared by the user and companion."
+                "and open threads shared by the user and assistant role."
             ),
             materials=("consult_canonical_context",),
+        ),
+        Affordance(
+            id="read_non_episodic_memory",
+            name="Read non-episodic memory",
+            description=(
+                "Read durable non-episodic memory from Neo4j. This is distinct "
+                "from Qdrant episodic recall."
+            ),
+            materials=("read_non_episodic_memory",),
+        ),
+        Affordance(
+            id="write_non_episodic_memory",
+            name="Write non-episodic memory",
+            description=(
+                "Deliberately write durable non-episodic memory to Neo4j. "
+                "This does not write episodic conversation turns to Qdrant."
+            ),
+            materials=("write_non_episodic_memory",),
         ),
         Affordance(
             id="recall_relevant_episodes",
@@ -657,17 +691,20 @@ AFFORDANCES: dict[str, Affordance] = {
         ),
         Affordance(
             id="author_material",
-            name="Author a material's captured surface",
+            name="Author a material",
             description=(
-                "Add a new material to the materials pool. Its function must "
-                "already be in the registry for any bundle using it to project."
+                "Add a new material to the materials pool, optionally with a "
+                "dynamic implementation."
             ),
             materials=("pm_create_material",),
         ),
         Affordance(
             id="amend_material",
-            name="Amend a material's captured surface",
-            description="Refine an existing material's description or input schema.",
+            name="Amend a material",
+            description=(
+                "Refine an existing material's description, input schema, or "
+                "dynamic implementation."
+            ),
             materials=("pm_amend_material",),
         ),
         Affordance(
@@ -756,15 +793,7 @@ AFFORDANCES: dict[str, Affordance] = {
 MATERIALS: dict[str, Material] = {
     el.name: el
     for el in (
-        # Engagement-layer material: reads the standing about-the-user record.
-        Material(
-            name="consult_about_user",
-            description=(
-                "Return the companion context held by the engagement: "
-                "CanonicalProfile, CanonicalSelf, and CanonicalContext."
-            ),
-            input_schema={"type": "object", "properties": {}},
-        ),
+        # Engagement-layer materials: read canonical user-engagement context.
         Material(
             name="consult_canonical_profile",
             description=(
@@ -775,7 +804,7 @@ MATERIALS: dict[str, Material] = {
         Material(
             name="consult_canonical_self",
             description=(
-                "Return CanonicalSelf for the AI companion role."
+                "Return CanonicalSelf for the AI assistant role."
             ),
             input_schema={"type": "object", "properties": {}},
         ),
@@ -787,11 +816,48 @@ MATERIALS: dict[str, Material] = {
             input_schema={"type": "object", "properties": {}},
         ),
         Material(
-            name="consult_companion_context",
+            name="consult_engagement_context",
             description=(
-                "Return the three canonical companion landing nodes together."
+                "Return the three canonical user-engagement landing nodes together."
             ),
             input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="read_non_episodic_memory",
+            description=(
+                "Read durable non-episodic memory from Neo4j by id or simple "
+                "filters. Episodic Qdrant memory remains read-only through the "
+                "separate recall materials."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "source": {"type": "string"},
+                    "tag": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+            },
+        ),
+        Material(
+            name="write_non_episodic_memory",
+            description=(
+                "Write durable non-episodic memory to Neo4j. Episodic Qdrant "
+                "memory remains read-only from this material."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string"},
+                    "memory_id": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "source": {"type": "string"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["content"],
+            },
         ),
         Material(
             name="recall_relevant_episodes",
@@ -807,6 +873,10 @@ MATERIALS: dict[str, Material] = {
                     "role": {"type": "string"},
                     "pillar_root": {"type": "string"},
                     "primary_category": {"type": "string"},
+                    "date_from": {"type": "string"},
+                    "date_to": {"type": "string"},
+                    "score_threshold": {"type": "number"},
+                    "prefer_recent": {"type": "boolean"},
                 },
                 "required": ["query"],
             },
@@ -1045,7 +1115,7 @@ MATERIALS: dict[str, Material] = {
             name="pm_create_material",
             description=(
                 "Add a material's captured surface (name, description, input "
-                "schema). Its function must already be registered."
+                "schema) and, optionally, a persisted dynamic implementation."
             ),
             input_schema={
                 "type": "object",
@@ -1053,19 +1123,44 @@ MATERIALS: dict[str, Material] = {
                     "name": {"type": "string"},
                     "description": {"type": "string"},
                     "input_schema": {"type": "object"},
+                    "implementation": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": ["constant", "echo", "expression"],
+                            },
+                            "result": {},
+                            "expression": {"type": "string"},
+                        },
+                    },
                 },
                 "required": ["name", "description", "input_schema"],
             },
         ),
         Material(
             name="pm_amend_material",
-            description="Amend an existing material's description or input schema.",
+            description=(
+                "Amend an existing material's description, input schema, or "
+                "dynamic implementation."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
                     "description": {"type": "string"},
                     "input_schema": {"type": "object"},
+                    "implementation": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": ["constant", "echo", "expression"],
+                            },
+                            "result": {},
+                            "expression": {"type": "string"},
+                        },
+                    },
                 },
                 "required": ["name"],
             },

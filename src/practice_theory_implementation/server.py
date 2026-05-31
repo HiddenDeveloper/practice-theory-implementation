@@ -68,7 +68,11 @@ from practice_theory_implementation.projection import (
     compose_composition,
     project,
 )
-from practice_theory_implementation.registry import FUNCTIONS
+from practice_theory_implementation.registry import (
+    FUNCTIONS,
+    register_dynamic_material,
+    register_dynamic_materials,
+)
 from practice_theory_implementation.substrate_store import (
     SubstrateStore,
     apply_overlay_to_bundles,
@@ -181,6 +185,7 @@ _trail: EnactmentStore = EnactmentStore()
 # in-memory substrate and bundle catalog before anything else reads them.
 _substrate_store: SubstrateStore = SubstrateStore()
 apply_overlay_to_substrate(substrate, _substrate_store)
+register_dynamic_materials(_substrate_store.overlay_material_functions())
 apply_overlay_to_bundles(BUNDLES, _substrate_store)
 BUNDLES.pop(ENGAGEMENT_BUNDLE.id, None)
 _AUTHORING_BUNDLES: _AuthoringCatalog = _AuthoringCatalog({
@@ -195,6 +200,7 @@ configure_practice_management(
     substrate=substrate,
     bundle_catalog=_AUTHORING_BUNDLES,
     store=_substrate_store,
+    register_material_function=register_dynamic_material,
 )
 
 # Wire Judge and Smoother to the trail and (Judge) substrate/catalog. They
@@ -485,7 +491,11 @@ def invoke_affordance(
     Records a step on the active enactment's trail with the arguments, the
     result (summarised), and the call's timing. Errors during invocation come
     back as `{"error": "..."}` rather than as transport-level exceptions, so
-    the harness sees a clean tool result. Failed calls are still recorded.
+    the harness sees a clean tool result. This holds for any exception a
+    material can raise — the projection's own KeyError/ValueError validation,
+    a TypeError from a mismatched argument payload, or a domain error from the
+    material body — not just the validation failures. Failed calls are still
+    recorded, so the trail (and the Judge reading it) sees the failure too.
     """
     args = arguments or {}
     _maybe_close_idle_engagement_segment()
@@ -503,8 +513,11 @@ def invoke_affordance(
                 material_name=material_name,
                 arguments=args,
             )
-        except (KeyError, ValueError) as exc:
-            result = {"error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 — clean tool result is the contract
+            # The message carries the exception type because an unexpected
+            # error (e.g. a bare TypeError) often has a terse or empty str(),
+            # and the type is what makes the recorded step diagnosable.
+            result = {"error": f"{type(exc).__name__}: {exc}"}
     target_enactment = (
         _engagement_enactment_id if is_engagement_call else _active_practice_enactment_id
     )

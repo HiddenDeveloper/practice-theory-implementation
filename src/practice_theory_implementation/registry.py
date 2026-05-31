@@ -4,20 +4,22 @@ Populated by hand at import time. Each binding is visible in one place; no
 decorator and no auto-discovery at this stage. Step 1's separation of capture
 from execution is preserved: the bundle describes, the registry executes.
 
-The registry is a mutable dict so runtime additions (dynamic materials) are
-supported. A runtime-authored material can register its captured surface into
-the materials pool (`pools.MATERIALS`) and its callable into FUNCTIONS in a
-single import; a future decorator can collapse those two registrations into one
-declaration when authoring ergonomics warrants it.
+The registry is a mutable dict so runtime additions are supported. A
+runtime-authored material can register its captured surface into the materials
+pool and register a dynamic callable immediately; persisted dynamic callables
+are rebuilt into FUNCTIONS when the server starts.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import ast
+from collections.abc import Callable, Iterable, Mapping
+from types import CodeType
+from typing import Any
 
 from practice_theory_implementation.materials import (
-    about_user_mock,
     calendar_mock,
+    engagement_context,
     episodic_memory,
     garmin_mock,
     judge,
@@ -27,13 +29,55 @@ from practice_theory_implementation.materials import (
 )
 from practice_theory_implementation.types import Substrate
 
+_ALLOWED_EXPRESSION_NODES = (
+    ast.Expression,
+    ast.Constant,
+    ast.Name,
+    ast.Load,
+    ast.Dict,
+    ast.List,
+    ast.Tuple,
+    ast.Set,
+    ast.Subscript,
+    ast.Slice,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.BoolOp,
+    ast.Compare,
+    ast.IfExp,
+    ast.JoinedStr,
+    ast.FormattedValue,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.FloorDiv,
+    ast.Mod,
+    ast.USub,
+    ast.UAdd,
+    ast.Not,
+    ast.And,
+    ast.Or,
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Gt,
+    ast.GtE,
+    ast.In,
+    ast.NotIn,
+    ast.Is,
+    ast.IsNot,
+)
+
 FUNCTIONS: dict[str, Callable[..., object]] = {
     # Engagement-layer
-    "consult_about_user": about_user_mock.consult_about_user,
-    "consult_canonical_profile": about_user_mock.consult_canonical_profile,
-    "consult_canonical_self": about_user_mock.consult_canonical_self,
-    "consult_canonical_context": about_user_mock.consult_canonical_context,
-    "consult_companion_context": about_user_mock.consult_companion_context,
+    "consult_canonical_profile": engagement_context.consult_canonical_profile,
+    "consult_canonical_self": engagement_context.consult_canonical_self,
+    "consult_canonical_context": engagement_context.consult_canonical_context,
+    "consult_engagement_context": engagement_context.consult_engagement_context,
+    "read_non_episodic_memory": engagement_context.read_non_episodic_memory,
+    "write_non_episodic_memory": engagement_context.write_non_episodic_memory,
     "recall_relevant_episodes": episodic_memory.recall_relevant_episodes,
     "recall_recent_episodes": episodic_memory.recall_recent_episodes,
     "recall_contextual_episodes": episodic_memory.recall_contextual_episodes,
@@ -74,6 +118,75 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
 def register(name: str, fn: Callable[..., object]) -> None:
     """Bind a callable to a material name. Used for dynamic registration."""
     FUNCTIONS[name] = fn
+
+
+def _compile_dynamic_expression(expression: str) -> CodeType:
+    tree = ast.parse(expression, mode="eval")
+    for node in ast.walk(tree):
+        if not isinstance(node, _ALLOWED_EXPRESSION_NODES):
+            raise ValueError(
+                f"unsupported expression node {type(node).__name__}; "
+                "dynamic material expressions may only combine literals and args"
+            )
+        if isinstance(node, ast.Name) and node.id != "args":
+            raise ValueError(
+                f"unknown name {node.id!r}; dynamic material expressions only expose args"
+            )
+    return compile(tree, "<dynamic-material>", "eval")
+
+
+def build_dynamic_material_function(
+    name: str,
+    implementation: Mapping[str, Any],
+) -> Callable[..., object]:
+    """Build a callable from a persisted dynamic-material implementation."""
+    kind = implementation.get("kind")
+    if kind == "constant":
+        result = implementation.get("result")
+
+        def constant_material(**_arguments: object) -> object:
+            return result
+
+        constant_material.__name__ = name
+        return constant_material
+    if kind == "echo":
+
+        def echo_material(**arguments: object) -> object:
+            return {"arguments": arguments}
+
+        echo_material.__name__ = name
+        return echo_material
+    if kind == "expression":
+        expression = implementation.get("expression")
+        if not isinstance(expression, str) or not expression.strip():
+            raise ValueError("expression implementation requires a non-blank expression")
+        code = _compile_dynamic_expression(expression)
+
+        def expression_material(**arguments: object) -> object:
+            return eval(code, {"__builtins__": {}}, {"args": arguments})
+
+        expression_material.__name__ = name
+        return expression_material
+    raise ValueError(
+        "dynamic material implementation kind must be one of "
+        "'constant', 'echo', or 'expression'"
+    )
+
+
+def register_dynamic_material(
+    name: str,
+    implementation: Mapping[str, Any],
+) -> None:
+    """Build and register one dynamic material function."""
+    register(name, build_dynamic_material_function(name, implementation))
+
+
+def register_dynamic_materials(
+    material_functions: Iterable[tuple[str, Mapping[str, Any]]],
+) -> None:
+    """Register all dynamic material functions loaded from the substrate overlay."""
+    for name, implementation in material_functions:
+        register_dynamic_material(name, implementation)
 
 
 def resolve(name: str) -> Callable[..., object]:

@@ -3,19 +3,24 @@
 Canonical context gives the harness its landing frame; episodic memory gives
 it lived continuity. These materials read a local embedding service plus
 Qdrant collection when available, and fail softly when either service is down.
+They are intentionally read-only: episodic turns are collected by an autonomic
+practice, while deliberate non-episodic memory writes go to Neo4j.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from typing import Any
 
 DEFAULT_EMBED_URL = "http://127.0.0.1:1618/embed"
 DEFAULT_QDRANT_URL = "http://127.0.0.1:6333"
 DEFAULT_COLLECTION = "conversation-turns"
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_]{3,}")
 
 
 def _clamp_limit(limit: int | None, *, default: int = 5, max_value: int = 20) -> int:
@@ -133,12 +138,101 @@ def _episode_from_hit(hit: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in episode.items() if v is not None}
 
 
+def _as_float(value: object, *, default: float = 0.0) -> float:
+    if isinstance(value, int | float):
+        return float(value)
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _tokens(text: object) -> set[str]:
+    return {match.group(0).lower() for match in _TOKEN_RE.finditer(str(text))}
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _recency_bonus(value: object) -> float:
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        return 0.0
+    days_old = max(0.0, (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds() / 86400)
+    if days_old <= 7:
+        return 0.08
+    if days_old <= 30:
+        return 0.05
+    if days_old <= 90:
+        return 0.03
+    return 0.0
+
+
+def _rerank_episode(
+    episode: dict[str, Any],
+    *,
+    query: str,
+    query_tokens: set[str],
+    pillar_root: str | None,
+    primary_category: str | None,
+    prefer_recent: bool,
+) -> dict[str, Any]:
+    vector_score = _as_float(episode.get("score"))
+    text_tokens = _tokens(episode.get("text", ""))
+    title_tokens = _tokens(episode.get("conversation_title", ""))
+    tag_tokens = _tokens(" ".join(str(tag) for tag in episode.get("topic_tags") or []))
+    searchable = text_tokens | title_tokens | tag_tokens
+    overlap = query_tokens & searchable
+    reasons: list[str] = []
+    bonus = 0.0
+    if overlap and query_tokens:
+        overlap_ratio = len(overlap) / len(query_tokens)
+        bonus += min(0.18, 0.04 + overlap_ratio * 0.18)
+        reasons.append("keyword_overlap")
+    query_text = query.strip().lower()
+    episode_text = str(episode.get("text", "")).lower()
+    if len(query_text) >= 12 and query_text in episode_text:
+        bonus += 0.12
+        reasons.append("exact_phrase")
+    if pillar_root and episode.get("pillar_root") == pillar_root:
+        bonus += 0.06
+        reasons.append("pillar_match")
+    if primary_category and episode.get("primary_category") == primary_category:
+        bonus += 0.06
+        reasons.append("category_match")
+    if tag_tokens & query_tokens:
+        bonus += 0.05
+        reasons.append("tag_overlap")
+    if prefer_recent:
+        recent_bonus = _recency_bonus(episode.get("date_time"))
+        if recent_bonus:
+            bonus += recent_bonus
+            reasons.append("recent")
+    reranked = dict(episode)
+    reranked["rerank_score"] = round(vector_score + bonus, 6)
+    if reasons:
+        reranked["rerank_reasons"] = reasons
+    return reranked
+
+
 def recall_relevant_episodes(
     query: str,
     limit: int | None = None,
     role: str | None = None,
     pillar_root: str | None = None,
     primary_category: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    score_threshold: float | None = None,
+    prefer_recent: bool = False,
 ) -> dict[str, object]:
     """Recall conversation turns semantically relevant to the query."""
     if not query.strip():
@@ -148,11 +242,13 @@ def recall_relevant_episodes(
         role=role,
         pillar_root=pillar_root,
         primary_category=primary_category,
+        date_from=date_from,
+        date_to=date_to,
     )
     try:
         body: dict[str, Any] = {
             "vector": _embed_query(query),
-            "limit": limit,
+            "limit": min(limit * 4, 80),
             "with_payload": True,
             "with_vector": False,
         }
@@ -168,9 +264,33 @@ def recall_relevant_episodes(
     ) as exc:
         return _empty_result(f"episodic semantic recall unavailable: {exc}", query=query)
     hits = payload.get("result") or []
+    episodes = [
+        _episode_from_hit(hit)
+        for hit in hits
+        if isinstance(hit, dict)
+        and (score_threshold is None or _as_float(hit.get("score")) >= score_threshold)
+    ]
+    ranked = [
+        _rerank_episode(
+            episode,
+            query=query,
+            query_tokens=_tokens(query),
+            pillar_root=pillar_root,
+            primary_category=primary_category,
+            prefer_recent=prefer_recent,
+        )
+        for episode in episodes
+    ]
+    ranked.sort(key=lambda episode: _as_float(episode.get("rerank_score")), reverse=True)
     return {
         "query": query,
-        "episodes": [_episode_from_hit(hit) for hit in hits if isinstance(hit, dict)],
+        "rerank": {
+            "strategy": "vector_score + keyword/tag/filter/recency bonuses",
+            "candidate_limit": body["limit"],
+            "score_threshold": score_threshold,
+            "prefer_recent": prefer_recent,
+        },
+        "episodes": ranked[:limit],
     }
 
 

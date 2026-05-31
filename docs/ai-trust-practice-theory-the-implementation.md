@@ -252,7 +252,7 @@ The registry is populated by hand at module load time. A `registry.py` module im
 
 The separation of registry from material is what step 1 promised. The bundle describes; the registry executes. A material's captured surface (description, input schema) can be amended without touching the executable it binds to; the executable can be swapped (mock for real) without touching the captured surface. Step 2 makes that separation concrete.
 
-Dynamic creation of materials without restart is still supported. The registry is an ordinary mutable dict; new bindings can be installed at runtime, and a runtime-authored material file can register its captured surface into the materials pool and its callable into the registry in one import. A decorator would collapse those two registrations into a single declaration if and when authoring ergonomics warrant it. For step 2, the hand-built form keeps the binding plain.
+Dynamic creation of materials without restart is supported. The registry is an ordinary mutable dict; new bindings can be installed at runtime, and later Practice Management can persist dynamic material implementations so they are rebuilt into the registry at server startup.
 
 ### Re-expressing Activities Management
 
@@ -662,10 +662,10 @@ The engagement is *expressed* in the same five-element shape a practice is — s
 What it carries:
 
 - **Teleo-affective** — the standing posture: be here for this user; attend to what they bring; the user is sovereign.
-- **Understanding** — about-the-user knowing: who this is, where they are, what they care about right now. At step 6 this is a single inline content; later steps can back it with a richer store.
+- **Understanding** — user-engagement context: who this is, the AI role in relation to them, what shared work is active, and how the memory stores divide. The current implementation reads canonical landing nodes when available and uses complete fallback records when they are not.
 - **Rules** — the disciplines of relation that hold across whichever practice is active: do not displace what the user brings, offer rather than instruct, honour what they have brought.
-- **Affordances** — the engagement-layer moves: at minimum `about_the_user` (consult what is known about this user). These are *always* available, in every projected practice, regardless of which practice is switched in.
-- **Materials** — what those affordances reach for. At step 6 a single mock material backs `about_the_user`.
+- **Affordances** — the engagement-layer moves: at minimum `about_the_user` (consult what is known about this user), plus memory reads and writes. These are *always* available, in every projected practice, regardless of which practice is switched in.
+- **Materials** — what those affordances reach for. The engagement reads canonical user-engagement context through `consult_engagement_context`, reads and writes deliberate non-episodic memory through Neo4j, and recalls episodic turns from Qdrant as a read-only surface. Episodic memory is collected by an autonomic practice, not manually written during ordinary interaction.
 
 ### Additive merge into every projection
 
@@ -719,7 +719,7 @@ What is different now is what the projection contains: the harness LLM is appren
 Step 6 establishes the apprenticeship layer:
 
 - The **engagement bundle** in `src/practice_theory_implementation/bundles/user_focused_engagement.py`, in a structurally separate slot from the practice catalog (`ENGAGEMENT_BUNDLE`, deliberately not in `BUNDLES`).
-- The **`about_the_user` affordance and `consult_about_user` material** behind it (mock in `materials/about_user_mock.py`).
+- The **`about_the_user` affordance and `consult_engagement_context` material** behind it, implemented in `materials/engagement_context.py`, alongside Neo4j-backed `read_non_episodic_memory` / `write_non_episodic_memory`.
 - A **second practice in the catalog**, Reflection — in `bundles/reflection.py` with one affordance backed by `materials/reflection_mock.py` — so switching between practices is real rather than demonstrative.
 - The **additive merge in projection**: `project(bundle, substrate, registry, engagement=eng)` folds the engagement's content into the result. Engagement first, deduped by id; materials and bindings derive from the merged affordance set.
 - The **`parent_enactment_id` column** on `enactments`, and the server logic that opens the engagement enactment at startup and links each practice enactment to it.
@@ -761,7 +761,8 @@ pm_create_element(pool, id, name, content) — add a teleo_affective / understan
 pm_amend_element(pool, id, ...)            — change one
 pm_create_affordance(id, name, description, materials)  — add an affordance
 pm_amend_affordance(id, ...)               — change one
-pm_create_material(name, description, input_schema)     — add a material's captured surface
+pm_create_material(name, description, input_schema,
+                   implementation?)                    — add a material and optional dynamic function
 pm_amend_material(name, ...)               — change one
 pm_create_bundle(id, name, description, ids…)           — add a bundle (a selection over the pools)
 pm_amend_bundle(id, ...)                   — change one
@@ -769,7 +770,7 @@ pm_amend_bundle(id, ...)                   — change one
 
 Each `create` validates that ids do not collide and that referenced ids resolve into their pools. Each `amend` is partial — only the fields the caller provides are changed. The `read_pool` material lets the LLM see what is already there before reaching for `create` or `amend`.
 
-A note on `pm_create_material`. The material's captured surface (name, description, input schema) is what gets stored. The executable behind the name — the callable in the function registry — is not created by `pm_create_material`. A new material's name must already correspond to a function registered in `registry.py`, or projection of any bundle that uses it will fail. Step 7 keeps the captured/executable separation step 1 promised; runtime authoring of new executables (the dynamic-materials decorator path) is a later refinement.
+A note on `pm_create_material`. The material's captured surface (name, description, input schema) is stored in the substrate overlay. When an `implementation` is supplied, Practice Management also registers and persists a dynamic material function. The current dynamic implementation forms are deliberately small — `constant`, `echo`, and restricted `expression`. Expressions can combine literals and supplied `args`, but cannot call functions, traverse attributes, import modules, or use exponentiation. That closes the loop without turning the overlay into an unbounded code-execution surface: a runtime-authored bundle can reach for a runtime-authored material whose callable did not exist when the process started.
 
 ### The Practice Management bundle
 
@@ -784,12 +785,13 @@ The verify script demonstrates Practice Management actually being used. It:
 1. Switches to Practice Management.
 2. Reads the rules pool to see what is already there.
 3. Creates a new teleo-affective element, a new understanding element, and a new rule via `pm_create_element`.
-4. Creates a new affordance (`pm_create_affordance`) that reaches for an existing Garmin material.
-5. Creates a new bundle (`pm_create_bundle`) that selects the new elements and the new affordance.
-6. Switches into the newly-authored bundle.
-7. Invokes the bundle's new affordance.
+4. Creates a new material (`pm_create_material`) with a restricted dynamic expression implementation.
+5. Creates a new affordance (`pm_create_affordance`) that reaches for that new material.
+6. Creates a new bundle (`pm_create_bundle`) that selects the new elements and the new affordance.
+7. Switches into the newly-authored bundle.
+8. Invokes the bundle's new affordance.
 
-Six of the seven steps record into the Practice Management enactment; the seventh records into the new bundle's enactment. The trail shows the layering as before: engagement at the top, Practice Management as one practice enactment under it, the newly-authored practice as another. The substrate after the run carries the new content; the next server start would load it from the overlay.
+Seven of the eight steps record into the Practice Management enactment; the eighth records into the new bundle's enactment. The trail shows the layering as before: engagement at the top, Practice Management as one practice enactment under it, the newly-authored practice as another. The substrate after the run carries the new content and function implementation; the next server start loads both from the overlay.
 
 ### A strange-loop precursor
 

@@ -54,6 +54,11 @@ CREATE TABLE IF NOT EXISTS material_overlay (
     input_schema_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS material_function_overlay (
+    name                TEXT PRIMARY KEY,
+    implementation_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS bundle_overlay (
     id                      TEXT PRIMARY KEY,
     name                    TEXT NOT NULL,
@@ -143,6 +148,16 @@ class SubstrateStore:
                     input_schema=json.loads(r["input_schema_json"]),
                 )
 
+    def overlay_material_functions(self) -> Iterable[tuple[str, dict[str, object]]]:
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT name, implementation_json FROM material_function_overlay"
+            )
+            for r in cur.fetchall():
+                payload = json.loads(r["implementation_json"])
+                if isinstance(payload, dict):
+                    yield str(r["name"]), payload
+
     def overlay_bundles(self) -> Iterable[Bundle]:
         with self._cursor() as cur:
             cur.execute(
@@ -202,6 +217,20 @@ class SubstrateStore:
                     material.description,
                     json.dumps(dict(material.input_schema)),
                 ),
+            )
+
+    def upsert_material_function(
+        self,
+        name: str,
+        implementation: dict[str, object],
+    ) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT INTO material_function_overlay(name, implementation_json) "
+                "VALUES (?, ?) "
+                "ON CONFLICT(name) DO UPDATE SET "
+                "implementation_json=excluded.implementation_json",
+                (name, json.dumps(implementation)),
             )
 
     def upsert_bundle(self, bundle: Bundle) -> None:
