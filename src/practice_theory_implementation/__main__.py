@@ -154,6 +154,50 @@ async def verify_somatic() -> None:
                 "invoke_affordance(about_the_user, consult_about_user, ...)",
                 _content_to_value(r.content),
             )
+            for affordance_id, material_name in (
+                ("about_user_profile", "consult_canonical_profile"),
+                ("about_ai_role", "consult_canonical_self"),
+                ("about_shared_context", "consult_canonical_context"),
+            ):
+                await session.call_tool(
+                    "invoke_affordance",
+                    {
+                        "affordance_id": affordance_id,
+                        "material_name": material_name,
+                        "arguments": {},
+                    },
+                )
+            for affordance_id, material_name, arguments in (
+                (
+                    "recall_relevant_episodes",
+                    "recall_relevant_episodes",
+                    {
+                        "query": (
+                            "user engagement canonical profile AI role shared "
+                            "context"
+                        ),
+                        "limit": 1,
+                    },
+                ),
+                (
+                    "recall_recent_engagement",
+                    "recall_recent_episodes",
+                    {"limit": 1},
+                ),
+                (
+                    "recall_contextual_episodes",
+                    "recall_contextual_episodes",
+                    {"pillar_root": "CanonicalSelf", "limit": 1},
+                ),
+            ):
+                await session.call_tool(
+                    "invoke_affordance",
+                    {
+                        "affordance_id": affordance_id,
+                        "material_name": material_name,
+                        "arguments": arguments,
+                    },
+                )
 
             r = await session.call_tool(
                 "switch_practice", {"practice_id": "activities_management"}

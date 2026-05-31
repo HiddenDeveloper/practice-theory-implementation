@@ -47,6 +47,7 @@ Run directly to serve over stdio (the client launches this as a subprocess):
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -75,6 +76,16 @@ from practice_theory_implementation.substrate_store import (
 )
 from practice_theory_implementation.trail import EnactmentStore, time_call
 
+
+class _AuthoringCatalog(dict[str, Any]):
+    """Catalog PM can amend, while only practice bundles stay switchable."""
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        super().__setitem__(key, value)
+        if key != ENGAGEMENT_BUNDLE.id:
+            BUNDLES[key] = value
+
+
 # Mode is set at startup via PRACTICE_SERVER_MODE; default is somatic.
 _MODE: str = os.environ.get("PRACTICE_SERVER_MODE", "somatic")
 if _MODE not in ("somatic", "autonomic"):
@@ -99,6 +110,9 @@ if _TRANSPORT == "http" and os.environ.get("PRACTICE_EXPERIMENTAL_HTTP") != "1":
     )
 _HTTP_HOST: str = os.environ.get("PRACTICE_HTTP_HOST", "127.0.0.1")
 _HTTP_PORT: int = int(os.environ.get("PRACTICE_HTTP_PORT", "7180"))
+_ENGAGEMENT_IDLE_CLOSE_SECONDS: int = int(
+    os.environ.get("PRACTICE_ENGAGEMENT_IDLE_CLOSE_SECONDS", "600")
+)
 
 _SOMATIC_INSTRUCTIONS = """\
 This is the apprenticeship server in somatic mode — a standing arrangement \
@@ -168,12 +182,18 @@ _trail: EnactmentStore = EnactmentStore()
 _substrate_store: SubstrateStore = SubstrateStore()
 apply_overlay_to_substrate(substrate, _substrate_store)
 apply_overlay_to_bundles(BUNDLES, _substrate_store)
+BUNDLES.pop(ENGAGEMENT_BUNDLE.id, None)
+_AUTHORING_BUNDLES: _AuthoringCatalog = _AuthoringCatalog({
+    **BUNDLES,
+    ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE,
+})
+apply_overlay_to_bundles(_AUTHORING_BUNDLES, _substrate_store)
 
 # Wire Practice Management's meta-materials to the live substrate, catalog,
 # and overlay store. Without this, pm_* materials raise RuntimeError.
 configure_practice_management(
     substrate=substrate,
-    bundle_catalog=BUNDLES,
+    bundle_catalog=_AUTHORING_BUNDLES,
     store=_substrate_store,
 )
 
@@ -184,7 +204,7 @@ configure_practice_management(
 configure_judge(
     trail=_trail,
     substrate=substrate,
-    bundle_catalog={**BUNDLES, ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE},
+    bundle_catalog=_AUTHORING_BUNDLES,
     observing_enactment_id_getter=lambda: _active_practice_enactment_id,
 )
 configure_smoother(
@@ -195,17 +215,84 @@ configure_smoother(
 # The engagement is projected only in somatic mode. Autonomic practitioners
 # (Judge, Smoother in later steps) have no user-focus to inherit.
 _engagement: ProjectedPractice | None = None
+_engagement_bundle: Any | None = None
 _engagement_enactment_id: str | None = None
 _engagement_affordance_ids: frozenset[str] = frozenset()
-
-if _MODE == "somatic":
-    _engagement = project(ENGAGEMENT_BUNDLE, substrate, FUNCTIONS)
-    _engagement_enactment_id = _trail.open_enactment(_engagement.id)
-    _engagement_affordance_ids = frozenset(a.id for a in _engagement.affordances)
+_last_step_at: datetime | None = None
 
 # A practice is optional — none active until switch_practice is called.
 _active_practice: ProjectedPractice | None = None
 _active_practice_enactment_id: str | None = None
+
+
+def _now_dt() -> datetime:
+    return datetime.now(UTC)
+
+
+def _parse_dt(value: str) -> datetime:
+    return datetime.fromisoformat(value)
+
+
+def _mark_activity(value: str | None = None) -> None:
+    global _last_step_at
+    _last_step_at = _parse_dt(value) if value is not None else _now_dt()
+
+
+def _close_active_practice_enactment() -> None:
+    global _active_practice, _active_practice_enactment_id
+    if _active_practice_enactment_id is not None:
+        _trail.close_enactment(_active_practice_enactment_id)
+    _active_practice = None
+    _active_practice_enactment_id = None
+
+
+def _maybe_close_idle_engagement_segment() -> None:
+    """Close a complete engagement segment after a noticeable idle gap."""
+    global _engagement_enactment_id, _last_step_at
+    if _MODE != "somatic" or _ENGAGEMENT_IDLE_CLOSE_SECONDS <= 0:
+        return
+    if _last_step_at is None:
+        return
+    idle_for = _now_dt() - _last_step_at
+    if idle_for < timedelta(seconds=_ENGAGEMENT_IDLE_CLOSE_SECONDS):
+        return
+    _close_active_practice_enactment()
+    if _engagement_enactment_id is not None:
+        _trail.close_enactment(_engagement_enactment_id)
+    _engagement_enactment_id = None
+    _last_step_at = None
+    _refresh_engagement_projection(force=True)
+
+
+def _refresh_engagement_projection(*, force: bool = False) -> None:
+    """Keep the projected engagement in sync with PM-authored amendments."""
+    global _active_practice, _engagement, _engagement_affordance_ids
+    global _engagement_bundle, _engagement_enactment_id
+    if _MODE != "somatic":
+        return
+    bundle = _AUTHORING_BUNDLES[ENGAGEMENT_BUNDLE.id]
+    if (
+        not force
+        and bundle == _engagement_bundle
+        and _engagement_enactment_id is not None
+    ):
+        return
+    _engagement = project(bundle, substrate, FUNCTIONS)
+    _engagement_bundle = bundle
+    _engagement_affordance_ids = frozenset(a.id for a in _engagement.affordances)
+    if _engagement_enactment_id is None:
+        _engagement_enactment_id = _trail.open_enactment(_engagement.id)
+        _mark_activity()
+    if _active_practice is not None and _active_practice.id in BUNDLES:
+        _active_practice = project(
+            BUNDLES[_active_practice.id],
+            substrate,
+            FUNCTIONS,
+            engagement=_engagement,
+        )
+
+
+_refresh_engagement_projection(force=True)
 
 
 @mcp_app.tool()
@@ -227,6 +314,8 @@ def switch_practice(practice_id: str) -> dict[str, Any]:
     records the layering.
     """
     global _active_practice, _active_practice_enactment_id
+    _maybe_close_idle_engagement_segment()
+    _refresh_engagement_projection()
     if practice_id not in BUNDLES:
         return {
             "error": f"unknown practice {practice_id!r}",
@@ -247,6 +336,7 @@ def switch_practice(practice_id: str) -> dict[str, Any]:
     _active_practice_enactment_id = _trail.open_enactment(
         _active_practice.id, parent_enactment_id=_engagement_enactment_id
     )
+    _mark_activity()
     return {
         "active": _active_practice.id,
         "name": _active_practice.name,
@@ -274,6 +364,7 @@ def current_practice() -> dict[str, Any]:
     tool; the composition returned here is the active practice's full
     projection (engagement content merged in).
     """
+    _refresh_engagement_projection()
     if _active_practice is None:
         return {
             "mode": _MODE,
@@ -314,6 +405,7 @@ if _MODE == "somatic":
         Distinct from `current_practice`, which returns the active practice
         with engagement merged in.
         """
+        _refresh_engagement_projection()
         assert _engagement is not None  # somatic mode implies projection
         e = _engagement
         return {
@@ -343,6 +435,7 @@ def discover_affordances(query: str | None = None) -> list[dict[str, Any]]:
     schema in front of the LLM at the same moment it learns the affordance
     exists.
     """
+    _refresh_engagement_projection()
     active = _active_practice or _engagement
     if active is None:
         return []
@@ -395,6 +488,8 @@ def invoke_affordance(
     the harness sees a clean tool result. Failed calls are still recorded.
     """
     args = arguments or {}
+    _maybe_close_idle_engagement_segment()
+    _refresh_engagement_projection()
     is_engagement_call = affordance_id in _engagement_affordance_ids
     active = _active_practice or _engagement
     if active is None:
@@ -424,6 +519,7 @@ def invoke_affordance(
             completed_at=timing["completed_at"],
             duration_ms=timing["duration_ms"],
         )
+    _mark_activity(timing["completed_at"])
     return result
 
 
@@ -449,6 +545,7 @@ def _active_for_resources() -> ProjectedPractice | None:
     until a practice is switched into. In autonomic mode there is no
     engagement, so resources resolve only when a practice is active.
     """
+    _refresh_engagement_projection()
     return _active_practice or _engagement
 
 

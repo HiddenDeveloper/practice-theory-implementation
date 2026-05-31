@@ -18,6 +18,7 @@ from collections.abc import Callable
 from practice_theory_implementation.materials import (
     about_user_mock,
     calendar_mock,
+    episodic_memory,
     garmin_mock,
     judge,
     practice_management,
@@ -29,6 +30,13 @@ from practice_theory_implementation.types import Substrate
 FUNCTIONS: dict[str, Callable[..., object]] = {
     # Engagement-layer
     "consult_about_user": about_user_mock.consult_about_user,
+    "consult_canonical_profile": about_user_mock.consult_canonical_profile,
+    "consult_canonical_self": about_user_mock.consult_canonical_self,
+    "consult_canonical_context": about_user_mock.consult_canonical_context,
+    "consult_companion_context": about_user_mock.consult_companion_context,
+    "recall_relevant_episodes": episodic_memory.recall_relevant_episodes,
+    "recall_recent_episodes": episodic_memory.recall_recent_episodes,
+    "recall_contextual_episodes": episodic_memory.recall_contextual_episodes,
     # Activities Management
     "garmin_list_activities": garmin_mock.garmin_list_activities,
     "garmin_get_activity": garmin_mock.garmin_get_activity,

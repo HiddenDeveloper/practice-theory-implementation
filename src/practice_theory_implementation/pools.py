@@ -124,10 +124,23 @@ UNDERSTANDING: dict[str, PoolElement] = {
             id="und_engagement_substrate",
             name="The relational substrate",
             content=(
-                "What is known about this user lives in the about-the-user "
-                "record, consultable via the engagement's affordances. The "
-                "record accretes across sessions and across practices. Before "
-                "assuming what the user wants, consult what is already known."
+                "What is known about this companionship lives in three "
+                "canonical landing nodes, consultable via the engagement's "
+                "affordances: CanonicalProfile for the user, CanonicalSelf "
+                "for the AI role, and CanonicalContext for the work shared "
+                "between them. Before assuming what the user wants, read the "
+                "relational context already in force."
+            ),
+        ),
+        PoolElement(
+            id="und_companion_landing_nodes",
+            name="The companion landing nodes",
+            content=(
+                "The user engagement layer orients a harness LLM to a "
+                "relationship, not a dossier. CanonicalProfile names Monyet "
+                "Batu, the user. CanonicalSelf names AIlumina, the AI "
+                "companion role. CanonicalContext names what they are working "
+                "on together now. A somatic practice inherits all three."
             ),
         ),
         # About-the-user content. In a real deployment this would be backed by
@@ -452,10 +465,65 @@ AFFORDANCES: dict[str, Affordance] = {
             id="about_the_user",
             name="About the user",
             description=(
-                "Consult what is known about this user — the standing record "
-                "the apprenticeship carries across practices and sessions."
+                "Consult the full companion context the apprenticeship carries "
+                "across practices and sessions: user profile, AI role, and "
+                "shared operating context."
             ),
             materials=("consult_about_user",),
+        ),
+        Affordance(
+            id="about_user_profile",
+            name="About the user profile",
+            description=(
+                "Consult CanonicalProfile — the user's canonical landing node."
+            ),
+            materials=("consult_canonical_profile",),
+        ),
+        Affordance(
+            id="about_ai_role",
+            name="About the AI role",
+            description=(
+                "Consult CanonicalSelf — the companion role the harness is "
+                "apprenticing into."
+            ),
+            materials=("consult_canonical_self",),
+        ),
+        Affordance(
+            id="about_shared_context",
+            name="About the shared context",
+            description=(
+                "Consult CanonicalContext — the current objectives, projects, "
+                "and open threads shared by the user and companion."
+            ),
+            materials=("consult_canonical_context",),
+        ),
+        Affordance(
+            id="recall_relevant_episodes",
+            name="Recall relevant episodes",
+            description=(
+                "Search episodic memory for prior conversation turns "
+                "semantically relevant to the current request or practice."
+            ),
+            materials=("recall_relevant_episodes",),
+        ),
+        Affordance(
+            id="recall_recent_engagement",
+            name="Recall recent engagement",
+            description=(
+                "Read the most recent episodic memory turns, optionally scoped "
+                "to a conversation, role, or date range."
+            ),
+            materials=("recall_recent_episodes",),
+        ),
+        Affordance(
+            id="recall_contextual_episodes",
+            name="Recall contextual episodes",
+            description=(
+                "Read episodic memory by structured filters such as canonical "
+                "pillar, category, role, provider, conversation, date, or "
+                "sequence range."
+            ),
+            materials=("recall_contextual_episodes",),
         ),
         # Calendar Stewardship affordances.
         Affordance(
@@ -692,9 +760,96 @@ MATERIALS: dict[str, Material] = {
         Material(
             name="consult_about_user",
             description=(
-                "Return the standing about-the-user record the engagement holds."
+                "Return the companion context held by the engagement: "
+                "CanonicalProfile, CanonicalSelf, and CanonicalContext."
             ),
             input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="consult_canonical_profile",
+            description=(
+                "Return CanonicalProfile for the user landing node."
+            ),
+            input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="consult_canonical_self",
+            description=(
+                "Return CanonicalSelf for the AI companion role."
+            ),
+            input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="consult_canonical_context",
+            description=(
+                "Return CanonicalContext for the shared work and objectives."
+            ),
+            input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="consult_companion_context",
+            description=(
+                "Return the three canonical companion landing nodes together."
+            ),
+            input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="recall_relevant_episodes",
+            description=(
+                "Return compact episodic memory turns semantically relevant "
+                "to a query, using the local embedding service and Qdrant."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "role": {"type": "string"},
+                    "pillar_root": {"type": "string"},
+                    "primary_category": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
+        Material(
+            name="recall_recent_episodes",
+            description=(
+                "Return the most recent episodic memory turns by date_time, "
+                "optionally scoped by conversation, role, or date range."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "conversation_id": {"type": "string"},
+                    "role": {"type": "string"},
+                    "date_from": {"type": "string"},
+                    "date_to": {"type": "string"},
+                },
+            },
+        ),
+        Material(
+            name="recall_contextual_episodes",
+            description=(
+                "Return episodic memory turns using structured filters over "
+                "canonical pillar, category, role, provider, conversation, "
+                "date_time, and sequence."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "pillar_root": {"type": "string"},
+                    "primary_category": {"type": "string"},
+                    "role": {"type": "string"},
+                    "provider": {"type": "string"},
+                    "conversation_id": {"type": "string"},
+                    "date_from": {"type": "string"},
+                    "date_to": {"type": "string"},
+                    "sequence_from": {"type": "integer"},
+                    "sequence_to": {"type": "integer"},
+                },
+            },
         ),
         # Calendar Stewardship materials — Google-Calendar-shaped mock.
         Material(

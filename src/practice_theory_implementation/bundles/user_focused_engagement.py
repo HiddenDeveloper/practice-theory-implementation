@@ -26,6 +26,7 @@ USER_FOCUSED_ENGAGEMENT = Bundle(
     teleo_affective_ids=("te_user_focused_engagement",),
     understanding_ids=(
         "und_engagement_substrate",
+        "und_companion_landing_nodes",
         "und_about_the_user",
     ),
     rules_ids=(
@@ -33,5 +34,13 @@ USER_FOCUSED_ENGAGEMENT = Bundle(
         "rule_offer_not_instruct",
         "rule_honour_what_brought",
     ),
-    affordance_ids=("about_the_user",),
+    affordance_ids=(
+        "about_the_user",
+        "about_user_profile",
+        "about_ai_role",
+        "about_shared_context",
+        "recall_relevant_episodes",
+        "recall_recent_engagement",
+        "recall_contextual_episodes",
+    ),
 )
