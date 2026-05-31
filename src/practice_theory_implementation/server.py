@@ -642,10 +642,17 @@ async def _serve_with_dispatcher() -> None:
     """
     import asyncio as _asyncio
     import logging as _logging
+    import sys as _sys
 
     from practice_theory_implementation.autonomic_dispatcher import dispatcher_task
 
-    _logging.basicConfig(level=_logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    log_level_name = os.environ.get("PRACTICE_LOG_LEVEL", "WARNING").upper()
+    log_level = getattr(_logging, log_level_name, _logging.WARNING)
+    _logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(name)s %(message)s",
+        stream=_sys.stderr,
+    )
 
     stop = _asyncio.Event()
     dispatcher_disabled = os.environ.get("PRACTICE_DISABLE_DISPATCHER", "").strip()

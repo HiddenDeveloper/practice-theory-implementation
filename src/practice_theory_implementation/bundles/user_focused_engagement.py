@@ -43,6 +43,7 @@ USER_FOCUSED_ENGAGEMENT = Bundle(
         "about_shared_context",
         "read_non_episodic_memory",
         "write_non_episodic_memory",
+        "ensure_self_rooted_spine",
         "recall_relevant_episodes",
         "recall_recent_engagement",
         "recall_contextual_episodes",

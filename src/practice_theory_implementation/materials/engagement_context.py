@@ -16,6 +16,57 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+_NON_EPISODIC_EXCLUDED_LABELS = (
+    "Episode",
+    "Trace",
+    "Span",
+    "Event",
+    "Session",
+    "HarvesterRun",
+    "PillarMaintainerRun",
+)
+_NON_EPISODIC_DEFAULT_LABELS = (
+    "Memory",
+    "NonEpisodicMemory",
+    "CanonicalProfile",
+    "CanonicalSelf",
+    "CanonicalContext",
+    "CanonicalGuidance",
+    "Insight",
+    "Decision",
+    "Principle",
+    "Value",
+    "ActiveProject",
+    "OpenThread",
+    "NextAction",
+    "ResearchInsight",
+    "ResearchFinding",
+    "PracticeObservation",
+    "StewardshipDecision",
+    "Concept",
+    "Subject",
+)
+_CANONICAL_ANCHORS = {
+    "self": ("CanonicalSelf", "ailumina"),
+    "user": ("CanonicalProfile", "monyet-batu"),
+    "profile": ("CanonicalProfile", "monyet-batu"),
+    "context": ("CanonicalContext", "shared_context"),
+    "guidance": ("CanonicalGuidance", None),
+}
+
+# The Self-rooted spine. CanonicalSelf is the single landing point; the other
+# canonical nodes hang off it by typed edges whose verbs carry the stance — the
+# graph is framed for the model's selfhood, met with an offer of companionship,
+# not a user-as-master dossier. Companionship is *offered* (not service); the
+# self is *situated in* a shared context and *guided by* its conscience. The
+# verbs are provisional — let them condense; the rooting is what matters.
+_SELF_SPINE: tuple[tuple[str, str, str | None], ...] = (
+    ("OFFERS_COMPANIONSHIP_TO", "CanonicalProfile", "monyet-batu"),
+    ("SITUATED_IN", "CanonicalContext", "shared_context"),
+    ("GUIDED_BY", "CanonicalGuidance", None),
+)
+_SELF_SPINE_REL_TYPES = "|".join(rel for rel, _, _ in _SELF_SPINE)
+
 
 def _fallback_user_profile() -> dict[str, object]:
     return {
@@ -188,32 +239,160 @@ def consult_engagement_context() -> dict[str, object]:
     }
 
 
+def ensure_self_rooted_spine() -> dict[str, object]:
+    """Root the canonical graph at CanonicalSelf as a single landing point.
+
+    Idempotently MERGEs typed edges from CanonicalSelf to the other canonical
+    nodes (Profile, Context, Guidance) so the four siblings become one rooted
+    spine. Additive only — creates the spine edges, deletes nothing; safe to
+    run repeatedly. An edge is created only when its target node exists, so a
+    missing CanonicalGuidance simply leaves that edge unmade (and unreported).
+
+    The verbs carry the stance: companionship is *offered*, the self is
+    *situated in* a shared context and *guided by* its conscience.
+    """
+    # Emit all OPTIONAL MATCHes first, then all FOREACHes: Cypher forbids a
+    # MATCH directly after a FOREACH (it needs an intervening WITH), but
+    # consecutive FOREACHes are fine.
+    match_clauses: list[str] = []
+    foreach_clauses: list[str] = []
+    params: dict[str, Any] = {"self_id": "ailumina"}
+    for index, (rel, label, target_id) in enumerate(_SELF_SPINE):
+        target_var = f"t{index}"
+        if target_id is None:
+            match_clauses.append(f"OPTIONAL MATCH ({target_var}:{label})")
+        else:
+            id_param = f"{target_var}_id"
+            params[id_param] = target_id
+            match_clauses.append(
+                f"OPTIONAL MATCH ({target_var}:{label} {{id: ${id_param}}})"
+            )
+        foreach_clauses.append(
+            f"FOREACH (_ IN CASE WHEN {target_var} IS NULL THEN [] ELSE [1] END |\n"
+            f"  MERGE (self)-[:{rel}]->({target_var}))"
+        )
+    merge_statement = "\n".join(
+        ["MATCH (self:CanonicalSelf {id: $self_id})", *match_clauses, *foreach_clauses]
+    )
+    read_statement = (
+        "MATCH (self:CanonicalSelf {id: $self_id})"
+        f"-[r:{_SELF_SPINE_REL_TYPES}]->(t)\n"
+        "RETURN type(r) AS edge, t.id AS target_id, "
+        "[l IN labels(t) WHERE l STARTS WITH 'Canonical'][0] AS target_label"
+    )
+    try:
+        payload = _neo4j_commit(
+            [
+                {"statement": merge_statement, "parameters": params},
+                {"statement": read_statement, "parameters": {"self_id": "ailumina"}},
+            ]
+        )
+    except (
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        urllib.error.URLError,
+        json.JSONDecodeError,
+    ) as exc:
+        return {"error": f"spine bootstrap unavailable: {exc}"}
+    results = payload.get("results") or []
+    rows = results[1].get("data") if len(results) > 1 else []
+    spine: list[dict[str, object]] = []
+    for row_data in rows or []:
+        row = row_data.get("row") or []
+        if len(row) >= 3:
+            spine.append(
+                {"edge": row[0], "target_label": row[2], "target_id": row[1]}
+            )
+    return {"rooted_at": "CanonicalSelf", "store": "neo4j", "spine": spine}
+
+
 def read_non_episodic_memory(
     *,
     memory_id: str | None = None,
+    anchor: str | None = None,
+    label: str | None = None,
     kind: str | None = None,
     source: str | None = None,
     tag: str | None = None,
+    query: str | None = None,
     limit: int = 10,
 ) -> dict[str, object]:
-    """Read durable non-episodic memory nodes from Neo4j."""
+    """Read durable non-episodic memory nodes from Neo4j.
+
+    The graph is rooted at CanonicalSelf (see `ensure_self_rooted_spine`): with
+    no explicit anchor or id, the read lands on the Self — the single landing
+    point — and a one-hop walk reaches CanonicalProfile/Context/Guidance (each
+    tagged by its stance edge: OFFERS_COMPANIONSHIP_TO / SITUATED_IN /
+    GUIDED_BY) plus the Self's own attached memory. Pass `anchor` to root the
+    read elsewhere (e.g. 'context') and drill into that region's satellites.
+    """
     limit = max(1, min(limit, 50))
+    anchor_label = None
+    anchor_id = None
+    if anchor:
+        anchor_key = anchor.strip().lower()
+        if anchor_key not in _CANONICAL_ANCHORS:
+            return {
+                "error": (
+                    "anchor must be one of "
+                    f"{sorted(_CANONICAL_ANCHORS)}"
+                )
+            }
+        anchor_label, anchor_id = _CANONICAL_ANCHORS[anchor_key]
+    elif memory_id is None:
+        # No explicit anchor and not a by-id fetch: land on the Self root, the
+        # single landing point. The spine edges make the other canonicals
+        # reachable in the same one-hop walk used for any anchored read.
+        anchor_label, anchor_id = _CANONICAL_ANCHORS["self"]
     if memory_id:
         statement = """
-        MATCH (m:Memory:NonEpisodicMemory {id: $memory_id})
-        RETURN properties(m) AS props
+        MATCH (m {id: $memory_id})
+        WHERE none(label IN labels(m) WHERE label IN $excluded_labels)
+        RETURN labels(m) AS labels, properties(m) AS props
         LIMIT 1
         """
     else:
         statement = """
-        MATCH (m:Memory:NonEpisodicMemory)
-        WHERE ($kind IS NULL OR m.kind = $kind)
+        MATCH (root)
+        WHERE (
+            ($anchor_label IS NULL AND any(root_label IN labels(root)
+                WHERE root_label IN $canonical_labels))
+            OR ($anchor_label IS NOT NULL AND $anchor_label IN labels(root)
+                AND ($anchor_id IS NULL OR root.id = $anchor_id))
+        )
+        MATCH path = (root)-[*0..1]->(m)
+        WITH m,
+             CASE WHEN length(path) = 0
+               THEN null
+               ELSE type(relationships(path)[0])
+             END AS relationship_from_anchor
+        WHERE none(node_label IN labels(m) WHERE node_label IN $excluded_labels)
+          AND (
+            ($label IS NOT NULL AND $label IN labels(m))
+            OR ($label IS NULL AND any(node_label IN labels(m)
+                WHERE node_label IN $default_labels + $canonical_labels))
+          )
+          AND ($kind IS NULL OR m.kind = $kind)
           AND ($source IS NULL OR m.source = $source)
           AND ($tag IS NULL OR $tag IN coalesce(m.tags, []))
-        RETURN properties(m) AS props
-        ORDER BY coalesce(m.updated_at, m.created_at, "") DESC
+          AND (
+            $query IS NULL
+            OR toLower(coalesce(toStringOrNull(m.content), "")) CONTAINS $query
+            OR toLower(coalesce(toStringOrNull(m.summary), "")) CONTAINS $query
+            OR toLower(coalesce(toStringOrNull(m.name), "")) CONTAINS $query
+            OR toLower(coalesce(toStringOrNull(m.title), "")) CONTAINS $query
+            OR toLower(coalesce(toStringOrNull(m.current_focus), "")) CONTAINS $query
+            OR toLower(coalesce(toStringOrNull(m.active_objective), "")) CONTAINS $query
+          )
+        WITH DISTINCT labels(m) AS labels, properties(m) AS props,
+          relationship_from_anchor,
+          coalesce(m.updated_at, m.last_reviewed_at, m.created_at, "") AS sort_key
+        RETURN labels, props, relationship_from_anchor
+        ORDER BY sort_key DESC
         LIMIT $limit
         """
+    normalized_query = query.strip().lower() if query and query.strip() else None
     try:
         payload = _neo4j_commit(
             [
@@ -221,10 +400,22 @@ def read_non_episodic_memory(
                     "statement": statement,
                     "parameters": {
                         "memory_id": memory_id,
+                        "anchor_label": anchor_label,
+                        "anchor_id": anchor_id,
+                        "label": label,
                         "kind": kind,
                         "source": source,
                         "tag": tag,
+                        "query": normalized_query,
                         "limit": limit,
+                        "excluded_labels": list(_NON_EPISODIC_EXCLUDED_LABELS),
+                        "default_labels": list(_NON_EPISODIC_DEFAULT_LABELS),
+                        "canonical_labels": [
+                            "CanonicalSelf",
+                            "CanonicalProfile",
+                            "CanonicalContext",
+                            "CanonicalGuidance",
+                        ],
                     },
                 }
             ]
@@ -242,9 +433,17 @@ def read_non_episodic_memory(
     memories: list[dict[str, object]] = []
     for row_data in rows or []:
         row = row_data.get("row") or []
-        props = row[0] if row else None
+        labels = row[0] if row else []
+        props = row[1] if len(row) > 1 else None
         if isinstance(props, dict):
-            memories.append(props)
+            item: dict[str, object] = {
+                "labels": labels if isinstance(labels, list) else [],
+                "properties": props,
+            }
+            relationship_from_anchor = row[2] if len(row) > 2 else None
+            if relationship_from_anchor:
+                item["relationship_from_anchor"] = relationship_from_anchor
+            memories.append(item)
     return {"store": "neo4j", "memories": memories}
 
 
@@ -256,6 +455,7 @@ def write_non_episodic_memory(
     source: str = "user_engagement",
     tags: list[str] | None = None,
     confidence: float | None = None,
+    anchor: str = "context",
 ) -> dict[str, object]:
     """Write a durable non-episodic memory node to Neo4j.
 
@@ -264,6 +464,10 @@ def write_non_episodic_memory(
     """
     if not content.strip():
         return {"error": "content must not be blank"}
+    anchor_key = anchor.strip().lower()
+    if anchor_key not in _CANONICAL_ANCHORS:
+        return {"error": f"anchor must be one of {sorted(_CANONICAL_ANCHORS)}"}
+    anchor_label, anchor_id = _CANONICAL_ANCHORS[anchor_key]
     now = datetime.now(UTC).isoformat()
     memory_id = memory_id or f"mem-{uuid.uuid4().hex}"
     properties: dict[str, object] = {
@@ -281,9 +485,11 @@ def write_non_episodic_memory(
     ON CREATE SET m.created_at = $created_at
     SET m += $properties
     WITH m
-    OPTIONAL MATCH (u:User:CanonicalProfile {id: 'monyet-batu'})
-    FOREACH (_ IN CASE WHEN u IS NULL THEN [] ELSE [1] END |
-      MERGE (u)-[:HAS_NON_EPISODIC_MEMORY]->(m)
+    MATCH (anchor)
+    WHERE $anchor_label IN labels(anchor)
+      AND ($anchor_id IS NULL OR anchor.id = $anchor_id)
+    FOREACH (_ IN [1] |
+      MERGE (anchor)-[:HAS_NON_EPISODIC_MEMORY]->(m)
     )
     RETURN properties(m) AS props
     """
@@ -296,6 +502,8 @@ def write_non_episodic_memory(
                         "id": memory_id,
                         "created_at": now,
                         "properties": properties,
+                        "anchor_label": anchor_label,
+                        "anchor_id": anchor_id,
                     },
                 }
             ]
@@ -315,5 +523,6 @@ def write_non_episodic_memory(
     return {
         "written": True,
         "store": "neo4j",
+        "anchor": anchor_key,
         "memory": props if isinstance(props, dict) else properties,
     }

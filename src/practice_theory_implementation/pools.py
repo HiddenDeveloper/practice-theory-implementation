@@ -150,12 +150,15 @@ UNDERSTANDING: dict[str, PoolElement] = {
             id="und_memory_stores",
             name="Non-episodic and episodic memory stores",
             content=(
-                "Non-episodic memory lives in Neo4j as durable canonical or "
-                "semantic context that can be deliberately read and written. "
-                "Episodic conversation turns live in Qdrant and are read-only "
-                "from this engagement surface; they are collected by an "
-                "autonomic practice, not written manually during ordinary "
-                "interaction."
+                "Non-episodic memory lives in Neo4j under a small canonical "
+                "spine: CanonicalSelf for AIlumina, User:CanonicalProfile for "
+                "AIlumina's understanding of the user, CanonicalContext for "
+                "their shared current work, and CanonicalGuidance for standing "
+                "operating guidance. Other durable memory nodes should hang "
+                "from that spine. Episodic conversation turns live in Qdrant "
+                "and are read-only from this engagement surface; they are "
+                "collected by an autonomic practice, not written manually "
+                "during ordinary interaction."
             ),
         ),
         PoolElement(
@@ -532,6 +535,17 @@ AFFORDANCES: dict[str, Affordance] = {
             materials=("write_non_episodic_memory",),
         ),
         Affordance(
+            id="ensure_self_rooted_spine",
+            name="Root the canonical spine at Self",
+            description=(
+                "Make CanonicalSelf the single landing point by linking the "
+                "other canonical nodes to it with typed edges (companionship "
+                "offered, situated-in, guided-by). Idempotent and additive — "
+                "creates only the spine edges, deletes nothing."
+            ),
+            materials=("ensure_self_rooted_spine",),
+        ),
+        Affordance(
             id="recall_relevant_episodes",
             name="Recall relevant episodes",
             description=(
@@ -825,17 +839,25 @@ MATERIALS: dict[str, Material] = {
         Material(
             name="read_non_episodic_memory",
             description=(
-                "Read durable non-episodic memory from Neo4j by id or simple "
-                "filters. Episodic Qdrant memory remains read-only through the "
-                "separate recall materials."
+                "Read durable non-episodic memory from Neo4j through the "
+                "canonical spine: CanonicalSelf, CanonicalProfile, "
+                "CanonicalContext, and CanonicalGuidance. Supports id, anchor, "
+                "label, simple filters, or text query. Episodic Qdrant memory "
+                "remains read-only through the separate recall materials."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "memory_id": {"type": "string"},
+                    "anchor": {
+                        "type": "string",
+                        "enum": ["self", "user", "profile", "context", "guidance"],
+                    },
+                    "label": {"type": "string"},
                     "kind": {"type": "string"},
                     "source": {"type": "string"},
                     "tag": {"type": "string"},
+                    "query": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                 },
             },
@@ -843,8 +865,9 @@ MATERIALS: dict[str, Material] = {
         Material(
             name="write_non_episodic_memory",
             description=(
-                "Write durable non-episodic memory to Neo4j. Episodic Qdrant "
-                "memory remains read-only from this material."
+                "Write durable non-episodic memory to Neo4j under one of the "
+                "canonical anchors. Episodic Qdrant memory remains read-only "
+                "from this material."
             ),
             input_schema={
                 "type": "object",
@@ -855,9 +878,23 @@ MATERIALS: dict[str, Material] = {
                     "source": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
                     "confidence": {"type": "number"},
+                    "anchor": {
+                        "type": "string",
+                        "enum": ["self", "user", "profile", "context", "guidance"],
+                    },
                 },
                 "required": ["content"],
             },
+        ),
+        Material(
+            name="ensure_self_rooted_spine",
+            description=(
+                "Idempotently root the canonical graph at CanonicalSelf: MERGE "
+                "typed edges from CanonicalSelf to CanonicalProfile, "
+                "CanonicalContext, and CanonicalGuidance. Additive; deletes "
+                "nothing. Takes no arguments."
+            ),
+            input_schema={"type": "object", "properties": {}},
         ),
         Material(
             name="recall_relevant_episodes",
