@@ -192,8 +192,9 @@ _AUTHORING_BUNDLES: _AuthoringCatalog = _AuthoringCatalog({
 })
 
 # Wire Practice Management's meta-materials to the live substrate and catalog.
-# Without this, pm_* materials raise RuntimeError. (Phase A: amendments are
-# in-memory only — there is no overlay store to persist to yet.)
+# Without this, pm_* materials raise RuntimeError. Amendments are now
+# file-backed YAML-frontmatter writes under `substrate/`, then mirrored into
+# memory for the current process.
 configure_practice_management(
     substrate=substrate,
     bundle_catalog=_AUTHORING_BUNDLES,
@@ -233,6 +234,44 @@ def _now_dt() -> datetime:
     return datetime.now(UTC)
 
 
+def _configure_stateful_materials(
+    *,
+    live_substrate: Any,
+    live_catalog: Any,
+    live_register_dynamic_material: Any,
+) -> None:
+    """Wire materials whose modules hold server-local state.
+
+    `importlib.reload()` resets these modules' globals. Keep the wiring in one
+    place so reload success and rollback use the same configuration path.
+    """
+    import importlib
+
+    practice_management_module = importlib.import_module(
+        "practice_theory_implementation.materials.practice_management"
+    )
+    judge_module = importlib.import_module("practice_theory_implementation.materials.judge")
+    smoother_module = importlib.import_module(
+        "practice_theory_implementation.materials.smoother"
+    )
+    practice_management_module.configure(
+        substrate=live_substrate,
+        bundle_catalog=live_catalog,
+        register_material_function=live_register_dynamic_material,
+        reload_source_callback=_reload_seed_substrate,
+    )
+    judge_module.configure(
+        trail=_trail,
+        substrate=live_substrate,
+        bundle_catalog=live_catalog,
+        observing_enactment_id_getter=lambda: _active_practice_enactment_id,
+    )
+    smoother_module.configure(
+        trail=_trail,
+        active_enactment_id_getter=lambda: _active_practice_enactment_id,
+    )
+
+
 def _reload_seed_substrate() -> dict[str, Any]:
     """Reload material code and re-read the file substrate from disk.
 
@@ -245,66 +284,79 @@ def _reload_seed_substrate() -> dict[str, Any]:
     global BUNDLES, ENGAGEMENT_BUNDLE, FUNCTIONS, register_dynamic_material
     global substrate, _AUTHORING_BUNDLES, _active_practice, _engagement_bundle
 
-    material_module_names = (
-        "practice_theory_implementation.materials.calendar_mock",
-        "practice_theory_implementation.materials.engagement_context",
-        "practice_theory_implementation.materials.episodic_memory",
-        "practice_theory_implementation.materials.garmin_mock",
-        "practice_theory_implementation.materials.judge",
-        "practice_theory_implementation.materials.practice_management",
-        "practice_theory_implementation.materials.reflection_mock",
-        "practice_theory_implementation.materials.smoother",
-    )
-    for module_name in material_module_names:
-        importlib.reload(importlib.import_module(module_name))
-    importlib.reload(
-        importlib.import_module("practice_theory_implementation.material_surfaces")
-    )
-    registry_module = importlib.reload(
-        importlib.import_module("practice_theory_implementation.registry")
-    )
-    loader_module = importlib.reload(
-        importlib.import_module("practice_theory_implementation.substrate_loader")
-    )
+    previous_state = {
+        "BUNDLES": BUNDLES,
+        "ENGAGEMENT_BUNDLE": ENGAGEMENT_BUNDLE,
+        "FUNCTIONS": FUNCTIONS,
+        "register_dynamic_material": register_dynamic_material,
+        "substrate": substrate,
+        "_AUTHORING_BUNDLES": _AUTHORING_BUNDLES,
+    }
 
-    loaded_sub = loader_module.reload_from_disk()
-    for err in loaded_sub.errors:
-        _log.warning("substrate reload: %s", err)
-    substrate = loaded_sub.substrate
-    FUNCTIONS = registry_module.FUNCTIONS
-    register_dynamic_material = registry_module.register_dynamic_material
-    BUNDLES = dict(loaded_sub.bundles)
-    if loaded_sub.engagement_bundle is None:
-        return {"error": "no engagement bundle after reload", "errors": loaded_sub.errors}
-    ENGAGEMENT_BUNDLE = loaded_sub.engagement_bundle
-    _AUTHORING_BUNDLES = _AuthoringCatalog({
-        **BUNDLES,
-        ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE,
-    })
+    try:
+        material_module_names = (
+            "practice_theory_implementation.materials.calendar_mock",
+            "practice_theory_implementation.materials.engagement_context",
+            "practice_theory_implementation.materials.episodic_memory",
+            "practice_theory_implementation.materials.garmin_mock",
+            "practice_theory_implementation.materials.judge",
+            "practice_theory_implementation.materials.practice_management",
+            "practice_theory_implementation.materials.remsleep",
+            "practice_theory_implementation.materials.reflection_mock",
+            "practice_theory_implementation.materials.smoother",
+        )
+        for module_name in material_module_names:
+            importlib.reload(importlib.import_module(module_name))
+        importlib.reload(
+            importlib.import_module("practice_theory_implementation.material_surfaces")
+        )
+        registry_module = importlib.reload(
+            importlib.import_module("practice_theory_implementation.registry")
+        )
+        loader_module = importlib.reload(
+            importlib.import_module("practice_theory_implementation.substrate_loader")
+        )
 
-    practice_management_module = importlib.import_module(
-        "practice_theory_implementation.materials.practice_management"
-    )
-    judge_module = importlib.import_module("practice_theory_implementation.materials.judge")
-    smoother_module = importlib.import_module(
-        "practice_theory_implementation.materials.smoother"
-    )
-    practice_management_module.configure(
-        substrate=substrate,
-        bundle_catalog=_AUTHORING_BUNDLES,
-        register_material_function=register_dynamic_material,
-        reload_source_callback=_reload_seed_substrate,
-    )
-    judge_module.configure(
-        trail=_trail,
-        substrate=substrate,
-        bundle_catalog=_AUTHORING_BUNDLES,
-        observing_enactment_id_getter=lambda: _active_practice_enactment_id,
-    )
-    smoother_module.configure(
-        trail=_trail,
-        active_enactment_id_getter=lambda: _active_practice_enactment_id,
-    )
+        loaded_sub = loader_module.reload_from_disk()
+        for err in loaded_sub.errors:
+            _log.warning("substrate reload: %s", err)
+        if loaded_sub.engagement_bundle is None:
+            raise RuntimeError(
+                f"no engagement bundle after reload; errors={loaded_sub.errors}"
+            )
+        substrate = loaded_sub.substrate
+        FUNCTIONS = registry_module.FUNCTIONS
+        register_dynamic_material = registry_module.register_dynamic_material
+        BUNDLES = dict(loaded_sub.bundles)
+        ENGAGEMENT_BUNDLE = loaded_sub.engagement_bundle
+        _AUTHORING_BUNDLES = _AuthoringCatalog({
+            **BUNDLES,
+            ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE,
+        })
+
+        _configure_stateful_materials(
+            live_substrate=substrate,
+            live_catalog=_AUTHORING_BUNDLES,
+            live_register_dynamic_material=register_dynamic_material,
+        )
+    except Exception as exc:  # noqa: BLE001 - reload must leave PM usable
+        BUNDLES = previous_state["BUNDLES"]
+        ENGAGEMENT_BUNDLE = previous_state["ENGAGEMENT_BUNDLE"]
+        FUNCTIONS = previous_state["FUNCTIONS"]
+        register_dynamic_material = previous_state["register_dynamic_material"]
+        substrate = previous_state["substrate"]
+        _AUTHORING_BUNDLES = previous_state["_AUTHORING_BUNDLES"]
+        _configure_stateful_materials(
+            live_substrate=substrate,
+            live_catalog=_AUTHORING_BUNDLES,
+            live_register_dynamic_material=register_dynamic_material,
+        )
+        _log.exception("substrate reload failed; restored previous live state")
+        return {
+            "error": f"reload failed: {type(exc).__name__}: {exc}",
+            "recovered": True,
+            "source": "previous live state",
+        }
 
     _engagement_bundle = None
     _refresh_engagement_projection(force=True)

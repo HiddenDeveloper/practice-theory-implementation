@@ -41,6 +41,7 @@ import contextlib
 import logging
 import os
 import subprocess
+import tomllib
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -52,6 +53,19 @@ from practice_theory_implementation.trail import EnactmentStore
 from practice_theory_implementation.types import Bundle, Substrate
 
 logger = logging.getLogger(__name__)
+
+_PRACTICE_SERVICE_ENV_KEYS = (
+    "PRACTICE_NEO4J_HTTP_URL",
+    "PRACTICE_NEO4J_AUTH",
+    "PRACTICE_NEO4J_USER",
+    "PRACTICE_NEO4J_PASSWORD",
+    "NEO4J_AUTH",
+    "NEO4J_USER",
+    "NEO4J_PASSWORD",
+    "PRACTICE_QDRANT_URL",
+    "PRACTICE_EMBED_URL",
+    "PRACTICE_EPISODIC_COLLECTION",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +108,80 @@ def compose_brief(bundle: Bundle, substrate: Substrate) -> str:
     from practice_theory_implementation.registry import FUNCTIONS
 
     return compose_composition(project(bundle, substrate, FUNCTIONS))
+
+
+def _local_mcp_env(cwd: Path) -> dict[str, str]:
+    """Read local MCP env values from .codex/config.toml when present.
+
+    Local secrets stay in the ignored `.codex/config.toml`; the adapters use
+    them to launch autonomic MCP subprocesses with the same service access as
+    the somatic server. Values already present in `os.environ` still win.
+    """
+    config_path = cwd / ".codex" / "config.toml"
+    if not config_path.is_file():
+        return {}
+    try:
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        logger.warning("could not read local MCP env from %s: %s", config_path, exc)
+        return {}
+    servers = config.get("mcp_servers")
+    if not isinstance(servers, dict):
+        return {}
+    merged: dict[str, str] = {}
+    # Prefer an explicit autonomic config if one exists, then fall back to the
+    # somatic server's service credentials because both surfaces read the same
+    # local Neo4j/Qdrant stores.
+    for server_name in ("practice_server_somatic", "practice_server_autonomic"):
+        server = servers.get(server_name)
+        if not isinstance(server, dict):
+            continue
+        env = server.get("env")
+        if not isinstance(env, dict):
+            continue
+        for key, value in env.items():
+            if key in _PRACTICE_SERVICE_ENV_KEYS and value is not None:
+                merged[key] = str(value)
+    return merged
+
+
+def practice_service_env(cwd: Path | None = None) -> dict[str, str]:
+    """Return service env from the shell plus local MCP config fallback."""
+    root = cwd or Path.cwd()
+    local = _local_mcp_env(root)
+    out = {
+        key: value
+        for key, value in local.items()
+        if key in _PRACTICE_SERVICE_ENV_KEYS
+    }
+    for key in _PRACTICE_SERVICE_ENV_KEYS:
+        if os.environ.get(key):
+            out[key] = os.environ[key]
+    return out
+
+
+def _server_env(
+    *,
+    mode: str,
+    cwd: Path,
+    disable_dispatcher: bool,
+    include_service_env: bool,
+) -> dict[str, str]:
+    env = {
+        "PRACTICE_SERVER_MODE": mode,
+        "PRACTICE_TRANSPORT": "stdio",
+    }
+    if disable_dispatcher:
+        env["PRACTICE_DISABLE_DISPATCHER"] = "1"
+    if include_service_env:
+        env.update(practice_service_env(cwd))
+    return env
+
+
+def _subprocess_env(cwd: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    env.update(practice_service_env(cwd))
+    return env
 
 
 # ---------------------------------------------------------------------------
@@ -227,11 +315,12 @@ class AnthropicSDKAdapter(AutonomicAdapter):
                 "type": "stdio",
                 "command": _sys.executable,
                 "args": ["-m", "practice_theory_implementation.server"],
-                "env": {
-                    "PRACTICE_SERVER_MODE": "autonomic",
-                    "PRACTICE_TRANSPORT": "stdio",
-                    "PRACTICE_DISABLE_DISPATCHER": "1",
-                },
+                "env": _server_env(
+                    mode="autonomic",
+                    cwd=self._cwd,
+                    disable_dispatcher=True,
+                    include_service_env=True,
+                ),
             }
         options = ClaudeAgentOptions(
             system_prompt=self.config.brief,
@@ -346,11 +435,15 @@ class ClaudeCliAdapter(AutonomicAdapter):
                 "type": "stdio",
                 "command": _sys.executable,
                 "args": ["-m", "practice_theory_implementation.server"],
-                "env": {
-                    "PRACTICE_SERVER_MODE": "autonomic",
-                    "PRACTICE_TRANSPORT": "stdio",
-                    "PRACTICE_DISABLE_DISPATCHER": "1",
-                },
+                # Do not put local service secrets into the command-line JSON.
+                # The claude subprocess gets them through its process env, and
+                # the MCP server it spawns inherits them.
+                "env": _server_env(
+                    mode="autonomic",
+                    cwd=self._cwd,
+                    disable_dispatcher=True,
+                    include_service_env=False,
+                ),
             }
         mcp_config_json = _json.dumps({"mcpServers": {mcp_label: server_cfg}})
 
@@ -390,7 +483,12 @@ class ClaudeCliAdapter(AutonomicAdapter):
 
         def _run() -> subprocess.CompletedProcess[str]:
             return subprocess.run(  # noqa: S603 - claude_bin is operator config
-                cmd, cwd=self._cwd, text=True, capture_output=True, check=False
+                cmd,
+                cwd=self._cwd,
+                env=_subprocess_env(self._cwd),
+                text=True,
+                capture_output=True,
+                check=False,
             )
 
         result = await asyncio.to_thread(_run)
@@ -501,7 +599,12 @@ class CodexExecAdapter(AutonomicAdapter):
 
         def _run() -> subprocess.CompletedProcess[str]:
             return subprocess.run(  # noqa: S603 - codex_bin is operator config
-                cmd, cwd=self._cwd, text=True, capture_output=True, check=False
+                cmd,
+                cwd=self._cwd,
+                env=_subprocess_env(self._cwd),
+                text=True,
+                capture_output=True,
+                check=False,
             )
 
         result = await asyncio.to_thread(_run)

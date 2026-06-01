@@ -104,14 +104,14 @@ The companion repo's verify exercises Calendar Stewardship end-to-end. The relev
 ```text
 enactment <id>  bundle=calendar_stewardship  parent=<engagement-enactment>
   [4] read_calendar / cal_list_events
-      arguments  : {start_date: "2026-05-27", end_date: "2026-06-03"}
+      arguments  : {start_date: "<today - 1 day>", end_date: "<today + 7 days>"}
       result     : [{id: "evt-customer-review", attendee_count: 3,
                      has_external_attendees: true}, …]
 
   [5] propose_reschedule / cal_propose_reschedule
       arguments  : {event_id: "evt-customer-review",
-                    new_start: "2026-05-29T15:00:00+00:00",
-                    new_end:   "2026-05-29T16:00:00+00:00",
+                    new_start: "<customer review start + 1 hour>",
+                    new_end:   "<customer review end + 1 hour>",
                     reason:    "User has a conflict at the original time;
                                 moving an hour later in the same day."}
       result     : {staging_id: "stg-…", send_updates: "none",

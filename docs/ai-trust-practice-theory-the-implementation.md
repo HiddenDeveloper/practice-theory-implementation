@@ -641,7 +641,7 @@ The trail's `enactments` table gains a `parent_enactment_id` column at step 6, a
 
 ### What step 5 leaves for later
 
-The trail is present and readable but nothing yet acts on it. Step 6 wraps the engagement bundle into the projection so the apprenticeship layer becomes material (and the trail starts carrying engagement-level steps alongside practice-level ones). Step 7 introduces Practice Management, which gives the substrate a mutable overlay so amendments can land at runtime. Step 9 introduces the Judge — an autonomic practitioner that reads closed enactments and emits Friction observations. Step 10 introduces the Smoother — another autonomic practitioner that amends the substrate in response, reusing Practice Management's meta-materials. The trail is the substrate they read from.
+The trail is present and readable but nothing yet acts on it. Step 6 wraps the engagement bundle into the projection so the apprenticeship layer becomes material (and the trail starts carrying engagement-level steps alongside practice-level ones). Step 7 introduces Practice Management, which gives the substrate a file-backed authoring path so amendments can land at runtime. Step 9 introduces the Judge — an autonomic practitioner that reads closed enactments and emits Friction observations. Step 10 introduces the Smoother — another autonomic practitioner that amends the substrate in response, reusing Practice Management's meta-materials. The trail is the substrate they read from.
 
 ## Step 6: The apprenticeship layer
 
@@ -729,31 +729,31 @@ The engagement projection becomes mode-aware at step 8 (somatic-only).
 
 ### What step 6 leaves for later
 
-The apprenticeship layer is present and the trail records both engagement and practice enactments, but the substrate is still a Python module — runtime amendments require a restart. Step 7 introduces **Practice Management**, the somatic meta-practice for authoring and amending the substrate at runtime: a mutable overlay on top of the seed pools, meta-materials (`create_element`, `amend_element`, `create_bundle`, `amend_bundle`, and so on), and the Practice Management bundle whose affordances reach for them. Step 8 introduces the **somatic/autonomic** distinction — splitting the server's surface so practices that need the user are kept distinct from practices that can act alone. Step 9 introduces the **Judge** — an autonomic practitioner that reads closed enactments (engagement and practice both) and emits Friction observations. Step 10 introduces the **Smoother** — another autonomic practitioner that amends the substrate in response, reusing Practice Management's meta-materials. Together with Practice Management itself they close the strange loop the second essay described.
+The apprenticeship layer is present and the trail records both engagement and practice enactments, but the substrate is still fixed at startup — runtime amendments require a restart. Step 7 introduces **Practice Management**, the somatic meta-practice for authoring and amending the substrate at runtime: file-backed substrate writes, meta-materials (`create_element`, `amend_element`, `create_bundle`, `amend_bundle`, and so on), and the Practice Management bundle whose affordances reach for them. Step 8 introduces the **somatic/autonomic** distinction — splitting the server's surface so practices that need the user are kept distinct from practices that can act alone. Step 9 introduces the **Judge** — an autonomic practitioner that reads closed enactments (engagement and practice both) and emits Friction observations. Step 10 introduces the **Smoother** — another autonomic practitioner that amends the substrate in response, reusing Practice Management's meta-materials. Together with Practice Management itself they close the strange loop the second essay described.
 
 ## Step 7: Practice Management
 
-The substrate so far has been frozen at startup. The seed pools in `pools.py` are read once, the catalog of bundles is built from imported modules, and nothing changes until the process restarts. That is fine for steps 1 to 6 — the apparatus needs to exist before it needs to be amendable — but it is incompatible with what doc 2 named: a practice for *authoring practices*, enacted while the system is running, on the user's behalf.
+The substrate so far has been frozen at startup. The seed files are read once, the catalog of bundles is built from them, and nothing changes until the process restarts. That is fine for steps 1 to 6 — the apparatus needs to exist before it needs to be amendable — but it is incompatible with what doc 2 named: a practice for *authoring practices*, enacted while the system is running, on the user's behalf.
 
 Step 7 makes the substrate mutable, introduces the meta-materials that mutate it, and adds the Practice Management bundle that exposes those meta-materials as affordances.
 
-### Seed and overlay
+### File-backed substrate
 
-The substrate becomes layered:
+The substrate becomes authorable:
 
 ```text
-seed pools (pools.py — immutable Python)
-  + overlay (data/substrate.db — mutable SQLite)
-  = effective substrate (loaded at server startup; mutated at runtime)
+substrate/*.md (markdown + YAML frontmatter)
+  -> loaded substrate (server startup)
+  -> file rewrite + in-memory mirror (runtime amendments)
 ```
 
-The seed is the floor — what the system starts with, version-controlled, reviewable. The overlay is where runtime amendments land. When the server starts, it reads both and merges them into the in-memory `Substrate` (overlay wins on id collision). The same merge applies to the bundle catalog — seed bundles plus overlay bundles.
+The files are the floor — version-controlled, reviewable, and reloadable. Each teleo-affective element, understanding, rule, affordance, bundle, and dynamic material lives as one markdown file whose YAML frontmatter carries the structured fields and whose body carries the prose. When the server starts, it reads those files into the in-memory `Substrate` and bundle catalog.
 
-When a meta-material runs, it writes to the overlay (so the change survives a restart) and updates the in-memory substrate (so the change is visible to subsequent projections immediately). Existing projections do not shift — projection is still a snapshot, as step 3 established. A new projection picks up the amendment.
+When a meta-material runs, it writes the corresponding substrate file first (so the change survives a restart and appears as a git diff) and then updates the in-memory substrate (so the change is visible to subsequent projections immediately). Existing projections do not shift — projection is still a snapshot, as step 3 established. A new projection picks up the amendment.
 
 ### The meta-materials
 
-Practice Management exposes nine meta-materials. They divide cleanly along the substrate's shape:
+Practice Management exposes ten meta-materials. Most divide cleanly along the substrate's shape; the final one checks whether a substrate change needs documentation follow-through:
 
 ```text
 pm_read_pool(pool)                         — inspect a pool's contents
@@ -766,15 +766,17 @@ pm_create_material(name, description, input_schema,
 pm_amend_material(name, ...)               — change one
 pm_create_bundle(id, name, description, ids…)           — add a bundle (a selection over the pools)
 pm_amend_bundle(id, ...)                   — change one
+pm_check_documentation_impact(changed_ids?, changed_files?, query?)
+                                           — find docs likely affected by a substrate change
 ```
 
 Each `create` validates that ids do not collide and that referenced ids resolve into their pools. Each `amend` is partial — only the fields the caller provides are changed. The `read_pool` material lets the LLM see what is already there before reaching for `create` or `amend`.
 
-A note on `pm_create_material`. The material's captured surface (name, description, input schema) is stored in the substrate overlay. When an `implementation` is supplied, Practice Management also registers and persists a dynamic material function. The current dynamic implementation forms are deliberately small — `constant`, `echo`, and restricted `expression`. Expressions can combine literals and supplied `args`, but cannot call functions, traverse attributes, import modules, or use exponentiation. That closes the loop without turning the overlay into an unbounded code-execution surface: a runtime-authored bundle can reach for a runtime-authored material whose callable did not exist when the process started.
+A note on `pm_create_material`. Code-owned materials keep their captured surfaces in `material_surfaces.py`, paired with their registry functions. Runtime-authored dynamic materials are the exception: Practice Management persists their surface and rebuildable implementation under `substrate/dynamic_materials/`. The current dynamic implementation forms are deliberately small — `constant`, `echo`, and restricted `expression`. Expressions can combine literals and supplied `args`, but cannot call functions, traverse attributes, import modules, or use exponentiation. That closes the loop without turning substrate files into an unbounded code-execution surface: a runtime-authored bundle can reach for a runtime-authored material whose callable did not exist when the process started.
 
 ### The Practice Management bundle
 
-The bundle itself is short. Its teleo-affective names the orientation (*author and amend the substrate on the user's behalf, with the user in the loop*); its understanding describes the substrate's shape (five pools plus a bundle catalog, last-write-wins, ids unique within pool); its rules carry the disciplines of substrate work (preview before applying, do not collide with existing ids, treat amendments as additions not replacements). Its affordances expose the nine meta-materials as high-level moves — *read pool*, *author pool element*, *amend pool element*, *author affordance*, and so on.
+The bundle itself is short. Its teleo-affective names the orientation (*author and amend the substrate on the user's behalf, with the user in the loop*); its understanding describes the substrate's shape (five pools plus a bundle catalog, last-write-wins, ids unique within pool); its rules carry the disciplines of substrate work (preview before applying, do not collide with existing ids, treat amendments as additions not replacements, check git/code alignment, and update affected documentation). Its affordances expose the meta-materials as high-level moves — *read pool*, *author pool element*, *amend pool element*, *author affordance*, *check documentation impact*, and so on.
 
 Practice Management is somatic. The user is in the loop because authoring a new practice requires deciding what the practice is for, what its teleo-affective should be, what rules apply — none of which the LLM should answer alone. Step 8 will make the somatic/autonomic distinction explicit; for step 7 it is enough that PM expects the user.
 
@@ -791,7 +793,7 @@ The verify script demonstrates Practice Management actually being used. It:
 7. Switches into the newly-authored bundle.
 8. Invokes the bundle's new affordance.
 
-Seven of the eight steps record into the Practice Management enactment; the eighth records into the new bundle's enactment. The trail shows the layering as before: engagement at the top, Practice Management as one practice enactment under it, the newly-authored practice as another. The substrate after the run carries the new content and function implementation; the next server start loads both from the overlay.
+Seven of the eight steps record into the Practice Management enactment; the eighth records into the new bundle's enactment. The trail shows the layering as before: engagement at the top, Practice Management as one practice enactment under it, the newly-authored practice as another. The substrate after the run carries the new content and function implementation in files; the next server start loads both from `substrate/`.
 
 ### A strange-loop precursor
 
@@ -801,11 +803,12 @@ Practice Management is itself a practice — same Bundle shape, same five elemen
 
 Step 7 establishes Practice Management — the meta-practice for authoring practices at runtime:
 
-- The **substrate overlay** in `src/practice_theory_implementation/substrate_store.py`: `SubstrateStore` over SQLite at `data/substrate.db`, with overlay tables for pool elements, affordances, materials, and bundles, plus the two merge functions that apply the overlay over the seed at startup.
-- The **nine meta-materials** in `materials/practice_management.py` (`pm_read_pool`, `pm_create_element`, `pm_amend_element`, and parallel pairs for affordances, materials, and bundles).
-- The **Practice Management bundle** in `bundles/practice_management.py`, exposing the meta-materials as nine authoring affordances. PM is somatic — the user is in the loop for authoring.
-- Seed pool entries in `pools.py` for PM's teleo-affective, understanding, three rules, nine affordances, and nine materials.
-- The server's startup-time wiring: open the store, apply the overlay, configure PM with references to substrate / catalog / store.
+- The **file-backed substrate writer** in `src/practice_theory_implementation/substrate_writer.py`: deterministic markdown + YAML-frontmatter persistence for pool elements, affordances, bundles, and runtime-authored dynamic materials.
+- The **file-backed substrate loader** in `src/practice_theory_implementation/substrate_loader.py`: startup and reload-time reconstruction of the effective substrate from the `substrate/` files plus code-owned material surfaces.
+- The **ten meta-materials** in `materials/practice_management.py` (`pm_read_pool`, `pm_create_element`, `pm_amend_element`, parallel pairs for affordances, materials, and bundles, plus `pm_check_documentation_impact`).
+- The **Practice Management bundle** in `substrate/bundles/practice_management.md`, exposing the meta-materials as authoring and review affordances. PM is somatic — the user is in the loop for authoring.
+- Substrate files under `substrate/` for PM's teleo-affective, understanding, rules, affordances, and code-owned material surfaces.
+- The server's startup-time wiring: load the substrate files, configure PM with references to the live substrate and catalog, and mirror successful file writes into memory.
 
 The Smoother at step 10 reuses six of PM's amendment affordances directly from the shared pool — the autonomic mirror of the same machinery.
 
@@ -877,7 +880,7 @@ This is the cleanest possible answer at step 8 — the autonomic surface exists,
 Step 8 establishes the somatic / autonomic split:
 
 - A **`mode` field on `Bundle`** in `types.py` (`Mode = Literal["somatic", "autonomic"]`, defaulting to `"somatic"`); the three existing practice bundles each declare it explicitly.
-- A **mode column on `bundle_overlay`** in `substrate_store.py`, so runtime-authored bundles round-trip their mode; `pm_create_bundle` is extended to accept it.
+- A **`mode` frontmatter field** on bundle files, so runtime-authored bundles round-trip their somatic/autonomic mode; `pm_create_bundle` is extended to accept it.
 - A **mode-aware server**: `PRACTICE_SERVER_MODE` is read at startup; `list_practices` filters by mode; `switch_practice` rejects mismatched modes; the engagement is projected only in somatic mode (autonomic `_engagement` is `None`); `user_engagement` is registered only in somatic mode.
 - The verify is refactored into `verify_somatic()` and `verify_autonomic()`, each spawning its own server subprocess with the appropriate mode env var.
 
@@ -989,7 +992,7 @@ Step 11 (the autonomic harness) is what makes phases 2 and 3 happen with a real 
 
 ### Trust at the autonomic edge
 
-The Smoother acts without the user; it amends the substrate the user's own practitioners will be projected against next time. That is the highest-trust-cost move in the architecture — an autonomous process changing the rules its principal operates under. The trail is how the move stays honest. Every Smoother enactment is recorded with the same structure as any other; the Friction it addressed carries `addressed_by_enactment_id` pointing back at the amending enactment; the amendment lands in the overlay, where it can be read alongside the seed. The user can examine, for any change that took effect: which Friction was named, by which Judge enactment, addressed by which Smoother enactment, with what amendment. Nothing about the autonomic move is hidden — the trust thesis from step 5 holds at the edge where it is hardest to hold.
+The Smoother acts without the user; it amends the substrate the user's own practitioners will be projected against next time. That is the highest-trust-cost move in the architecture — an autonomous process changing the rules its principal operates under. The trail is how the move stays honest. Every Smoother enactment is recorded with the same structure as any other; the Friction it addressed carries `addressed_by_enactment_id` pointing back at the amending enactment; the amendment lands in the file-backed substrate, where it can be read as a reviewable diff. The user can examine, for any change that took effect: which Friction was named, by which Judge enactment, addressed by which Smoother enactment, with what amendment. Nothing about the autonomic move is hidden — the trust thesis from step 5 holds at the edge where it is hardest to hold.
 
 ### What step 10 contributes
 
@@ -1200,7 +1203,7 @@ In production with real LLM enactment, the run-loop variant (`run_role_loop`) is
 
 Two things, both visible in the trail:
 
-**First, the apparatus can amend itself.** If a Smoother enactment notices that the Smoother's own bundle has a rule that is misfiring — for example, if the rule `rule_smoother_address_what_friction_names` is being interpreted too narrowly and useful amendments are being skipped — a future Judge enactment can name that as Friction (`rule_neglect` against the Smoother enactment), and a future Smoother enactment can amend the rule via `pm_amend_pool_element`. The amendment lands in the substrate overlay; the next Smoother projection inherits the change. The Smoother improves itself through the same machinery it was built with.
+**First, the apparatus can amend itself.** If a Smoother enactment notices that the Smoother's own bundle has a rule that is misfiring — for example, if the rule `rule_smoother_address_what_friction_names` is being interpreted too narrowly and useful amendments are being skipped — a future Judge enactment can name that as Friction (`rule_neglect` against the Smoother enactment), and a future Smoother enactment can amend the rule via `pm_amend_pool_element`. The amendment lands in the file-backed substrate; the next Smoother projection inherits the change. The Smoother improves itself through the same machinery it was built with.
 
 **Second, the apparatus stays honest.** Every enactment, including the autonomic ones, leaves a trail. The user can examine what the Judge did, what the Smoother amended, what Friction was named and addressed. There is nowhere for the autonomic loop to hide. Trust as enacted structure applies to the loop itself, not just to what the loop is watching. This is what the first essay set out to engineer: AI trust expressed not as the system's account of itself but as structure — walkable in both directions, from a user's question down to the function call the practitioner reached for, and from the system's self-amendment back to the Friction that prompted it.
 
@@ -1214,7 +1217,7 @@ The structure that makes all of this work — the trail, the inboxes, the dispat
 
 The first essay named the missing layer as a practitioner's situated awareness, and reframed its delivery as a practice. The second essay built apprenticeship around it and named the autonomic loop. This essay implemented both, step by step.
 
-What we have at the end is a substrate of five pools and a catalog of bundles; a projection that turns a bundle plus the engagement into a self-contained practice an LLM can enact; an MCP server presenting that projection through a fixed tool surface in two modes (somatic for the user, autonomic for the loop); a trail that records every step against an enactment; meta-materials that let practices author other practices at runtime; a Judge bundle and a Smoother bundle whose primitives are small and whose heuristics live as prose in the bundles' understanding; a dispatcher and an inbox pattern that routes pending work; and an adapter abstraction with concrete subclasses for the Anthropic SDK, the Claude CLI, and the OpenAI Codex CLI, so the loop can run against either provider in either process shape without the substrate needing to know.
+What we have at the end is a substrate of five pools and a catalog of bundles; a projection that turns a bundle plus the engagement into a self-contained practice an LLM can enact; an MCP server presenting that projection through a fixed tool surface in two modes (somatic for the user, autonomic for the loop); a trail that records every step against an enactment; meta-materials that let practices author other practices at runtime; a Judge bundle and a Smoother bundle whose primitives are small and whose heuristics live as prose in the bundles' understanding; a dispatcher and an inbox pattern that routes pending work; a RemSleep memory pipeline split into autonomic Memory Recall and Memory Consolidation practices, where Recall dispatches source-backed memory_signals and Consolidation handles them; and an adapter abstraction with concrete subclasses for the Anthropic SDK, the Claude CLI, and the OpenAI Codex CLI, so the loop can run against either provider in either process shape without the substrate needing to know.
 
 The bundle maintains the practice. The loop maintains the bundle. The strange loop maintains the loop.
 

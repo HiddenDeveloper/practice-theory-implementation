@@ -19,6 +19,7 @@ catalog — wired by the server at startup via `configure(...)`.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from practice_theory_implementation import substrate_writer
@@ -31,6 +32,7 @@ from practice_theory_implementation.types import (
 )
 
 POOL_ELEMENT_POOLS = ("teleo_affective", "understanding", "rules")
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # wired by the server at startup
 _substrate: Substrate | None = None
@@ -143,6 +145,76 @@ def pm_read_pool(pool: str) -> list[dict[str, Any]]:
 def pm_reload_seed_substrate() -> Mapping[str, Any]:
     """Re-read the substrate files (and reload material code) from source."""
     return _need_source_reloader()()
+
+
+def pm_check_documentation_impact(
+    changed_ids: list[str] | None = None,
+    changed_files: list[str] | None = None,
+    query: str | None = None,
+    limit: int = 25,
+) -> dict[str, Any]:
+    """Find documentation likely affected by a substrate change.
+
+    This is a lightweight impact read, not an automatic edit. It searches
+    README/docs/social-media markdown for changed ids, changed file stems, and
+    optional query terms so the enacting practitioner can update prose that
+    still describes the old substrate or code-supported surface.
+    """
+    limit = max(1, min(int(limit), 100))
+    terms: list[str] = []
+    for value in changed_ids or []:
+        if value and value not in terms:
+            terms.append(value)
+    for value in changed_files or []:
+        path = Path(value)
+        for candidate in (path.as_posix(), path.stem):
+            if candidate and candidate != "." and candidate not in terms:
+                terms.append(candidate)
+    if query:
+        for candidate in query.split():
+            stripped = candidate.strip()
+            if stripped and stripped not in terms:
+                terms.append(stripped)
+    if not terms:
+        return {
+            "error": "provide at least one changed_id, changed_file, or query term"
+        }
+
+    docs: list[Path] = []
+    readme = _REPO_ROOT / "README.md"
+    if readme.is_file():
+        docs.append(readme)
+    for dirname in ("docs", "social-media"):
+        base = _REPO_ROOT / dirname
+        if base.is_dir():
+            docs.extend(sorted(base.rglob("*.md")))
+
+    matches: list[dict[str, Any]] = []
+    lowered_terms = [(term, term.lower()) for term in terms]
+    for path in docs:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line_number, line in enumerate(lines, start=1):
+            lowered = line.lower()
+            hit_terms = [
+                original for original, lowered_term in lowered_terms
+                if lowered_term in lowered
+            ]
+            if not hit_terms:
+                continue
+            matches.append(
+                {
+                    "file": str(path.relative_to(_REPO_ROOT)),
+                    "line": line_number,
+                    "terms": hit_terms,
+                    "text": line.strip()[:240],
+                }
+            )
+            if len(matches) >= limit:
+                return {"terms": terms, "matches": matches, "truncated": True}
+    return {"terms": terms, "matches": matches, "truncated": False}
 
 
 # --- pool element create / amend ------------------------------------------

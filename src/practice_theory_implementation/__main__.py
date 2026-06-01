@@ -32,6 +32,7 @@ import asyncio
 import json
 import os
 import sys
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
@@ -269,6 +270,9 @@ async def verify_somatic() -> None:
             print("Calendar Stewardship: stage, invite stance, issue")
             print("=" * 60)
             print()
+            today = datetime.now(UTC).date()
+            read_start = (today - timedelta(days=1)).isoformat()
+            read_end = (today + timedelta(days=7)).isoformat()
 
             r = await session.call_tool(
                 "switch_practice", {"practice_id": "calendar_stewardship"}
@@ -284,15 +288,25 @@ async def verify_somatic() -> None:
                     "affordance_id": "read_calendar",
                     "material_name": "cal_list_events",
                     "arguments": {
-                        "start_date": "2026-05-27",
-                        "end_date": "2026-06-03",
+                        "start_date": read_start,
+                        "end_date": read_end,
                     },
                 },
             )
+            calendar_events = _content_to_value(r.content)
             _print_value(
                 "invoke_affordance(read_calendar, cal_list_events, ...)",
-                _content_to_value(r.content),
+                calendar_events,
             )
+            customer_review = next(
+                event
+                for event in calendar_events
+                if event["id"] == "evt-customer-review"
+            )
+            old_start = datetime.fromisoformat(customer_review["start"])
+            old_end = datetime.fromisoformat(customer_review["end"])
+            new_start = old_start + timedelta(hours=1)
+            new_end = old_end + timedelta(hours=1)
 
             r = await session.call_tool(
                 "invoke_affordance",
@@ -301,8 +315,8 @@ async def verify_somatic() -> None:
                     "material_name": "cal_propose_reschedule",
                     "arguments": {
                         "event_id": "evt-customer-review",
-                        "new_start": "2026-05-29T15:00:00+00:00",
-                        "new_end": "2026-05-29T16:00:00+00:00",
+                        "new_start": new_start.isoformat(),
+                        "new_end": new_end.isoformat(),
                         "reason": (
                             "User has a conflict at the original time; "
                             "moving an hour later in the same day."

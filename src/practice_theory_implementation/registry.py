@@ -25,6 +25,7 @@ from practice_theory_implementation.materials import (
     judge,
     practice_management,
     reflection_mock,
+    remsleep,
     smoother,
 )
 from practice_theory_implementation.types import Substrate
@@ -105,6 +106,7 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "pm_create_bundle": practice_management.pm_create_bundle,
     "pm_amend_bundle": practice_management.pm_amend_bundle,
     "pm_reload_seed_substrate": practice_management.pm_reload_seed_substrate,
+    "pm_check_documentation_impact": practice_management.pm_check_documentation_impact,
     # Judge — primitives
     "judge_list_recent_enactments": judge.judge_list_recent_enactments,
     "judge_read_enactment_steps": judge.judge_read_enactment_steps,
@@ -114,6 +116,15 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     # in the Smoother bundle reuse PM materials registered above.
     "smoother_read_pending_friction": smoother.smoother_read_pending_friction,
     "smoother_mark_addressed": smoother.smoother_mark_addressed,
+    # RemSleep / memory recall and consolidation.
+    "remsleep_read_checkpoint": remsleep.remsleep_read_checkpoint,
+    "remsleep_recall_unreviewed_episodes": remsleep.remsleep_recall_unreviewed_episodes,
+    "remsleep_read_updated_graph_nodes": remsleep.remsleep_read_updated_graph_nodes,
+    "remsleep_dispatch_memory_signal": remsleep.remsleep_dispatch_memory_signal,
+    "remsleep_read_memory_signals": remsleep.remsleep_read_memory_signals,
+    "remsleep_mark_memory_signal_handled": remsleep.remsleep_mark_memory_signal_handled,
+    "remsleep_stage_memory_candidate": remsleep.remsleep_stage_memory_candidate,
+    "remsleep_record_checkpoint": remsleep.remsleep_record_checkpoint,
 }
 
 
@@ -186,7 +197,7 @@ def register_dynamic_material(
 def register_dynamic_materials(
     material_functions: Iterable[tuple[str, Mapping[str, Any]]],
 ) -> None:
-    """Register all dynamic material functions loaded from the substrate overlay."""
+    """Register all dynamic material functions loaded from substrate files."""
     for name, implementation in material_functions:
         register_dynamic_material(name, implementation)
 

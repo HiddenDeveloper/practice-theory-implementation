@@ -62,6 +62,35 @@ touch /tmp/practice-autonomic-quit
 
 The runner finishes any in-flight `codex exec` / `claude -p` / SDK call and exits cleanly.
 
+## RemSleep memory recall and consolidation
+
+The autonomic runner can also run RemSleep as two autonomic practices. Memory
+Recall runs on a schedule and dispatches source-backed `memory_signal` rows;
+Memory Consolidation polls those signals and handles them by writing, staging,
+or explicitly skipping the candidate. It is off by default:
+
+```bash
+PRACTICE_AUTONOMIC_PROVIDER=codex \
+  PRACTICE_REMSLEEP_ENABLED=1 \
+  PRACTICE_REMSLEEP_INTERVAL_SECONDS=21600 \
+  uv run python -m practice_theory_implementation.autonomic_runner
+```
+
+RemSleep stores its checkpoint at `data/remsleep_checkpoint.json` and staged
+review candidates at `data/remsleep_staged_candidates.jsonl` by default. Memory
+signals live in `data/remsleep_memory_signals.jsonl`, with handled markers in
+`data/remsleep_handled_signals.jsonl`. Override those with
+`PRACTICE_REMSLEEP_CHECKPOINT_PATH`, `PRACTICE_REMSLEEP_STAGED_CANDIDATES_PATH`,
+`PRACTICE_REMSLEEP_MEMORY_SIGNALS_PATH`, and
+`PRACTICE_REMSLEEP_HANDLED_SIGNALS_PATH`.
+
+For a staging-only dry run that uses the local `.codex/config.toml` service env
+without advancing the real checkpoint:
+
+```bash
+uv run python scripts/remsleep_dry_run.py
+```
+
 ## Operational notes
 
 ### Stale claims after a crash or kill
@@ -119,15 +148,16 @@ The next run recreates both from the seed pools. Note: the trail and substrate m
 ```
 src/practice_theory_implementation/
   types.py                 # Bundle, Substrate, PoolElement, Affordance, Material
-  pools.py                 # the seed pools (TA, understanding, rules, affordances, materials)
+  pools.py                 # compatibility shim exposing the loaded substrate
   registry.py              # binds Material.name to executable code
   projection.py            # project(bundle, substrate, registry, engagement?) -> ProjectedPractice
   server.py                # FastMCP surface, instructions, practice://* resources
-  substrate_store.py       # SQLite overlay for runtime amendments
+  substrate_loader.py      # reads markdown + YAML-frontmatter substrate files
+  substrate_writer.py      # persists Practice Management amendments to substrate/
   trail.py                 # enactments, steps, friction_observations, judge_inbox, smoother_inbox
   autonomic_dispatcher.py  # routes closed enactments and Friction into the inboxes
   autonomic_adapters.py    # ScriptedAdapter, AnthropicSDKAdapter, ClaudeCliAdapter, CodexExecAdapter
-  autonomic_runner.py      # entry point that drives Judge + Smoother concurrently
+  autonomic_runner.py      # drives Judge, Smoother, and optional RemSleep workers
   __main__.py              # verify
   bundles/                 # Activities Management, Reflection, Practice Management,
                            # Judge, Smoother, plus the engagement bundle

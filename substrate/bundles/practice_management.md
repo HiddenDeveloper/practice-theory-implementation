@@ -11,6 +11,8 @@ rules_ids:
 - rule_pm_preview_before_apply
 - rule_pm_no_id_collision
 - rule_pm_amend_additively
+- rule_pm_check_git_and_code_alignment
+- rule_pm_update_affected_documentation
 affordance_ids:
 - read_pool
 - author_pool_element
@@ -22,5 +24,6 @@ affordance_ids:
 - author_bundle
 - amend_bundle
 - reload_seed_substrate
+- check_documentation_impact
 ---
 Author and amend the substrate at runtime — pool elements, affordances, materials, and bundles — on the user's behalf.

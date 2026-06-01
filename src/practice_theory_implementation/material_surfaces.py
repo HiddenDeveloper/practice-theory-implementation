@@ -466,10 +466,26 @@ MATERIAL_SURFACES: dict[str, Material] = {
         Material(
             name="pm_reload_seed_substrate",
             description=(
-                "Reload source-defined pools, bundles, and registry, reapply "
-                "the persisted overlay, and force projection refresh."
+                "Reload file-backed pools and bundles plus code-owned material "
+                "surfaces and registry functions, then force projection refresh."
             ),
             input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="pm_check_documentation_impact",
+            description=(
+                "Search README/docs/social-media markdown for references likely "
+                "affected by changed substrate ids, files, or query terms."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "changed_ids": {"type": "array", "items": {"type": "string"}},
+                    "changed_files": {"type": "array", "items": {"type": "string"}},
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+            },
         ),
         # Judge primitives.
         Material(
@@ -546,6 +562,133 @@ MATERIAL_SURFACES: dict[str, Material] = {
                 "type": "object",
                 "properties": {"friction_id": {"type": "integer"}},
                 "required": ["friction_id"],
+            },
+        ),
+        # RemSleep / Memory Recall and Memory Consolidation.
+        Material(
+            name="remsleep_read_checkpoint",
+            description=(
+                "Read the RemSleep checkpoint that marks the last reviewed "
+                "episodic-memory and graph-drift watermarks."
+            ),
+            input_schema={"type": "object", "properties": {}},
+        ),
+        Material(
+            name="remsleep_recall_unreviewed_episodes",
+            description=(
+                "Recall episodic turns after the prior RemSleep checkpoint "
+                "watermark. sequence_from is treated as exclusive."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "sequence_from": {"type": "integer"},
+                    "date_from": {"type": "string"},
+                    "date_to": {"type": "string"},
+                },
+            },
+        ),
+        Material(
+            name="remsleep_read_updated_graph_nodes",
+            description=(
+                "Read non-canonical Neo4j nodes updated after a graph watermark."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "since": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+            },
+        ),
+        Material(
+            name="remsleep_dispatch_memory_signal",
+            description=(
+                "Dispatch a source-backed memory signal for Memory Consolidation "
+                "to consume."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "source_ids": {"type": "array", "items": {"type": "string"}},
+                    "evidence": {"type": "object"},
+                    "suggested_anchor": {
+                        "type": "string",
+                        "enum": ["self", "user", "profile", "context", "guidance"],
+                    },
+                    "confidence": {"type": "number"},
+                },
+                "required": ["content"],
+            },
+        ),
+        Material(
+            name="remsleep_read_memory_signals",
+            description=(
+                "Read pending memory signals dispatched by Memory Recall."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                    "include_handled": {"type": "boolean"},
+                },
+            },
+        ),
+        Material(
+            name="remsleep_mark_memory_signal_handled",
+            description=(
+                "Mark a dispatched memory signal as handled after consolidation "
+                "has staged, written, or explicitly skipped it."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "signal_id": {"type": "string"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["signal_id"],
+            },
+        ),
+        Material(
+            name="remsleep_stage_memory_candidate",
+            description=(
+                "Append a source-backed canonical-memory candidate to the "
+                "RemSleep staging file for later review."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string"},
+                    "anchor": {
+                        "type": "string",
+                        "enum": ["self", "user", "profile", "context", "guidance"],
+                    },
+                    "kind": {"type": "string"},
+                    "source_ids": {"type": "array", "items": {"type": "string"}},
+                    "evidence": {"type": "object"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["content"],
+            },
+        ),
+        Material(
+            name="remsleep_record_checkpoint",
+            description=(
+                "Persist the RemSleep checkpoint after the review range has "
+                "been inspected and selected candidates have been written or staged."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "episode_sequence": {"type": "integer"},
+                    "episode_date_time": {"type": "string"},
+                    "graph_updated_at": {"type": "string"},
+                    "reviewed_at": {"type": "string"},
+                    "notes": {"type": "string"},
+                },
             },
         ),
     )

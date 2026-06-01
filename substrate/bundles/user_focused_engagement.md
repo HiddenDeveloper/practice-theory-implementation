@@ -14,6 +14,7 @@ rules_ids:
 - rule_offer_not_instruct
 - rule_honour_what_brought
 - rule_episodic_memory_read_only
+- rule_engagement_bundle_changes_via_pm
 affordance_ids:
 - about_the_user
 - about_user_profile
