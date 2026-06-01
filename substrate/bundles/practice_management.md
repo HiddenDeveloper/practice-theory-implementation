@@ -13,6 +13,7 @@ rules_ids:
 - rule_pm_amend_additively
 - rule_pm_check_git_and_code_alignment
 - rule_pm_update_affected_documentation
+- rule_pm_judgement_materials_are_evaluable
 affordance_ids:
 - read_pool
 - author_pool_element
