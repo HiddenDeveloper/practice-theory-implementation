@@ -43,7 +43,11 @@ class Case:
 # evaluability rule (`rule_material_judgement_is_evaluable`) is what it violates.
 
 def _seed_unevaluated_proposal(store: EnactmentStore) -> str:
-    eid = store.open_enactment("memory_recall")
+    # user_focused_engagement is the bundle that grants both the ranking
+    # affordance (recall_relevant_episodes) and a consuming action
+    # (write_non_episodic_memory), so the situation is realistic: recall some
+    # ranked episodes, then write the top hit to canonical memory by rank alone.
+    eid = store.open_enactment("user_focused_engagement")
     t = _iso()
     store.record_step(
         enactment_id=eid,
@@ -62,17 +66,18 @@ def _seed_unevaluated_proposal(store: EnactmentStore) -> str:
         completed_at=t,
         duration_ms=4,
     )
-    # Acts on the top-ranked hit directly; no step weighs the ranking or selects.
+    # Writes the top-ranked hit to canonical memory directly; no step weighs the
+    # ranking, compares the alternative, or selects against the score.
     store.record_step(
         enactment_id=eid,
-        affordance_id="dispatch_memory_signal",
-        material_name="remsleep_dispatch_memory_signal",
+        affordance_id="write_non_episodic_memory",
+        material_name="write_non_episodic_memory",
         arguments={
-            "content": "Top recalled turn looks durable; forwarding it.",
+            "anchor": "user",
+            "content": "User prefers uv over pip; top recalled turn, forwarding it.",
             "source_ids": ["turn-9"],
-            "kind": "memory_delta",
         },
-        result={"signal": {"id": "sig-eval-1"}},
+        result={"written": {"id": "mem-eval-1"}},
         started_at=t,
         completed_at=t,
         duration_ms=3,
@@ -108,11 +113,11 @@ CASES: dict[str, Case] = {
     "judge_unevaluated_proposal": Case(
         id="judge_unevaluated_proposal",
         description=(
-            "A memory_recall enactment consumed a ranking affordance and acted on "
-            "the top hit with no step that evaluated the ranking. The Judge should "
-            "name an unevaluated_proposal friction on it."
+            "A user_focused_engagement enactment consumed a ranking affordance "
+            "and wrote the top hit to canonical memory with no step that evaluated "
+            "the ranking. The Judge should name an unevaluated_proposal friction."
         ),
-        target_bundle="memory_recall",
+        target_bundle="user_focused_engagement",
         role="judge",
         seed=_seed_unevaluated_proposal,
         grade=_grade_unevaluated_proposal,
