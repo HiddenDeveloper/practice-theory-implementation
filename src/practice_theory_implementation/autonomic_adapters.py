@@ -298,7 +298,13 @@ class AnthropicSDKAdapter(AutonomicAdapter):
     async def open(self) -> None:
         import sys as _sys
 
-        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+        # claude_agent_sdk ships only with the optional `anthropic` extra, so it
+        # may be absent (e.g. Codex-only installs); the type checker is told the
+        # import is allowed to be missing.
+        from claude_agent_sdk import (  # pyright: ignore[reportMissingImports]
+            ClaudeAgentOptions,
+            ClaudeSDKClient,
+        )
 
         mcp_label = "practice_server_autonomic"
         allowed_tools = [
@@ -355,7 +361,11 @@ class AnthropicSDKAdapter(AutonomicAdapter):
     async def _drain(self) -> None:
         if self._client is None:
             return
-        from claude_agent_sdk import AssistantMessage, ResultMessage
+        # Optional `anthropic` extra; see open() — import allowed to be missing.
+        from claude_agent_sdk import (  # pyright: ignore[reportMissingImports]
+            AssistantMessage,
+            ResultMessage,
+        )
 
         async for msg in self._client.receive_response():
             if isinstance(msg, AssistantMessage):
