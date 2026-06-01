@@ -120,6 +120,7 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "remsleep_read_checkpoint": remsleep.remsleep_read_checkpoint,
     "remsleep_recall_unreviewed_episodes": remsleep.remsleep_recall_unreviewed_episodes,
     "remsleep_read_updated_graph_nodes": remsleep.remsleep_read_updated_graph_nodes,
+    "remsleep_summarize_recall_candidates": remsleep.remsleep_summarize_recall_candidates,
     "remsleep_dispatch_memory_signal": remsleep.remsleep_dispatch_memory_signal,
     "remsleep_read_memory_signals": remsleep.remsleep_read_memory_signals,
     "remsleep_mark_memory_signal_handled": remsleep.remsleep_mark_memory_signal_handled,

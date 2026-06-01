@@ -178,10 +178,11 @@ async def _run_memory_recall_loop(
                             "checkpoint, read the current canonical/user context, "
                             "recall unreviewed episodes after the checkpoint, and "
                             "read non-canonical graph nodes updated after the graph "
-                            "watermark. Identify what happened, then dispatch a "
-                            "source-backed memory_signal for any relevant durable "
-                            "change or explicit no-op summary. Do not write "
-                            "canonical memory and do not record the checkpoint. "
+                            "watermark. Summarize the recalled evidence into "
+                            "source-backed candidates, then dispatch a "
+                            "memory_signal for each relevant durable change or "
+                            "explicit no-op summary. Do not write canonical "
+                            "memory and do not record the checkpoint. "
                             "Stop after one recall pass."
                         ),
                     )

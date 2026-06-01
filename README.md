@@ -65,9 +65,10 @@ The runner finishes any in-flight `codex exec` / `claude -p` / SDK call and exit
 ## RemSleep memory recall and consolidation
 
 The autonomic runner can also run RemSleep as two autonomic practices. Memory
-Recall runs on a schedule and dispatches source-backed `memory_signal` rows;
-Memory Consolidation polls those signals and handles them by writing, staging,
-or explicitly skipping the candidate. It is off by default:
+Recall runs on a schedule, summarizes recalled episodes and graph drift into
+source-backed candidates, and dispatches those as `memory_signal` rows. Memory
+Consolidation polls those signals and handles them by writing, staging, or
+explicitly skipping the candidate. It is off by default:
 
 ```bash
 PRACTICE_AUTONOMIC_PROVIDER=codex \
@@ -85,7 +86,8 @@ signals live in `data/remsleep_memory_signals.jsonl`, with handled markers in
 `PRACTICE_REMSLEEP_HANDLED_SIGNALS_PATH`.
 
 For a staging-only dry run that uses the local `.codex/config.toml` service env
-without advancing the real checkpoint:
+without advancing the real checkpoint, dispatching real extractive candidate
+signals into temp files:
 
 ```bash
 uv run python scripts/remsleep_dry_run.py

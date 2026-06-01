@@ -20,6 +20,7 @@ affordance_ids:
 - read_remsleep_checkpoint
 - recall_unreviewed_episodes
 - read_updated_graph_nodes
+- summarize_recall_candidates
 - dispatch_memory_signal
 ---
-RemSleep Recall: an autonomic practice that periodically reviews recent episodes and graph drift, identifies what happened, and dispatches bounded memory_signals for Memory Consolidation to answer.
+RemSleep Recall: an autonomic practice that periodically reviews recent episodes and graph drift, summarizes what happened into source-backed candidates, and dispatches bounded memory_signals for Memory Consolidation to answer.

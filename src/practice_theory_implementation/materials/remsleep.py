@@ -109,6 +109,37 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _text_snippet(value: object, *, limit: int = 220) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1].rstrip()}..."
+
+
+def _source_id_from_episode(episode: dict[str, Any]) -> str:
+    for key in ("turn_id", "id", "point_id"):
+        value = episode.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    conversation = episode.get("conversation_id")
+    sequence = episode.get("sequence")
+    if isinstance(conversation, str) and sequence is not None:
+        return f"{conversation}#sequence-{sequence}"
+    return "episode:unknown"
+
+
+def _source_id_from_graph_node(node: dict[str, Any]) -> str:
+    props = node.get("properties")
+    labels = node.get("labels")
+    label_text = ":".join(str(label) for label in labels) if isinstance(labels, list) else "Node"
+    if isinstance(props, dict):
+        for key in ("id", "name", "uuid"):
+            value = props.get(key)
+            if isinstance(value, str) and value.strip():
+                return f"neo4j:{label_text}:{value}"
+    return f"neo4j:{label_text}:unknown"
+
+
 def remsleep_read_checkpoint() -> dict[str, Any]:
     """Return the current RemSleep checkpoint, or an empty first-run checkpoint."""
     path = _checkpoint_path()
@@ -219,6 +250,166 @@ def remsleep_read_updated_graph_nodes(
                 "properties": props,
             })
     return {"store": "neo4j", "since": since, "nodes": nodes}
+
+
+def remsleep_summarize_recall_candidates(
+    *,
+    episodes: dict[str, Any] | None = None,
+    graph: dict[str, Any] | None = None,
+    max_candidates: int = 5,
+) -> dict[str, Any]:
+    """Summarize recalled evidence into source-backed memory-signal candidates.
+
+    This is intentionally extractive and deterministic. Memory Recall can use
+    it to produce meaningful handoff signals without pretending to have already
+    performed consolidation or canonical judgement.
+    """
+    max_candidates = max(1, min(int(max_candidates), 10))
+    candidates: list[dict[str, Any]] = []
+    warnings = [
+        str(payload["warning"])
+        for payload in (episodes, graph)
+        if isinstance(payload, dict) and payload.get("warning")
+    ]
+
+    episode_rows = []
+    if isinstance(episodes, dict) and isinstance(episodes.get("episodes"), list):
+        episode_rows = [
+            episode for episode in episodes["episodes"] if isinstance(episode, dict)
+        ]
+    if episode_rows and len(candidates) < max_candidates:
+        user_rows = [
+            episode for episode in episode_rows
+            if str(episode.get("role", "")).lower() == "user"
+        ]
+        focus_rows = user_rows or episode_rows
+        source_ids = [_source_id_from_episode(episode) for episode in focus_rows[:5]]
+        snippets = [
+            _text_snippet(episode.get("text"), limit=180)
+            for episode in focus_rows[:3]
+            if episode.get("text")
+        ]
+        sequences = [
+            sequence
+            for episode in episode_rows
+            if isinstance((sequence := episode.get("sequence")), int)
+        ]
+        latest_sequence = max(sequences) if sequences else None
+        latest_date = max(
+            (
+                str(episode.get("date_time"))
+                for episode in episode_rows
+                if episode.get("date_time")
+            ),
+            default=None,
+        )
+        candidates.append({
+            "kind": "episodic_recall_summary",
+            "suggested_anchor": "context",
+            "confidence": 0.65,
+            "content": (
+                f"Memory Recall found {len(episode_rows)} unreviewed episodic "
+                f"turns. Salient recent user/context snippets: "
+                f"{' | '.join(snippets) if snippets else '(no text snippets)'}"
+            ),
+            "source_ids": source_ids,
+            "evidence": {
+                "episode_count": len(episode_rows),
+                "user_episode_count": len(user_rows),
+                "latest_sequence": latest_sequence,
+                "latest_date_time": latest_date,
+                "review_window": episodes.get("review_window")
+                if isinstance(episodes, dict)
+                else None,
+            },
+        })
+
+    graph_nodes = []
+    if isinstance(graph, dict) and isinstance(graph.get("nodes"), list):
+        graph_nodes = [node for node in graph["nodes"] if isinstance(node, dict)]
+    if graph_nodes and len(candidates) < max_candidates:
+        label_counts: dict[str, int] = {}
+        examples: list[str] = []
+        source_ids: list[str] = []
+        latest_updated_at: str | None = None
+        for node in graph_nodes:
+            labels = node.get("labels")
+            props = node.get("properties")
+            label_text = (
+                ":".join(str(label) for label in labels)
+                if isinstance(labels, list) and labels
+                else "Node"
+            )
+            label_counts[label_text] = label_counts.get(label_text, 0) + 1
+            source_ids.append(_source_id_from_graph_node(node))
+            if isinstance(props, dict):
+                display = props.get("name") or props.get("id") or props.get("type")
+                if display is not None and len(examples) < 5:
+                    examples.append(f"{label_text}={_text_snippet(display, limit=80)}")
+                updated = props.get("updated_at") or props.get("created_at")
+                if isinstance(updated, str) and (
+                    latest_updated_at is None or updated > latest_updated_at
+                ):
+                    latest_updated_at = updated
+        counts = ", ".join(
+            f"{label}={count}" for label, count in sorted(label_counts.items())
+        )
+        candidates.append({
+            "kind": "graph_drift_summary",
+            "suggested_anchor": "context",
+            "confidence": 0.6,
+            "content": (
+                f"Memory Recall found {len(graph_nodes)} updated non-canonical "
+                f"graph nodes since the graph watermark. Label counts: {counts}. "
+                f"Examples: {', '.join(examples) if examples else '(none)'}."
+            ),
+            "source_ids": source_ids[:10],
+            "evidence": {
+                "graph_node_count": len(graph_nodes),
+                "label_counts": label_counts,
+                "latest_updated_at": latest_updated_at,
+                "since": graph.get("since") if isinstance(graph, dict) else None,
+            },
+        })
+
+    if warnings and len(candidates) < max_candidates:
+        candidates.append({
+            "kind": "recall_warning",
+            "suggested_anchor": "context",
+            "confidence": 0.5,
+            "content": (
+                "Memory Recall encountered partial evidence while reading "
+                f"memory stores: {' | '.join(warnings)}"
+            ),
+            "source_ids": [],
+            "evidence": {"warnings": warnings},
+        })
+
+    if not candidates:
+        candidates.append({
+            "kind": "recall_noop",
+            "suggested_anchor": "context",
+            "confidence": 0.4,
+            "content": (
+                "Memory Recall found no unreviewed episodes, updated graph "
+                "nodes, or store warnings that require consolidation."
+            ),
+            "source_ids": [],
+            "evidence": {
+                "episode_count": len(episode_rows),
+                "graph_node_count": len(graph_nodes),
+                "warnings": warnings,
+            },
+        })
+
+    return {
+        "candidates": candidates[:max_candidates],
+        "summary": {
+            "episode_count": len(episode_rows),
+            "graph_node_count": len(graph_nodes),
+            "warning_count": len(warnings),
+        },
+    }
 
 
 def remsleep_dispatch_memory_signal(
