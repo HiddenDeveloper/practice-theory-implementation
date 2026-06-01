@@ -645,12 +645,10 @@ class RolePolicy:
                 dispatch_message=(
                     f"Examine enactment `{row.enactment_id}` "
                     f"(bundle `{row.bundle_id}`, closed at `{row.closed_at}`). "
-                    f"Use read_enactment_steps to see what it did, read_bundle "
-                    f"to see what was available. If you find friction worth "
-                    f"naming, emit_friction with kind, content, and "
-                    f"observation_data. Then stop — do not examine other "
-                    f"enactments in this turn. If nothing is worth naming, "
-                    f"say so briefly and stop."
+                    f"Use read_enactment_steps to see what it did and read_bundle "
+                    f"to see what was available, then enact the Judge practice "
+                    f"over it: emit_friction for what you find. Examine only this "
+                    f"one enactment in this turn, then stop."
                 ),
                 metadata={
                     "enactment_id": row.enactment_id,
@@ -668,11 +666,11 @@ class RolePolicy:
                 dispatch_message=(
                     f"Address Friction `{row.friction_id}` (kind=`{row.kind}`, "
                     f"target enactment `{row.target_enactment_id}`). "
-                    f"Use read_pending_friction to find it; read the bundle it "
-                    f"names if you need context; apply the smallest amendment "
-                    f"that addresses what was named, using the appropriate "
-                    f"amend_* affordance; mark_friction_addressed when done. "
-                    f"Then stop — address only this one Friction in this turn."
+                    f"Use read_pending_friction to find it and read the bundle it "
+                    f"names if you need context, then enact the Smoother practice: "
+                    f"apply the amendment with the appropriate amend_* affordance "
+                    f"and mark_friction_addressed when done. Address only this one "
+                    f"Friction in this turn, then stop."
                 ),
                 metadata={
                     "friction_id": row.friction_id,

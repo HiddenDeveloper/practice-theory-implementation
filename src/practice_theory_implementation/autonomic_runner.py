@@ -174,17 +174,12 @@ async def _run_memory_recall_loop(
                         role="memory_recall",
                         dispatch_message=(
                             "Run one RemSleep memory-recall pass. Switch to "
-                            "`memory_recall`. Read the RemSleep "
-                            "checkpoint, read the current canonical/user context, "
-                            "recall unreviewed episodes after the checkpoint, and "
-                            "read non-canonical graph nodes updated after the graph "
-                            "watermark. Read the raw evidence and judge it "
-                            "yourself: dispatch a bounded, source-backed "
-                            "memory_signal for each durable change worth "
-                            "Consolidation's attention, or one explicit no-op "
-                            "signal if nothing changed. Do not write canonical "
-                            "memory and do not record the checkpoint. "
-                            "Stop after one recall pass."
+                            "`memory_recall`, then read the checkpoint, the "
+                            "current canonical/user context, the unreviewed "
+                            "episodes after the checkpoint, and the non-canonical "
+                            "graph nodes updated after the graph watermark. Judge "
+                            "what you read and dispatch memory_signals "
+                            "accordingly. Stop after one recall pass."
                         ),
                     )
                 )

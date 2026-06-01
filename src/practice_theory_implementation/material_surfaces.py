@@ -106,8 +106,11 @@ MATERIAL_SURFACES: dict[str, Material] = {
         Material(
             name="recall_relevant_episodes",
             description=(
-                "Return compact episodic memory turns semantically relevant "
-                "to a query, using the local embedding service and Qdrant."
+                "Return episodic memory turns semantically relevant to a query, "
+                "in the store's own similarity order (most similar first, each "
+                "with its native score), using the local embedding service and "
+                "Qdrant. Narrowed only by the filters and score_threshold you "
+                "pass; it does not re-rank — judging which turns matter is yours."
             ),
             input_schema={
                 "type": "object",
@@ -120,7 +123,6 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "date_from": {"type": "string"},
                     "date_to": {"type": "string"},
                     "score_threshold": {"type": "number"},
-                    "prefer_recent": {"type": "boolean"},
                 },
                 "required": ["query"],
             },
