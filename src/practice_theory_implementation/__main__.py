@@ -830,8 +830,59 @@ def _print_enactment(store: EnactmentStore, enactment: Any, *, indent: str, labe
         print(f"{indent}        result    : {summary}")
 
 
+async def verify_persistence() -> None:
+    """Phase B proof: a brand-new server reads the PM-authored files from disk.
+
+    The somatic walk above authored `quick_glance` (pool elements, a dynamic
+    material, an affordance, a bundle) through Practice Management — which now
+    dual-writes to the `substrate/` files. This spawns a *fresh* server process
+    (same `PRACTICE_SUBSTRATE_DIR`, no shared in-memory state) and confirms the
+    authored practice and its dynamic material survived purely as files: the
+    bundle lists, and its expression-material rebuilds and invokes.
+    """
+    print()
+    print("=" * 60)
+    print("Phase B: fresh server reads the PM-authored substrate from disk")
+    print("=" * 60)
+    print()
+    async with stdio_client(_server_params("somatic")) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            r = await session.call_tool("list_practices", {})
+            practices = _content_to_value(r.content)
+            ids = (
+                {p.get("id") for p in practices if isinstance(p, dict)}
+                if isinstance(practices, list)
+                else set()
+            )
+            print(f"  quick_glance persisted to files : {'quick_glance' in ids}")
+
+            r = await session.call_tool(
+                "switch_practice", {"practice_id": "quick_glance"}
+            )
+            _print_value(
+                "switch_practice('quick_glance')  [bundle from disk]",
+                _content_to_value(r.content),
+            )
+
+            r = await session.call_tool(
+                "invoke_affordance",
+                {
+                    "affordance_id": "quick_glance_today",
+                    "material_name": "quick_glance_note",
+                    "arguments": {"date": "2026-05-25"},
+                },
+            )
+            _print_value(
+                "invoke quick_glance_note  [dynamic material rebuilt from disk]",
+                _content_to_value(r.content),
+            )
+
+
 async def verify_all() -> None:
     await verify_somatic()
+    await verify_persistence()
     await verify_autonomic_loop()
 
 
@@ -867,10 +918,8 @@ def _ensure_hermetic_trail_path() -> None:
     """Point the trail at a fresh temp DB unless the caller set PRACTICE_TRAIL_PATH.
 
     The verify's narrative assumes a clean trail (empty, no stale Friction). The
-    substrate is now read from the `substrate/` files (override via
-    PRACTICE_SUBSTRATE_DIR), not a SQLite DB, so only the trail needs a hermetic
-    temp path. Phase A writes nothing back to the substrate, so reading the
-    git-tracked `substrate/` dir directly is safe.
+    substrate is read from files (see `_ensure_hermetic_substrate_dir`), so only
+    the trail needs a hermetic temp DB.
     """
     import tempfile
     from pathlib import Path
@@ -884,8 +933,35 @@ def _ensure_hermetic_trail_path() -> None:
     print()
 
 
+def _ensure_hermetic_substrate_dir() -> None:
+    """Copy `substrate/` to a temp dir and point the verify at it.
+
+    Phase B's Practice Management dual-writes amendments back to the substrate
+    files. If the verify ran against the checked-in `substrate/`, the PM
+    authoring step would mutate tracked files and dirty git. So unless the caller
+    set PRACTICE_SUBSTRATE_DIR, the spawned servers read from (and write to) a
+    throwaway copy — the authored files are real (so the fresh-server
+    persistence check passes), but `substrate/` stays clean. The env var
+    propagates to the subprocess servers via `_server_params`'s `**os.environ`.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    if "PRACTICE_SUBSTRATE_DIR" in os.environ:
+        return  # caller opted into a custom substrate dir; respect it.
+    src = Path(__file__).resolve().parents[2] / "substrate"
+    dst = Path(tempfile.mkdtemp(prefix="practice-substrate-")) / "substrate"
+    shutil.copytree(src, dst)
+    os.environ["PRACTICE_SUBSTRATE_DIR"] = str(dst)
+    print(f"[verify] using hermetic temp substrate at {dst}")
+    print("[verify] PM amendments land here, leaving the tracked substrate/ clean")
+    print()
+
+
 def main() -> None:
     _ensure_hermetic_trail_path()
+    _ensure_hermetic_substrate_dir()
     asyncio.run(verify_all())
     print()
     _print_trail()

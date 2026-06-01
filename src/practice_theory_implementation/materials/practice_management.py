@@ -1,13 +1,16 @@
 """Meta-materials for Practice Management — the substrate-mutating functions.
 
-Each function updates the in-memory Substrate (so amendments are visible to the
-next projection). Reads are read-through on the in-memory Substrate.
+Each function dual-writes an amendment: it persists the entity to its
+`substrate/` file (via `substrate_writer`) **and** updates the in-memory
+Substrate (so the change is visible to the next projection without a reload).
 
-Phase A of the files-as-substrate migration: amendments are **in-memory only**
-and do not persist across restart — the authorable substrate now lives in the
-`substrate/` files (the single source of truth), and a file write-path will
-restore persistence in Phase B. Until then, durable changes are made by editing
-the files (and `pm_reload_seed_substrate` re-reads them).
+Phase B of the files-as-substrate migration: amendments are durable. The
+authorable substrate lives in the `substrate/` files (the single source of
+truth); writing the file back is what makes an authored change survive a
+restart and show up as a reviewable git diff — the dual-write the old SQLite
+overlay used to do, now to files. The file is written first, before the
+in-memory dict is mutated, so a write failure leaves memory and disk consistent
+(no half-applied amendment). `pm_reload_seed_substrate` re-reads the files.
 
 These functions are bound to module-level state — the substrate and the bundle
 catalog — wired by the server at startup via `configure(...)`.
@@ -18,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from practice_theory_implementation import substrate_writer
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
@@ -85,6 +89,19 @@ def _need_source_reloader() -> Callable[[], Mapping[str, Any]]:
     return _reload_source_callback
 
 
+def _persist(write: Callable[[], Any]) -> dict[str, Any] | None:
+    """Run a file write, returning an error dict on failure (else None).
+
+    Called before the in-memory dict is mutated, so a disk failure aborts the
+    amendment cleanly — memory and the file stay in agreement.
+    """
+    try:
+        write()
+    except OSError as exc:
+        return {"error": f"failed to persist amendment to substrate file: {exc}"}
+    return None
+
+
 # --- read ------------------------------------------------------------------
 
 
@@ -137,7 +154,10 @@ def pm_create_element(pool: str, id: str, name: str, content: str) -> dict[str, 
     pool_dict = _pool_dict_for(s, pool)
     if id in pool_dict:
         return {"error": f"id {id!r} already exists in {pool!r}"}
-    pool_dict[id] = PoolElement(id=id, name=name, content=content)
+    element = PoolElement(id=id, name=name, content=content)
+    if err := _persist(lambda: substrate_writer.write_pool_element(pool, element)):
+        return err
+    pool_dict[id] = element
     return {"created": {"pool": pool, "id": id}}
 
 
@@ -154,11 +174,14 @@ def pm_amend_element(
     if id not in pool_dict:
         return {"error": f"id {id!r} not in {pool!r}"}
     current = pool_dict[id]
-    pool_dict[id] = PoolElement(
+    element = PoolElement(
         id=id,
         name=name if name is not None else current.name,
         content=content if content is not None else current.content,
     )
+    if err := _persist(lambda: substrate_writer.write_pool_element(pool, element)):
+        return err
+    pool_dict[id] = element
     return {"amended": {"pool": pool, "id": id}}
 
 
@@ -177,9 +200,12 @@ def pm_create_affordance(
     missing = [m for m in materials if m not in s.materials]
     if missing:
         return {"error": f"materials not in substrate: {missing}"}
-    s.affordances[id] = Affordance(
+    affordance = Affordance(
         id=id, name=name, description=description, materials=tuple(materials)
     )
+    if err := _persist(lambda: substrate_writer.write_affordance(affordance)):
+        return err
+    s.affordances[id] = affordance
     return {"created": {"affordance": id, "materials": materials}}
 
 
@@ -197,12 +223,15 @@ def pm_amend_affordance(
         missing = [m for m in materials if m not in s.materials]
         if missing:
             return {"error": f"materials not in substrate: {missing}"}
-    s.affordances[id] = Affordance(
+    affordance = Affordance(
         id=id,
         name=name if name is not None else current.name,
         description=description if description is not None else current.description,
         materials=tuple(materials) if materials is not None else current.materials,
     )
+    if err := _persist(lambda: substrate_writer.write_affordance(affordance)):
+        return err
+    s.affordances[id] = affordance
     return {"amended": {"affordance": id}}
 
 
@@ -223,10 +252,18 @@ def pm_create_material(
             _need_function_registrar()(name, implementation)
         except (TypeError, ValueError) as exc:
             return {"error": f"invalid material implementation: {exc}"}
+        if err := _persist(
+            lambda: substrate_writer.write_dynamic_material(
+                name, description, input_schema, implementation
+            )
+        ):
+            return err
     s.materials[name] = Material(
         name=name, description=description, input_schema=dict(input_schema)
     )
-    created: dict[str, Any] = {"material": name}
+    # A material with no implementation has no file home (and no registry
+    # binding) — it cannot be invoked and does not survive a restart.
+    created: dict[str, Any] = {"material": name, "persisted": implementation is not None}
     if implementation is not None:
         created["function"] = implementation.get("kind")
     return {"created": created}
@@ -247,12 +284,28 @@ def pm_amend_material(
         except (TypeError, ValueError) as exc:
             return {"error": f"invalid material implementation: {exc}"}
     current = s.materials[name]
+    new_description = description if description is not None else current.description
+    new_schema = dict(input_schema) if input_schema is not None else dict(current.input_schema)
+    # Recover the existing implementation when amending only the surface — the
+    # spec lives in the file, not the in-memory Material, so we must read it back
+    # to rewrite the file faithfully. A material with no file is code-owned (no
+    # implementation): its surface amendment stays in-memory only.
+    new_impl: Mapping[str, Any] | None = implementation
+    if new_impl is None:
+        existing = substrate_writer.read_dynamic_material(name)
+        if existing is not None:
+            new_impl = existing.get("implementation")
+    if new_impl is not None:
+        if err := _persist(
+            lambda: substrate_writer.write_dynamic_material(
+                name, new_description, new_schema, new_impl
+            )
+        ):
+            return err
     s.materials[name] = Material(
-        name=name,
-        description=description if description is not None else current.description,
-        input_schema=dict(input_schema) if input_schema is not None else current.input_schema,
+        name=name, description=new_description, input_schema=new_schema
     )
-    return {"amended": {"material": name}}
+    return {"amended": {"material": name, "persisted": new_impl is not None}}
 
 
 # --- bundle create / amend ------------------------------------------------
@@ -306,7 +359,7 @@ def pm_create_bundle(
     )
     if missing:
         return {"error": f"unresolved references: {missing}"}
-    catalog[id] = Bundle(
+    bundle = Bundle(
         id=id,
         name=name,
         description=description,
@@ -316,6 +369,9 @@ def pm_create_bundle(
         affordance_ids=tuple(affordance_ids),
         mode=mode,  # type: ignore[arg-type]
     )
+    if err := _persist(lambda: substrate_writer.write_bundle(bundle)):
+        return err
+    catalog[id] = bundle
     return {"created": {"bundle": id, "name": name, "mode": mode}}
 
 
@@ -351,7 +407,7 @@ def pm_amend_bundle(
     )
     if missing:
         return {"error": f"unresolved references: {missing}"}
-    catalog[id] = Bundle(
+    bundle = Bundle(
         id=id,
         name=name if name is not None else current.name,
         description=description if description is not None else current.description,
@@ -361,4 +417,7 @@ def pm_amend_bundle(
         affordance_ids=tuple(new_aff),
         mode=current.mode,
     )
+    if err := _persist(lambda: substrate_writer.write_bundle(bundle)):
+        return err
+    catalog[id] = bundle
     return {"amended": {"bundle": id}}

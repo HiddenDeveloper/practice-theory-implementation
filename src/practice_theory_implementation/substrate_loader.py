@@ -6,9 +6,13 @@ bundles) lives as markdown files under `substrate/`, one file per entity, with
 fields) followed by a body (the one prose field: `content` for pool elements,
 `description` for affordances and bundles).
 
-Materials are NOT loaded here — their captured surfaces are code-owned
+Materials are mostly NOT loaded here — their captured surfaces are code-owned
 (`material_surfaces.MATERIAL_SURFACES`) and injected into `Substrate.materials`,
 because the surface (schema) must stay glued to its function in the registry.
+The one exception is **dynamic materials** authored at runtime by Practice
+Management: those live as files under `substrate/dynamic_materials/`, and the
+loader rebuilds their callables via `registry.build_dynamic_material_function`
+as it reads them — they have no hand-written function to glue a surface to.
 
 Validation is graceful: a bundle whose references don't resolve is skipped and
 recorded in `errors` (logged by the server), never raised — so one bad file
@@ -55,7 +59,16 @@ def _resolve_root(root: str | Path | None) -> Path:
     return Path(os.environ.get(SUBSTRATE_DIR_ENV) or _DEFAULT_ROOT)
 
 
-def _split_frontmatter(text: str, *, source: str) -> tuple[dict[str, Any], str]:
+def substrate_root(root: str | Path | None = None) -> Path:
+    """Resolve the substrate directory, the way both loader and writer must.
+
+    Public so `substrate_writer` resolves the same root the loader reads from
+    (`PRACTICE_SUBSTRATE_DIR`, else the repo `substrate/`).
+    """
+    return _resolve_root(root)
+
+
+def split_frontmatter(text: str, *, source: str) -> tuple[dict[str, Any], str]:
     """Split a `---`-fenced YAML frontmatter block from the markdown body."""
     lines = text.split("\n")
     if not lines or lines[0].strip() != "---":
@@ -78,7 +91,7 @@ def _read_dir(directory: Path, errors: list[str]) -> list[tuple[str, dict[str, A
         return out
     for path in sorted(directory.glob("*.md")):
         try:
-            fm, body = _split_frontmatter(path.read_text(encoding="utf-8"), source=str(path))
+            fm, body = split_frontmatter(path.read_text(encoding="utf-8"), source=str(path))
         except ValueError as exc:
             errors.append(str(exc))
             continue
@@ -107,6 +120,49 @@ def _load_affordances(root: Path, errors: list[str]) -> dict[str, Affordance]:
             name=str(fm.get("name", stem)),
             description=body,
             materials=tuple(fm.get("materials") or ()),
+        )
+    return result
+
+
+def _load_dynamic_materials(
+    root: Path, errors: list[str], code_surfaces: dict[str, Material]
+) -> dict[str, Material]:
+    """Load PM-authored dynamic materials, rebuilding each callable as we read.
+
+    Each file carries the material's surface (`name`, `input_schema`) and an
+    `implementation` block; the loader registers the rebuilt callable into the
+    function registry so the material is invocable straight after a load. Graceful:
+    a bad implementation or a name that collides with a code-owned surface is
+    recorded in `errors` and skipped, never raised. Registry is imported lazily —
+    its module imports the materials package, and importing it at module scope
+    would weigh down the very early `pools`/`bundles` import of this loader.
+    """
+    from practice_theory_implementation import registry
+
+    result: dict[str, Material] = {}
+    for stem, fm, body in _read_dir(root / "dynamic_materials", errors):
+        if fm.get("name") != stem:
+            errors.append(
+                f"dynamic_materials/{stem}.md: frontmatter name {fm.get('name')!r} != filename"
+            )
+            continue
+        name = stem  # validated equal to frontmatter name; typed str
+        if name in code_surfaces:
+            errors.append(
+                f"dynamic_materials/{stem}.md: name collides with code-owned material"
+            )
+            continue
+        implementation = fm.get("implementation")
+        if not isinstance(implementation, dict):
+            errors.append(f"dynamic_materials/{stem}.md: missing/invalid implementation")
+            continue
+        try:
+            registry.register_dynamic_material(name, implementation)
+        except (TypeError, ValueError) as exc:
+            errors.append(f"dynamic_materials/{stem}.md: {exc}")
+            continue
+        result[name] = Material(
+            name=name, description=body, input_schema=fm.get("input_schema") or {}
         )
     return result
 
@@ -151,12 +207,14 @@ def load_substrate(
     """
     base = _resolve_root(root)
     errors: list[str] = []
+    code_surfaces = dict(material_surfaces)
+    dynamic_surfaces = _load_dynamic_materials(base, errors, code_surfaces)
     substrate = Substrate(
         teleo_affective=_load_pool(base, "teleo_affective", errors),
         understanding=_load_pool(base, "understanding", errors),
         rules=_load_pool(base, "rules", errors),
         affordances=_load_affordances(base, errors),
-        materials=dict(material_surfaces),
+        materials={**code_surfaces, **dynamic_surfaces},
     )
     catalog, engagements = _load_bundles(base, errors)
 
