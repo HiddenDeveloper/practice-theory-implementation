@@ -10,6 +10,27 @@ judges well* is legitimate. Only *doing the judging in code* was the dilution we
 removed. An eval that grades the practitioner is a verification tool, not a
 substitute for its cognition.
 
+## Running
+
+```bash
+uv run python -m evals.run                   # all cases, scripted driver (no model call)
+uv run python -m evals.run --provider codex  # all cases, live codex practitioner
+uv run python -m evals.run judge_unevaluated_proposal --provider scripted
+```
+
+The **scripted** driver walks the real Judge read/emit affordances over a live
+MCP server but applies a deterministic detector in place of the model — it
+validates the harness, seeding, routing, and grading end to end without spending
+a model call. It is test scaffolding, not situated cognition. The **codex**
+driver hands the work to a real practitioner via the autonomic adapter and is the
+actual test of the apprenticeship. Each case runs in an isolated temp workspace
+(`<tmp>/data/trail.db`); nothing real is touched. Exit code is non-zero if any
+selected case fails.
+
+Cases live in `cases.py` (seed + grade per situation); the drivers and isolation
+are in `harness.py`. Only `judge_unevaluated_proposal` is implemented so far; the
+situations below are the backlog.
+
 ## Method
 
 For each golden situation:
@@ -18,10 +39,10 @@ For each golden situation:
    episodes / graph nodes / signals — by pointing the practice's read affordances
    at a fixture store (or by injecting fixture rows the read affordances return).
    Use temp paths for any written artifacts so nothing real is touched.
-2. **Run one practitioner pass** via the autonomic adapter (codex or claude),
-   exactly as the runner would dispatch it. *(Integration point: this reuses
-   `AutonomicAdapter` + the same dispatch_message the runner sends; not yet
-   wired — that is the next build step.)*
+2. **Run one practitioner pass** via the autonomic adapter (codex), exactly as
+   the runner would dispatch it — `harness.drive_live` reuses `CodexExecAdapter`,
+   `RolePolicy`, and `drain`, so the practitioner gets the same dispatch_message
+   the real runner sends.
 3. **Read the trail**, not the prose. The artifacts that count are what landed:
    dispatched signals, written/staged candidates, emitted friction, recorded
    rationale, and which read affordances were exercised.
