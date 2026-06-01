@@ -13,8 +13,9 @@ substitute for its cognition.
 ## Running
 
 ```bash
-uv run python -m evals.run                   # all cases, scripted driver (no model call)
-uv run python -m evals.run --provider codex  # all cases, live codex practitioner
+uv run python -m evals.run                    # all cases, scripted driver (no model call)
+uv run python -m evals.run --provider codex   # all cases, live OpenAI Codex practitioner
+uv run python -m evals.run --provider claude  # all cases, live Anthropic Claude practitioner
 uv run python -m evals.run judge_unevaluated_proposal --provider scripted
 ```
 
@@ -22,10 +23,14 @@ The **scripted** driver walks the real Judge read/emit affordances over a live
 MCP server but applies a deterministic detector in place of the model — it
 validates the harness, seeding, routing, and grading end to end without spending
 a model call. It is test scaffolding, not situated cognition. The **codex**
-driver hands the work to a real practitioner via the autonomic adapter and is the
-actual test of the apprenticeship. Each case runs in an isolated temp workspace
-(`<tmp>/data/trail.db`); nothing real is touched. Exit code is non-zero if any
-selected case fails.
+(OpenAI Codex CLI) and **claude** (Anthropic Claude CLI) drivers hand the work to
+a real practitioner via the autonomic adapter and are the actual test of the
+apprenticeship — both providers the runner supports, mirroring the autonomic loop
+itself. (Anthropic also has an in-process `AnthropicSDKAdapter`, the same provider
+as `claude`, but it needs the optional `anthropic` extra installed; the CLI path
+needs no extra, so it is the Anthropic option wired here.) Each case runs in an
+isolated temp workspace (`<tmp>/data/trail.db`); nothing real is touched. Exit
+code is non-zero if any selected case fails.
 
 Cases live in `cases.py` (seed + grade per situation); the drivers and isolation
 are in `harness.py`. Only `judge_unevaluated_proposal` is implemented so far; the

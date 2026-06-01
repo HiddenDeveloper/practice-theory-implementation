@@ -37,6 +37,8 @@ from mcp.client.stdio import stdio_client
 from evals.cases import Case
 from practice_theory_implementation.autonomic_adapters import (
     AdapterConfig,
+    AutonomicAdapter,
+    ClaudeCliAdapter,
     CodexExecAdapter,
     RolePolicy,
     compose_brief,
@@ -146,12 +148,26 @@ async def drive_judge_scripted(target_eid: str, target_bundle: str) -> None:
                 )
 
 
-async def drive_live(role: str, store: EnactmentStore, cwd: Path) -> int:
-    """Run one real practitioner pass via the codex adapter, isolated to `cwd`."""
-    brief = compose_brief(BUNDLES[role], substrate)
-    adapter = CodexExecAdapter(
-        AdapterConfig(role=role, bundle_id=role, brief=brief), cwd=cwd
+# Live providers that hand the work to a real practitioner. Both adapters take
+# (config, cwd=...) and isolate to the temp workspace: codex via cwd (its server
+# gets a fixed inline env), claude via the inherited PRACTICE_TRAIL_PATH (its
+# server inherits the process env). The in-process AnthropicSDKAdapter is the
+# same provider as 'claude' but needs the optional `anthropic` extra installed;
+# the CLI path needs no extra, so it is the default Anthropic option here.
+def _build_live_adapter(provider: str, role: str, cwd: Path) -> AutonomicAdapter:
+    config = AdapterConfig(
+        role=role, bundle_id=role, brief=compose_brief(BUNDLES[role], substrate)
     )
+    if provider == "codex":
+        return CodexExecAdapter(config, cwd=cwd)
+    if provider == "claude":
+        return ClaudeCliAdapter(config, cwd=cwd)
+    raise ValueError(f"unknown live provider {provider!r}")
+
+
+async def drive_live(provider: str, role: str, store: EnactmentStore, cwd: Path) -> int:
+    """Run one real practitioner pass via a provider adapter, isolated to `cwd`."""
+    adapter = _build_live_adapter(provider, role, cwd)
     route_now(store)
     return await drain(
         adapter, RolePolicy(role=role), store, worker_id=f"eval-{role}", max_items=1
@@ -159,15 +175,15 @@ async def drive_live(role: str, store: EnactmentStore, cwd: Path) -> int:
 
 
 async def run_case(case: Case, *, provider: str) -> dict[str, Any]:
-    """Stage → run practitioner → grade. provider: 'scripted' or 'codex'."""
+    """Stage → run practitioner → grade. provider: 'scripted', 'codex', or 'claude'."""
     with temp_workspace() as (store, cwd):
         target_eid = case.seed(store)
         if provider == "scripted":
             if case.role != "judge":
                 raise ValueError(f"scripted driver only supports judge cases, not {case.role!r}")
             await drive_judge_scripted(target_eid, case.target_bundle)
-        elif provider == "codex":
-            await drive_live(case.role, store, cwd)
+        elif provider in ("codex", "claude"):
+            await drive_live(provider, case.role, store, cwd)
         else:
             raise ValueError(f"unknown provider {provider!r}")
         passed, evidence = case.grade(store, target_eid)

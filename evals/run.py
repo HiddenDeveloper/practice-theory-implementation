@@ -2,11 +2,13 @@
 
     uv run python -m evals.run                      # all cases, scripted driver
     uv run python -m evals.run --provider codex     # all cases, live codex pass
+    uv run python -m evals.run --provider claude    # all cases, live Claude pass
     uv run python -m evals.run judge_unevaluated_proposal --provider scripted
 
 The scripted driver validates the harness + grading mechanics without a model
-call. The codex driver runs a real practitioner and is the actual test of the
-apprenticeship. Exit code is non-zero if any selected case fails.
+call. The codex (OpenAI) and claude (Anthropic) drivers run a real practitioner
+and are the actual test of the apprenticeship. Exit code is non-zero if any
+selected case fails.
 """
 
 from __future__ import annotations
@@ -28,8 +30,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--provider",
         default="scripted",
-        choices=["scripted", "codex"],
-        help="who plays the practitioner (default: scripted)",
+        choices=["scripted", "codex", "claude"],
+        help=(
+            "who plays the practitioner: scripted (no model), codex (OpenAI "
+            "Codex CLI), or claude (Anthropic Claude CLI). Default: scripted"
+        ),
     )
     args = parser.parse_args(argv)
 
