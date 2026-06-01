@@ -92,12 +92,13 @@ def _need_source_reloader() -> Callable[[], Mapping[str, Any]]:
 def _persist(write: Callable[[], Any]) -> dict[str, Any] | None:
     """Run a file write, returning an error dict on failure (else None).
 
-    Called before the in-memory dict is mutated, so a disk failure aborts the
+    Called before the in-memory dict is mutated, so a disk failure (OSError) or a
+    rejected id/name (ValueError from the writer's path-safety guard) aborts the
     amendment cleanly — memory and the file stay in agreement.
     """
     try:
         write()
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return {"error": f"failed to persist amendment to substrate file: {exc}"}
     return None
 

@@ -21,6 +21,7 @@ always agree on where a file lives.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,12 @@ from practice_theory_implementation.substrate_loader import (
 from practice_theory_implementation.types import Affordance, Bundle, PoolElement
 
 DYNAMIC_MATERIALS_DIR = "dynamic_materials"
+
+# An entity id/name becomes a filename under the substrate dir. Constrain it to a
+# safe stem so a crafted id (e.g. "../x", "a/b") cannot escape the substrate root
+# and write a file anywhere on disk. Authoring is privileged, but the filesystem
+# makes traversal possible in a way the old SQLite overlay did not.
+_SAFE_STEM = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _render(frontmatter: dict[str, Any], body: str) -> str:
@@ -55,6 +62,11 @@ def _write_atomic(path: Path, text: str) -> None:
 
 
 def _path_for(subdir: str, stem: str, *, root: str | Path | None) -> Path:
+    if not _SAFE_STEM.match(stem):
+        raise ValueError(
+            f"unsafe substrate id/name {stem!r}: must match {_SAFE_STEM.pattern} "
+            "(no path separators or '..') so the file stays under the substrate root"
+        )
     return substrate_root(root) / subdir / f"{stem}.md"
 
 
