@@ -19,6 +19,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/practice_theory_implementation"]
 
+[tool.basedpyright]
+# Run in standard mode — equivalent to stock pyright (0 errors today). BasedPyright
+# defaults to a stricter "recommended" mode whose "based" rules (reportAny, etc.)
+# would flag the intentional Any/object at the JSON/MCP boundaries; adopt those
+# incrementally via a baseline rather than all at once.
+typeCheckingMode = "standard"
+
 [tool.ruff]
 line-length = 100
 
@@ -27,6 +34,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [dependency-groups]
 dev = [
-    "pyright>=1.1.409",
+    "basedpyright>=1.39.6",
     "ruff>=0.15.15",
 ]
