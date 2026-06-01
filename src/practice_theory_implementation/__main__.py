@@ -863,51 +863,29 @@ def _print_friction() -> None:
         store.close()
 
 
-def _ensure_hermetic_db_paths() -> None:
-    """If neither path is set, point both at a fresh temp directory.
+def _ensure_hermetic_trail_path() -> None:
+    """Point the trail at a fresh temp DB unless the caller set PRACTICE_TRAIL_PATH.
 
-    The verify's printed narrative assumes a clean slate — the trail starts
-    empty, no Friction is pending from a previous run, Practice Management's
-    create-element calls don't collide with prior IDs. Reusing the default
-    `data/trail.db` and `data/substrate.db` across runs leaks prior state and
-    makes the output diverge from the documented walk.
-
-    Default behaviour is hermetic. The trail and substrate are paired — a
-    mixed setup (one persistent, the other temp) leaves stale Practice
-    Management content pointing at a fresh trail or vice versa, which is
-    worse than either pure mode. So either both env vars are set, or
-    neither: setting only one is a misconfiguration and is rejected with a
-    clear error.
+    The verify's narrative assumes a clean trail (empty, no stale Friction). The
+    substrate is now read from the `substrate/` files (override via
+    PRACTICE_SUBSTRATE_DIR), not a SQLite DB, so only the trail needs a hermetic
+    temp path. Phase A writes nothing back to the substrate, so reading the
+    git-tracked `substrate/` dir directly is safe.
     """
     import tempfile
     from pathlib import Path
 
-    trail_set = "PRACTICE_TRAIL_PATH" in os.environ
-    substrate_set = "PRACTICE_SUBSTRATE_PATH" in os.environ
-    if trail_set and substrate_set:
-        return  # user opted into custom paths for both; respect that.
-    if trail_set or substrate_set:
-        which_set = "PRACTICE_TRAIL_PATH" if trail_set else "PRACTICE_SUBSTRATE_PATH"
-        which_missing = "PRACTICE_SUBSTRATE_PATH" if trail_set else "PRACTICE_TRAIL_PATH"
-        raise RuntimeError(
-            f"{which_set} is set but {which_missing} is not. The trail and "
-            "substrate must be paired — mixed persistent/temp setups leak "
-            "stale state. Set both env vars to opt into persistent local "
-            "state, or unset both to use the hermetic temp directory."
-        )
+    if "PRACTICE_TRAIL_PATH" in os.environ:
+        return  # caller opted into a custom trail path; respect it.
     tmpdir = Path(tempfile.mkdtemp(prefix="practice-verify-"))
     os.environ["PRACTICE_TRAIL_PATH"] = str(tmpdir / "trail.db")
-    os.environ["PRACTICE_SUBSTRATE_PATH"] = str(tmpdir / "substrate.db")
-    print(f"[verify] using hermetic temp DBs at {tmpdir}")
-    print(
-        "[verify] set both PRACTICE_TRAIL_PATH and PRACTICE_SUBSTRATE_PATH "
-        "to persist state across runs"
-    )
+    print(f"[verify] using hermetic temp trail at {tmpdir}")
+    print("[verify] set PRACTICE_TRAIL_PATH to persist the trail across runs")
     print()
 
 
 def main() -> None:
-    _ensure_hermetic_db_paths()
+    _ensure_hermetic_trail_path()
     asyncio.run(verify_all())
     print()
     _print_trail()

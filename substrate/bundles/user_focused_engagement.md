@@ -1,0 +1,29 @@
+---
+id: user_focused_engagement
+name: User-Focused Engagement
+mode: somatic
+engagement: true
+teleo_affective_ids:
+- te_user_focused_engagement
+understanding_ids:
+- und_engagement_substrate
+- und_engagement_landing_nodes
+- und_memory_stores
+rules_ids:
+- rule_dont_displace
+- rule_offer_not_instruct
+- rule_honour_what_brought
+- rule_episodic_memory_read_only
+affordance_ids:
+- about_the_user
+- about_user_profile
+- about_self
+- about_shared_context
+- read_non_episodic_memory
+- write_non_episodic_memory
+- ensure_self_rooted_spine
+- recall_relevant_episodes
+- recall_recent_engagement
+- recall_contextual_episodes
+---
+The engagement-recipe — projected at session scope as the substrate of being-here-for-this-user across whichever practice is reached for. Same shape as any practice; its content is inherited additively by every practice engaged from within the engagement.

@@ -1,0 +1,208 @@
+"""Files-as-substrate loader — markdown + YAML frontmatter is the source of truth.
+
+The authorable substrate (teleo-affective, understanding, rules, affordances,
+bundles) lives as markdown files under `substrate/`, one file per entity, with
+`filename stem == frontmatter id`. Each file is YAML frontmatter (the structured
+fields) followed by a body (the one prose field: `content` for pool elements,
+`description` for affordances and bundles).
+
+Materials are NOT loaded here — their captured surfaces are code-owned
+(`material_surfaces.MATERIAL_SURFACES`) and injected into `Substrate.materials`,
+because the surface (schema) must stay glued to its function in the registry.
+
+Validation is graceful: a bundle whose references don't resolve is skipped and
+recorded in `errors` (logged by the server), never raised — so one bad file
+cannot take the server down. The engagement bundle is the one flagged
+`engagement: true`; exactly one is required.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from practice_theory_implementation.material_surfaces import MATERIAL_SURFACES
+from practice_theory_implementation.types import (
+    Affordance,
+    Bundle,
+    Material,
+    PoolElement,
+    Substrate,
+    validate_bundle,
+)
+
+SUBSTRATE_DIR_ENV = "PRACTICE_SUBSTRATE_DIR"
+_DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "substrate"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LoadedSubstrate:
+    """The result of loading the file substrate: ready-to-project objects + errors."""
+
+    substrate: Substrate
+    bundles: dict[str, Bundle]          # switchable catalog; engagement excluded
+    engagement_bundle: Bundle | None    # the `engagement: true` bundle
+    errors: list[str]                   # non-fatal problems, for the caller to log
+
+
+def _resolve_root(root: str | Path | None) -> Path:
+    if root is not None:
+        return Path(root)
+    return Path(os.environ.get(SUBSTRATE_DIR_ENV) or _DEFAULT_ROOT)
+
+
+def _split_frontmatter(text: str, *, source: str) -> tuple[dict[str, Any], str]:
+    """Split a `---`-fenced YAML frontmatter block from the markdown body."""
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        raise ValueError(f"{source}: missing leading '---' frontmatter fence")
+    try:
+        close = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        raise ValueError(f"{source}: unterminated frontmatter (no closing '---')") from None
+    data = yaml.safe_load("\n".join(lines[1:close])) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{source}: frontmatter is not a mapping")
+    body = "\n".join(lines[close + 1:]).strip()
+    return data, body
+
+
+def _read_dir(directory: Path, errors: list[str]) -> list[tuple[str, dict[str, Any], str]]:
+    """Return (stem, frontmatter, body) for each *.md in directory, sorted by name."""
+    out: list[tuple[str, dict[str, Any], str]] = []
+    if not directory.is_dir():
+        return out
+    for path in sorted(directory.glob("*.md")):
+        try:
+            fm, body = _split_frontmatter(path.read_text(encoding="utf-8"), source=str(path))
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        out.append((path.stem, fm, body))
+    return out
+
+
+def _load_pool(root: Path, pool: str, errors: list[str]) -> dict[str, PoolElement]:
+    result: dict[str, PoolElement] = {}
+    for stem, fm, body in _read_dir(root / pool, errors):
+        if fm.get("id") != stem:
+            errors.append(f"{pool}/{stem}.md: frontmatter id {fm.get('id')!r} != filename")
+            continue
+        result[stem] = PoolElement(id=stem, name=str(fm.get("name", stem)), content=body)
+    return result
+
+
+def _load_affordances(root: Path, errors: list[str]) -> dict[str, Affordance]:
+    result: dict[str, Affordance] = {}
+    for stem, fm, body in _read_dir(root / "affordances", errors):
+        if fm.get("id") != stem:
+            errors.append(f"affordances/{stem}.md: frontmatter id {fm.get('id')!r} != filename")
+            continue
+        result[stem] = Affordance(
+            id=stem,
+            name=str(fm.get("name", stem)),
+            description=body,
+            materials=tuple(fm.get("materials") or ()),
+        )
+    return result
+
+
+def _load_bundles(root: Path, errors: list[str]) -> tuple[dict[str, Bundle], list[Bundle]]:
+    catalog: dict[str, Bundle] = {}
+    engagements: list[Bundle] = []
+    for stem, fm, body in _read_dir(root / "bundles", errors):
+        if fm.get("id") != stem:
+            errors.append(f"bundles/{stem}.md: frontmatter id {fm.get('id')!r} != filename")
+            continue
+        mode = fm.get("mode", "somatic")
+        if mode not in ("somatic", "autonomic"):
+            errors.append(f"bundles/{stem}.md: invalid mode {mode!r}")
+            continue
+        bundle = Bundle(
+            id=stem,
+            name=str(fm.get("name", stem)),
+            description=body,
+            teleo_affective_ids=tuple(fm.get("teleo_affective_ids") or ()),
+            understanding_ids=tuple(fm.get("understanding_ids") or ()),
+            rules_ids=tuple(fm.get("rules_ids") or ()),
+            affordance_ids=tuple(fm.get("affordance_ids") or ()),
+            mode=mode,  # type: ignore[arg-type]
+        )
+        if fm.get("engagement") is True:
+            engagements.append(bundle)
+        else:
+            catalog[stem] = bundle
+    return catalog, engagements
+
+
+def load_substrate(
+    *,
+    root: str | Path | None = None,
+    material_surfaces: dict[str, Material],
+) -> LoadedSubstrate:
+    """Load the file substrate into a Substrate + bundle catalog + engagement bundle.
+
+    Graceful: reference problems land in `errors`, not exceptions. Materials come
+    from `material_surfaces` (code), not files.
+    """
+    base = _resolve_root(root)
+    errors: list[str] = []
+    substrate = Substrate(
+        teleo_affective=_load_pool(base, "teleo_affective", errors),
+        understanding=_load_pool(base, "understanding", errors),
+        rules=_load_pool(base, "rules", errors),
+        affordances=_load_affordances(base, errors),
+        materials=dict(material_surfaces),
+    )
+    catalog, engagements = _load_bundles(base, errors)
+
+    engagement: Bundle | None = None
+    if len(engagements) == 1:
+        engagement = engagements[0]
+    elif not engagements:
+        errors.append("no bundle is marked `engagement: true`")
+    else:
+        errors.append(f"multiple engagement bundles: {sorted(b.id for b in engagements)}")
+        engagement = engagements[0]
+
+    valid: dict[str, Bundle] = {}
+    for bid, bundle in catalog.items():
+        try:
+            validate_bundle(bundle, substrate)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        valid[bid] = bundle
+    if engagement is not None:
+        try:
+            validate_bundle(engagement, substrate)
+        except ValueError as exc:
+            errors.append(f"engagement bundle {engagement.id!r} invalid: {exc}")
+
+    return LoadedSubstrate(
+        substrate=substrate, bundles=valid, engagement_bundle=engagement, errors=errors
+    )
+
+
+# --- module-level cached load: a single source for pools.py + bundles/__init__ ---
+
+_LOADED: LoadedSubstrate | None = None
+
+
+def loaded() -> LoadedSubstrate:
+    """Return the cached load, loading once on first call."""
+    global _LOADED
+    if _LOADED is None:
+        _LOADED = load_substrate(material_surfaces=MATERIAL_SURFACES)
+    return _LOADED
+
+
+def reload_from_disk() -> LoadedSubstrate:
+    """Drop the cache and re-read the files (used by pm_reload_seed_substrate)."""
+    global _LOADED
+    _LOADED = None
+    return loaded()

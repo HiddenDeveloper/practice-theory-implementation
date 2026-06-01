@@ -1,16 +1,16 @@
 """Meta-materials for Practice Management — the substrate-mutating functions.
 
-Each function writes to the SubstrateStore overlay (so amendments survive
-restart) and updates the in-memory Substrate (so amendments are visible to
-the next projection). Reads are read-through on the in-memory Substrate; the
-overlay is only consulted at startup.
+Each function updates the in-memory Substrate (so amendments are visible to the
+next projection). Reads are read-through on the in-memory Substrate.
 
-These functions are bound to module-level state — the substrate, the bundle
-catalog, and the overlay store — wired by the server at startup via
-`configure(...)`. The choice of module-level state is deliberate: the
-substrate is a singleton at this stage, and threading three dependencies
-through the registry's callable interface would add ceremony without buying
-anything for a step-7 implementation.
+Phase A of the files-as-substrate migration: amendments are **in-memory only**
+and do not persist across restart — the authorable substrate now lives in the
+`substrate/` files (the single source of truth), and a file write-path will
+restore persistence in Phase B. Until then, durable changes are made by editing
+the files (and `pm_reload_seed_substrate` re-reads them).
+
+These functions are bound to module-level state — the substrate and the bundle
+catalog — wired by the server at startup via `configure(...)`.
 """
 
 from __future__ import annotations
@@ -18,11 +18,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from practice_theory_implementation.substrate_store import (
-    POOL_ELEMENT_POOLS,
-    SubstrateStore,
-    _pool_dict_for,
-)
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
@@ -31,38 +26,47 @@ from practice_theory_implementation.types import (
     Substrate,
 )
 
+POOL_ELEMENT_POOLS = ("teleo_affective", "understanding", "rules")
+
 # wired by the server at startup
 _substrate: Substrate | None = None
 _bundle_catalog: dict[str, Bundle] | None = None
-_store: SubstrateStore | None = None
 _register_material_function: Callable[[str, Mapping[str, Any]], None] | None = None
 _reload_source_callback: Callable[[], Mapping[str, Any]] | None = None
+
+
+def _pool_dict_for(substrate: Substrate, pool: str) -> dict[str, PoolElement]:
+    if pool == "teleo_affective":
+        return substrate.teleo_affective
+    if pool == "understanding":
+        return substrate.understanding
+    if pool == "rules":
+        return substrate.rules
+    raise ValueError(f"unknown pool {pool!r}; must be one of {POOL_ELEMENT_POOLS}")
 
 
 def configure(
     *,
     substrate: Substrate,
     bundle_catalog: dict[str, Bundle],
-    store: SubstrateStore,
     register_material_function: Callable[[str, Mapping[str, Any]], None],
     reload_source_callback: Callable[[], Mapping[str, Any]] | None = None,
 ) -> None:
-    """Wire the meta-materials to the live substrate, catalog, and overlay store."""
+    """Wire the meta-materials to the live substrate and catalog (in-memory)."""
     global _reload_source_callback
-    global _substrate, _bundle_catalog, _store, _register_material_function
+    global _substrate, _bundle_catalog, _register_material_function
     _substrate = substrate
     _bundle_catalog = bundle_catalog
-    _store = store
     _register_material_function = register_material_function
     _reload_source_callback = reload_source_callback
 
 
-def _need_substrate() -> tuple[Substrate, dict[str, Bundle], SubstrateStore]:
-    if _substrate is None or _bundle_catalog is None or _store is None:
+def _need_substrate() -> tuple[Substrate, dict[str, Bundle]]:
+    if _substrate is None or _bundle_catalog is None:
         raise RuntimeError(
             "practice_management materials not configured; call configure() first"
         )
-    return _substrate, _bundle_catalog, _store
+    return _substrate, _bundle_catalog
 
 
 def _need_function_registrar() -> Callable[[str, Mapping[str, Any]], None]:
@@ -86,7 +90,7 @@ def _need_source_reloader() -> Callable[[], Mapping[str, Any]]:
 
 def pm_read_pool(pool: str) -> list[dict[str, Any]]:
     """Return every entry in the named pool, ordered by id."""
-    s, _, _ = _need_substrate()
+    s, _ = _need_substrate()
     if pool in POOL_ELEMENT_POOLS:
         d = _pool_dict_for(s, pool)
         return [
@@ -119,7 +123,7 @@ def pm_read_pool(pool: str) -> list[dict[str, Any]]:
 
 
 def pm_reload_seed_substrate() -> Mapping[str, Any]:
-    """Reload seed pools, bundles, and registry from Python source."""
+    """Re-read the substrate files (and reload material code) from source."""
     return _need_source_reloader()()
 
 
@@ -127,15 +131,13 @@ def pm_reload_seed_substrate() -> Mapping[str, Any]:
 
 
 def pm_create_element(pool: str, id: str, name: str, content: str) -> dict[str, Any]:  # noqa: A002
-    s, _, store = _need_substrate()
+    s, _ = _need_substrate()
     if pool not in POOL_ELEMENT_POOLS:
         return {"error": f"unknown pool {pool!r}"}
     pool_dict = _pool_dict_for(s, pool)
     if id in pool_dict:
         return {"error": f"id {id!r} already exists in {pool!r}"}
-    element = PoolElement(id=id, name=name, content=content)
-    store.upsert_pool_element(pool, element)
-    pool_dict[id] = element
+    pool_dict[id] = PoolElement(id=id, name=name, content=content)
     return {"created": {"pool": pool, "id": id}}
 
 
@@ -145,20 +147,18 @@ def pm_amend_element(
     name: str | None = None,
     content: str | None = None,
 ) -> dict[str, Any]:
-    s, _, store = _need_substrate()
+    s, _ = _need_substrate()
     if pool not in POOL_ELEMENT_POOLS:
         return {"error": f"unknown pool {pool!r}"}
     pool_dict = _pool_dict_for(s, pool)
     if id not in pool_dict:
         return {"error": f"id {id!r} not in {pool!r}"}
     current = pool_dict[id]
-    amended = PoolElement(
+    pool_dict[id] = PoolElement(
         id=id,
         name=name if name is not None else current.name,
         content=content if content is not None else current.content,
     )
-    store.upsert_pool_element(pool, amended)
-    pool_dict[id] = amended
     return {"amended": {"pool": pool, "id": id}}
 
 
@@ -171,15 +171,15 @@ def pm_create_affordance(
     description: str,
     materials: list[str],
 ) -> dict[str, Any]:
-    s, _, store = _need_substrate()
+    s, _ = _need_substrate()
     if id in s.affordances:
         return {"error": f"affordance id {id!r} already exists"}
     missing = [m for m in materials if m not in s.materials]
     if missing:
         return {"error": f"materials not in substrate: {missing}"}
-    aff = Affordance(id=id, name=name, description=description, materials=tuple(materials))
-    store.upsert_affordance(aff)
-    s.affordances[id] = aff
+    s.affordances[id] = Affordance(
+        id=id, name=name, description=description, materials=tuple(materials)
+    )
     return {"created": {"affordance": id, "materials": materials}}
 
 
@@ -189,7 +189,7 @@ def pm_amend_affordance(
     description: str | None = None,
     materials: list[str] | None = None,
 ) -> dict[str, Any]:
-    s, _, store = _need_substrate()
+    s, _ = _need_substrate()
     if id not in s.affordances:
         return {"error": f"affordance {id!r} not found"}
     current = s.affordances[id]
@@ -197,14 +197,12 @@ def pm_amend_affordance(
         missing = [m for m in materials if m not in s.materials]
         if missing:
             return {"error": f"materials not in substrate: {missing}"}
-    amended = Affordance(
+    s.affordances[id] = Affordance(
         id=id,
         name=name if name is not None else current.name,
         description=description if description is not None else current.description,
         materials=tuple(materials) if materials is not None else current.materials,
     )
-    store.upsert_affordance(amended)
-    s.affordances[id] = amended
     return {"amended": {"affordance": id}}
 
 
@@ -217,7 +215,7 @@ def pm_create_material(
     input_schema: Mapping[str, Any],
     implementation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    s, _, store = _need_substrate()
+    s, _ = _need_substrate()
     if name in s.materials:
         return {"error": f"material {name!r} already exists"}
     if implementation is not None:
@@ -225,11 +223,9 @@ def pm_create_material(
             _need_function_registrar()(name, implementation)
         except (TypeError, ValueError) as exc:
             return {"error": f"invalid material implementation: {exc}"}
-    mat = Material(name=name, description=description, input_schema=dict(input_schema))
-    store.upsert_material(mat)
-    if implementation is not None:
-        store.upsert_material_function(name, dict(implementation))
-    s.materials[name] = mat
+    s.materials[name] = Material(
+        name=name, description=description, input_schema=dict(input_schema)
+    )
     created: dict[str, Any] = {"material": name}
     if implementation is not None:
         created["function"] = implementation.get("kind")
@@ -242,7 +238,7 @@ def pm_amend_material(
     input_schema: Mapping[str, Any] | None = None,
     implementation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    s, _, store = _need_substrate()
+    s, _ = _need_substrate()
     if name not in s.materials:
         return {"error": f"material {name!r} not found"}
     if implementation is not None:
@@ -251,15 +247,11 @@ def pm_amend_material(
         except (TypeError, ValueError) as exc:
             return {"error": f"invalid material implementation: {exc}"}
     current = s.materials[name]
-    amended = Material(
+    s.materials[name] = Material(
         name=name,
         description=description if description is not None else current.description,
         input_schema=dict(input_schema) if input_schema is not None else current.input_schema,
     )
-    store.upsert_material(amended)
-    if implementation is not None:
-        store.upsert_material_function(name, dict(implementation))
-    s.materials[name] = amended
     return {"amended": {"material": name}}
 
 
@@ -300,7 +292,7 @@ def pm_create_bundle(
     affordance_ids: list[str],
     mode: str = "somatic",
 ) -> dict[str, Any]:
-    s, catalog, store = _need_substrate()
+    s, catalog = _need_substrate()
     if id in catalog:
         return {"error": f"bundle {id!r} already exists in catalog"}
     if mode not in ("somatic", "autonomic"):
@@ -314,7 +306,7 @@ def pm_create_bundle(
     )
     if missing:
         return {"error": f"unresolved references: {missing}"}
-    bundle = Bundle(
+    catalog[id] = Bundle(
         id=id,
         name=name,
         description=description,
@@ -324,8 +316,6 @@ def pm_create_bundle(
         affordance_ids=tuple(affordance_ids),
         mode=mode,  # type: ignore[arg-type]
     )
-    store.upsert_bundle(bundle)
-    catalog[id] = bundle
     return {"created": {"bundle": id, "name": name, "mode": mode}}
 
 
@@ -338,7 +328,7 @@ def pm_amend_bundle(
     rules_ids: list[str] | None = None,
     affordance_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    s, catalog, store = _need_substrate()
+    s, catalog = _need_substrate()
     if id not in catalog:
         return {"error": f"bundle {id!r} not in catalog"}
     current = catalog[id]
@@ -361,7 +351,7 @@ def pm_amend_bundle(
     )
     if missing:
         return {"error": f"unresolved references: {missing}"}
-    amended = Bundle(
+    catalog[id] = Bundle(
         id=id,
         name=name if name is not None else current.name,
         description=description if description is not None else current.description,
@@ -371,6 +361,4 @@ def pm_amend_bundle(
         affordance_ids=tuple(new_aff),
         mode=current.mode,
     )
-    store.upsert_bundle(amended)
-    catalog[id] = amended
     return {"amended": {"bundle": id}}

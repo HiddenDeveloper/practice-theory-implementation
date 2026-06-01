@@ -46,6 +46,7 @@ Run directly to serve over stdio (the client launches this as a subprocess):
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -71,13 +72,8 @@ from practice_theory_implementation.projection import (
 from practice_theory_implementation.registry import (
     FUNCTIONS,
     register_dynamic_material,
-    register_dynamic_materials,
 )
-from practice_theory_implementation.substrate_store import (
-    SubstrateStore,
-    apply_overlay_to_bundles,
-    apply_overlay_to_substrate,
-)
+from practice_theory_implementation.substrate_loader import loaded
 from practice_theory_implementation.trail import EnactmentStore, time_call
 
 
@@ -181,25 +177,26 @@ mcp_app: FastMCP = FastMCP(
 
 _trail: EnactmentStore = EnactmentStore()
 
-# Open the substrate overlay store and merge runtime amendments into the
-# in-memory substrate and bundle catalog before anything else reads them.
-_substrate_store: SubstrateStore = SubstrateStore()
-apply_overlay_to_substrate(substrate, _substrate_store)
-register_dynamic_materials(_substrate_store.overlay_material_functions())
-apply_overlay_to_bundles(BUNDLES, _substrate_store)
-BUNDLES.pop(ENGAGEMENT_BUNDLE.id, None)
+# The substrate, switchable catalog, and engagement bundle come from the file
+# loader (single source of truth — `substrate/`); `substrate`, `BUNDLES`, and
+# `ENGAGEMENT_BUNDLE` imported above are already the loaded objects. Log any
+# non-fatal load problems (e.g. a bundle the loader skipped for unresolved
+# refs) so a bad file is a visible warning, not an opaque startup crash.
+_log = logging.getLogger(__name__)
+for _err in loaded().errors:
+    _log.warning("substrate load: %s", _err)
+BUNDLES.pop(ENGAGEMENT_BUNDLE.id, None)  # defensive; loader already excludes it
 _AUTHORING_BUNDLES: _AuthoringCatalog = _AuthoringCatalog({
     **BUNDLES,
     ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE,
 })
-apply_overlay_to_bundles(_AUTHORING_BUNDLES, _substrate_store)
 
-# Wire Practice Management's meta-materials to the live substrate, catalog,
-# and overlay store. Without this, pm_* materials raise RuntimeError.
+# Wire Practice Management's meta-materials to the live substrate and catalog.
+# Without this, pm_* materials raise RuntimeError. (Phase A: amendments are
+# in-memory only — there is no overlay store to persist to yet.)
 configure_practice_management(
     substrate=substrate,
     bundle_catalog=_AUTHORING_BUNDLES,
-    store=_substrate_store,
     register_material_function=register_dynamic_material,
     reload_source_callback=lambda: _reload_seed_substrate(),
 )
@@ -237,12 +234,16 @@ def _now_dt() -> datetime:
 
 
 def _reload_seed_substrate() -> dict[str, Any]:
-    """Reload Python seed pools/bundles/registry and reapply the overlay."""
+    """Reload material code and re-read the file substrate from disk.
+
+    Materials (functions + captured surfaces) are reloaded from Python; the
+    authorable substrate (pool elements, affordances, bundles) is re-read from
+    the `substrate/` files. There is no overlay to reapply.
+    """
     import importlib
 
     global BUNDLES, ENGAGEMENT_BUNDLE, FUNCTIONS, register_dynamic_material
-    global register_dynamic_materials, substrate, _AUTHORING_BUNDLES
-    global _active_practice, _engagement_bundle
+    global substrate, _AUTHORING_BUNDLES, _active_practice, _engagement_bundle
 
     material_module_names = (
         "practice_theory_implementation.materials.calendar_mock",
@@ -254,46 +255,32 @@ def _reload_seed_substrate() -> dict[str, Any]:
         "practice_theory_implementation.materials.reflection_mock",
         "practice_theory_implementation.materials.smoother",
     )
-    bundle_module_names = (
-        "practice_theory_implementation.bundles.activities_management",
-        "practice_theory_implementation.bundles.calendar_stewardship",
-        "practice_theory_implementation.bundles.judge",
-        "practice_theory_implementation.bundles.practice_management",
-        "practice_theory_implementation.bundles.reflection",
-        "practice_theory_implementation.bundles.smoother",
-        "practice_theory_implementation.bundles.user_focused_engagement",
-    )
-
     for module_name in material_module_names:
         importlib.reload(importlib.import_module(module_name))
+    importlib.reload(
+        importlib.import_module("practice_theory_implementation.material_surfaces")
+    )
     registry_module = importlib.reload(
         importlib.import_module("practice_theory_implementation.registry")
     )
-    pools_module = importlib.reload(
-        importlib.import_module("practice_theory_implementation.pools")
-    )
-    for module_name in bundle_module_names:
-        importlib.reload(importlib.import_module(module_name))
-    bundles_module = importlib.reload(
-        importlib.import_module("practice_theory_implementation.bundles")
+    loader_module = importlib.reload(
+        importlib.import_module("practice_theory_implementation.substrate_loader")
     )
 
-    substrate = pools_module.substrate
+    loaded_sub = loader_module.reload_from_disk()
+    for err in loaded_sub.errors:
+        _log.warning("substrate reload: %s", err)
+    substrate = loaded_sub.substrate
     FUNCTIONS = registry_module.FUNCTIONS
     register_dynamic_material = registry_module.register_dynamic_material
-    register_dynamic_materials = registry_module.register_dynamic_materials
-    BUNDLES = dict(bundles_module.BUNDLES)
-    ENGAGEMENT_BUNDLE = bundles_module.ENGAGEMENT_BUNDLE
-
-    apply_overlay_to_substrate(substrate, _substrate_store)
-    register_dynamic_materials(_substrate_store.overlay_material_functions())
-    apply_overlay_to_bundles(BUNDLES, _substrate_store)
-    BUNDLES.pop(ENGAGEMENT_BUNDLE.id, None)
+    BUNDLES = dict(loaded_sub.bundles)
+    if loaded_sub.engagement_bundle is None:
+        return {"error": "no engagement bundle after reload", "errors": loaded_sub.errors}
+    ENGAGEMENT_BUNDLE = loaded_sub.engagement_bundle
     _AUTHORING_BUNDLES = _AuthoringCatalog({
         **BUNDLES,
         ENGAGEMENT_BUNDLE.id: ENGAGEMENT_BUNDLE,
     })
-    apply_overlay_to_bundles(_AUTHORING_BUNDLES, _substrate_store)
 
     practice_management_module = importlib.import_module(
         "practice_theory_implementation.materials.practice_management"
@@ -305,7 +292,6 @@ def _reload_seed_substrate() -> dict[str, Any]:
     practice_management_module.configure(
         substrate=substrate,
         bundle_catalog=_AUTHORING_BUNDLES,
-        store=_substrate_store,
         register_material_function=register_dynamic_material,
         reload_source_callback=_reload_seed_substrate,
     )
@@ -327,10 +313,11 @@ def _reload_seed_substrate() -> dict[str, Any]:
 
     return {
         "reloaded": True,
-        "substrate": str(_substrate_store.path),
+        "source": "substrate/ files",
         "bundles": sorted(_AUTHORING_BUNDLES),
         "materials": len(substrate.materials),
         "affordances": len(substrate.affordances),
+        "errors": loaded_sub.errors,
     }
 
 
