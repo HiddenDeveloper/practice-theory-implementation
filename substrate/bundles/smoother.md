@@ -11,6 +11,8 @@ rules_ids:
 - rule_smoother_address_what_friction_names
 - rule_smoother_do_not_invent
 - rule_smoother_mark_when_done
+- rule_substrate_no_id_collision
+- rule_substrate_amend_additively
 - rule_material_judgement_is_evaluable
 affordance_ids:
 - read_pending_friction

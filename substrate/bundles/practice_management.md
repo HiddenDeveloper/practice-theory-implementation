@@ -9,8 +9,8 @@ understanding_ids:
 - und_practice_management
 rules_ids:
 - rule_pm_preview_before_apply
-- rule_pm_no_id_collision
-- rule_pm_amend_additively
+- rule_substrate_no_id_collision
+- rule_substrate_amend_additively
 - rule_pm_check_git_and_code_alignment
 - rule_pm_update_affected_documentation
 - rule_material_judgement_is_evaluable
