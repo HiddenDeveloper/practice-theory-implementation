@@ -603,25 +603,6 @@ MATERIAL_SURFACES: dict[str, Material] = {
             },
         ),
         Material(
-            name="remsleep_summarize_recall_candidates",
-            description=(
-                "Summarize recalled episodes and graph drift into source-backed "
-                "memory-signal candidates without writing canonicals."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "episodes": {"type": "object"},
-                    "graph": {"type": "object"},
-                    "max_candidates": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10,
-                    },
-                },
-            },
-        ),
-        Material(
             name="remsleep_dispatch_memory_signal",
             description=(
                 "Dispatch a source-backed memory signal for Memory Consolidation "

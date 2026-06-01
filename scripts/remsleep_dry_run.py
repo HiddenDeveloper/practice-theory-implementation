@@ -79,54 +79,38 @@ def main() -> None:
     )
     _print_json("GRAPH_NODES", graph, max_chars=5000)
 
-    candidate_summary = remsleep.remsleep_summarize_recall_candidates(
-        episodes=episodes if isinstance(episodes, dict) else None,
-        graph=graph if isinstance(graph, dict) else None,
-        max_candidates=5,
+    # This script is not the practitioner — it has no judgement to apply. In a
+    # real pass the apprenticed Memory Recall LLM reads the raw episodes and
+    # graph nodes above and decides what, if anything, to dispatch. Here we only
+    # exercise the read -> dispatch -> stage -> handle plumbing mechanically.
+    episode_count = len(episodes.get("episodes", [])) if isinstance(episodes, dict) else 0
+    node_count = len(graph.get("nodes", [])) if isinstance(graph, dict) else 0
+    warnings = [
+        str(payload["warning"])
+        for payload in (episodes, graph)
+        if isinstance(payload, dict) and payload.get("warning")
+    ]
+    signal = remsleep.remsleep_dispatch_memory_signal(
+        (
+            "DRY RUN ONLY: mechanical plumbing check, not a practitioner "
+            "judgement. The real Memory Recall LLM reads the raw evidence and "
+            "decides what to hand to Memory Consolidation."
+        ),
+        kind="dry_run_signal",
+        source_ids=[],
+        evidence={
+            "episode_count": episode_count,
+            "graph_node_count": node_count,
+            "warnings": warnings,
+            "dry_run": True,
+        },
     )
-    _print_json("RECALL_CANDIDATE_SUMMARY", candidate_summary)
-
-    dispatched_signals = []
-    for candidate in candidate_summary.get("candidates", []):
-        if not isinstance(candidate, dict):
-            continue
-        evidence = candidate.get("evidence")
-        evidence_payload = dict(evidence) if isinstance(evidence, dict) else {}
-        signal = remsleep.remsleep_dispatch_memory_signal(
-            str(candidate.get("content", "")),
-            kind=str(candidate.get("kind", "memory_delta")),
-            source_ids=[
-                str(source_id)
-                for source_id in candidate.get("source_ids", [])
-                if source_id is not None
-            ],
-            evidence={
-                **evidence_payload,
-                "dry_run": True,
-            },
-            suggested_anchor=(
-                candidate.get("suggested_anchor")
-                if isinstance(candidate.get("suggested_anchor"), str)
-                else None
-            ),
-            confidence=(
-                float(candidate["confidence"])
-                if isinstance(candidate.get("confidence"), int | float)
-                else None
-            ),
-        )
-        dispatched_signals.append(signal)
-    _print_json("DISPATCHED_CANDIDATE_SIGNALS", dispatched_signals)
+    _print_json("DISPATCHED_DRY_RUN_SIGNAL", signal)
     pending_signals = remsleep.remsleep_read_memory_signals(limit=10)
     _print_json("PENDING_MEMORY_SIGNALS", pending_signals)
-    signal_ids = [
-        signal_payload["id"]
-        for result in dispatched_signals
-        if isinstance(result, dict)
-        and isinstance((signal_payload := result.get("signal")), dict)
-        and isinstance(signal_payload.get("id"), str)
-    ]
-    for signal_id in signal_ids:
+    signal_payload = signal.get("signal") if isinstance(signal, dict) else None
+    signal_id = signal_payload.get("id") if isinstance(signal_payload, dict) else None
+    if isinstance(signal_id, str):
         staged = remsleep.remsleep_stage_memory_candidate(
             (
                 "DRY RUN ONLY: Memory Consolidation consumed the dry-run "
