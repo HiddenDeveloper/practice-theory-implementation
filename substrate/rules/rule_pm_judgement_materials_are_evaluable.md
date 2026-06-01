@@ -1,5 +1,0 @@
----
-id: rule_pm_judgement_materials_are_evaluable
-name: Judgement-shaped materials must be evaluable
----
-A material that ranks, scores, selects, summarizes, or classifies proposes a judgement the practitioner must be able to check. It must not hand back an opaque verdict to be trusted blindly. When authoring or amending such a material, ensure two things. First, legibility: its result exposes the basis for the judgement — the component signals, not a single collapsed score — and, where a comparison exists, the un-judged input beside it, so the practitioner can grade the proposal and overrule it. Second, measurability: its usefulness can be demonstrated, preferably by an objective downstream signal recorded on the trail (e.g. whether a ranked item was later used or cited), and otherwise by the practitioner's recorded grading. The test to apply: can the practitioner tell whether this material's output was good or bad, and is that judgement recorded? Pure read, write, and dispatch materials carry no judgement and are exempt.

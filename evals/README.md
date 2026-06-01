@@ -84,4 +84,4 @@ deterministic enforcement. The eval is how that bet stops being an assertion:
 | G1, G3, C2 | source-backed citation; citation fidelity |
 | G2 | bounded no-op rather than invention |
 | G4, C1 | recall reports; Consolidation judges canonical-worthiness |
-| R1 | `rule_pm_judgement_materials_are_evaluable` / `unevaluated_proposal` |
+| R1 | `rule_material_judgement_is_evaluable` / `unevaluated_proposal` |
