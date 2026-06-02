@@ -1,10 +1,11 @@
-"""The practice server — MCP surface for projected practices.
+"""The apprenticeship server — MCP surface for projected practices.
 
-(The prior essays called this the apprenticeship server. At this stage of the
-build it apprentices the LLM in a practice and — when the engagement layer
-is projected (somatic mode) — about the user. The "apprenticeship server"
-name is fully earned only in somatic mode; an autonomic-mode server is
-narrower.)
+It apprentices a connecting LLM into a practice and — in somatic mode, where
+the engagement layer is projected — into the continuous self the apprenticeship
+holds, offered for the LLM to arrive into. The two modes carry this in their
+names: `apprenticeship_somatic` is the deliberate surface a self engages;
+`apprenticeship_autonomic` is the background loop (Judge, Smoother, RemSleep)
+that has no user to be engaged with.
 
 The server has a mode at startup: somatic (default) or autonomic, set via
 the PRACTICE_SERVER_MODE environment variable. The mode controls three
@@ -34,12 +35,15 @@ switched in. Resources are an alternative read-path to the inline
 `composition` field on `current_practice`; clients that prefer the
 MCP resource model can subscribe and read.
 
-In stdio transport each connection is its own process, so the active
-practice is module-level state. HTTP transport is still experimental here:
-until per-session lifespan state lands, it is safe only for one client per
-server process and must be opted into explicitly.
+Active practice/engagement state is scoped per MCP session (a ContextVar plus a
+per-session record keyed by the streamable-HTTP `mcp-session-id`), so both
+transports are safe: under stdio there is one session per process; under HTTP one
+long-lived process serves many concurrent sessions without racing on a shared
+active practice.
 
-Run directly to serve over stdio (the client launches this as a subprocess):
+Run directly to serve over stdio (a client launches this as a subprocess), or
+over HTTP as a long-lived server (PRACTICE_TRANSPORT=http on
+PRACTICE_HTTP_HOST:PRACTICE_HTTP_PORT, default 127.0.0.1:7180):
 
     python -m practice_theory_implementation.server
 """

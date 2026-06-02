@@ -125,23 +125,25 @@ def _local_mcp_env(cwd: Path) -> dict[str, str]:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         logger.warning("could not read local MCP env from %s: %s", config_path, exc)
         return {}
-    servers = config.get("mcp_servers")
-    if not isinstance(servers, dict):
-        return {}
     merged: dict[str, str] = {}
-    # Prefer an explicit autonomic config if one exists, then fall back to the
-    # somatic server's service credentials because both surfaces read the same
-    # local Neo4j/Qdrant stores.
-    for server_name in ("apprenticeship_somatic", "apprenticeship_autonomic"):
-        server = servers.get(server_name)
-        if not isinstance(server, dict):
-            continue
-        env = server.get("env")
-        if not isinstance(env, dict):
-            continue
-        for key, value in env.items():
-            if key in _PRACTICE_SERVICE_ENV_KEYS and value is not None:
-                merged[key] = str(value)
+
+    def _absorb(env: object) -> None:
+        if isinstance(env, dict):
+            for key, value in env.items():
+                if key in _PRACTICE_SERVICE_ENV_KEYS and value is not None:
+                    merged[key] = str(value)
+
+    # Preferred: a dedicated [service_env] table, decoupled from MCP transport —
+    # an HTTP `mcp_servers` entry cannot carry an env block (Codex rejects it),
+    # so the credentials live in their own table.
+    _absorb(config.get("service_env"))
+    # Back-compat: the env block on a stdio `mcp_servers` entry, when present.
+    servers = config.get("mcp_servers")
+    if isinstance(servers, dict):
+        for server_name in ("apprenticeship_somatic", "apprenticeship_autonomic"):
+            server = servers.get(server_name)
+            if isinstance(server, dict):
+                _absorb(server.get("env"))
     return merged
 
 

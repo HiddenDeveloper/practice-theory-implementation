@@ -1,4 +1,9 @@
 {
-  "_comment": "MCP server config for clients that read .mcp.json directly. Codex uses .codex/config.toml in this checkout so local secrets such as Neo4j auth do not land in tracked config.",
-  "mcpServers": {}
+  "_comment": "MCP config for clients that read .mcp.json. The somatic apprenticeship server is HTTP (a long-lived pm2 server on :7180, `make somatic-http-up`), so no local secrets land here. The autonomic surface is deliberately not exposed to user-facing clients. Codex reads .codex/config.toml in this checkout (same HTTP url, plus the Neo4j creds for the keeper/launchers).",
+  "mcpServers": {
+    "apprenticeship_somatic": {
+      "type": "http",
+      "url": "http://127.0.0.1:7180/mcp"
+    }
+  }
 }
