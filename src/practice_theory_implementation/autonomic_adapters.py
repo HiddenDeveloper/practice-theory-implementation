@@ -549,8 +549,10 @@ class CodexExecAdapter(AutonomicAdapter):
     subprocess does not depend on the user's `~/.codex/config.toml` or a
     `.mcp.json` in cwd.
 
-    `mcp_url` on AdapterConfig is unused — Codex always uses the inline
-    stdio MCP config the adapter injects.
+    `mcp_url` on AdapterConfig selects the transport: when set, Codex is
+    pointed at that streamable-HTTP MCP server (e.g. the long-lived autonomic
+    server on :7181); when unset, the adapter injects a stdio server spawned
+    per exec.
     """
 
     def __init__(
@@ -571,8 +573,6 @@ class CodexExecAdapter(AutonomicAdapter):
         return
 
     async def dispatch(self, work: WorkItem) -> str | None:
-        import sys as _sys
-
         prompt = f"{self.config.brief}\n\n## Dispatched work\n\n{work.dispatch_message}"
         cmd: list[str] = [
             self._codex_bin,
@@ -584,25 +584,37 @@ class CodexExecAdapter(AutonomicAdapter):
             "--dangerously-bypass-approvals-and-sandbox",
         ]
         # Inject our autonomic MCP server inline so we don't depend on the
-        # user's ~/.codex/config.toml. Also disable any of the user's
-        # pre-configured MCP servers that we know fail to connect during
-        # autonomic runs — Codex aborts the whole exec on the first MCP
-        # connection failure, even servers our prompt won't touch.
-        py_quoted = _sys.executable.replace('"', '\\"')
-        cmd.extend(
-            [
-                "-c",
-                f'mcp_servers.apprenticeship_autonomic.command="{py_quoted}"',
-                "-c",
-                'mcp_servers.apprenticeship_autonomic.args=['
-                '"-m","practice_theory_implementation.server"]',
-                "-c",
-                'mcp_servers.apprenticeship_autonomic.env={'
-                'PRACTICE_SERVER_MODE="autonomic",'
-                'PRACTICE_TRANSPORT="stdio",'
-                'PRACTICE_DISABLE_DISPATCHER="1"}',
-            ]
-        )
+        # user's ~/.codex/config.toml. With mcp_url set, point Codex at the
+        # long-lived HTTP server (streamable_http); otherwise spawn a stdio
+        # server per exec. Either way, disable any of the user's pre-configured
+        # MCP servers that we know fail to connect during autonomic runs — Codex
+        # aborts the whole exec on the first MCP connection failure, even
+        # servers our prompt won't touch.
+        if self.config.mcp_url:
+            cmd.extend(
+                [
+                    "-c",
+                    f'mcp_servers.apprenticeship_autonomic.url="{self.config.mcp_url}"',
+                ]
+            )
+        else:
+            import sys as _sys
+
+            py_quoted = _sys.executable.replace('"', '\\"')
+            cmd.extend(
+                [
+                    "-c",
+                    f'mcp_servers.apprenticeship_autonomic.command="{py_quoted}"',
+                    "-c",
+                    'mcp_servers.apprenticeship_autonomic.args=['
+                    '"-m","practice_theory_implementation.server"]',
+                    "-c",
+                    'mcp_servers.apprenticeship_autonomic.env={'
+                    'PRACTICE_SERVER_MODE="autonomic",'
+                    'PRACTICE_TRANSPORT="stdio",'
+                    'PRACTICE_DISABLE_DISPATCHER="1"}',
+                ]
+            )
         for disabled in os.environ.get(
             "PRACTICE_CODEX_DISABLE_MCP", "cognabot,laputa"
         ).split(","):
