@@ -11,36 +11,131 @@ from __future__ import annotations
 
 from practice_theory_implementation.types import Material
 
+_GMAIL_SEARCH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string"},
+        "max_results": {"type": "integer", "minimum": 1, "maximum": 100},
+        "page_token": {"type": "string"},
+        "include_spam_trash": {"type": "boolean"},
+    },
+}
+
+_GMAIL_GET_THREAD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "thread_id": {"type": "string"},
+        "format": {"type": "string", "enum": ["full", "metadata", "minimal"]},
+    },
+    "required": ["thread_id"],
+}
+
+_GMAIL_LIST_DRAFTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string"},
+        "max_results": {"type": "integer", "minimum": 1, "maximum": 100},
+        "page_token": {"type": "string"},
+    },
+}
+
+_GMAIL_DRAFT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "to": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "subject": {"type": "string"},
+        "body": {"type": "string"},
+        "cc": {"type": "array", "items": {"type": "string"}},
+        "bcc": {"type": "array", "items": {"type": "string"}},
+        "reply_to_thread_id": {"type": "string"},
+        "reply_to_message_id": {"type": "string"},
+    },
+    "required": ["to", "subject", "body"],
+}
+
+_GMAIL_UPDATE_DRAFT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "draft_id": {"type": "string"},
+        **_GMAIL_DRAFT_SCHEMA["properties"],
+    },
+    "required": ["draft_id", "to", "subject", "body"],
+}
+
+_GMAIL_DRAFT_ID_SCHEMA = {
+    "type": "object",
+    "properties": {"draft_id": {"type": "string"}},
+    "required": ["draft_id"],
+}
+
+
+def _gmail_materials(prefix: str, label: str) -> tuple[Material, ...]:
+    return (
+        Material(
+            name=f"gmail_{prefix}_search_threads",
+            description=f"Search {label} Gmail threads by Gmail query string.",
+            input_schema=_GMAIL_SEARCH_SCHEMA,
+        ),
+        Material(
+            name=f"gmail_{prefix}_get_thread",
+            description=f"Fetch one {label} Gmail thread by thread id.",
+            input_schema=_GMAIL_GET_THREAD_SCHEMA,
+        ),
+        Material(
+            name=f"gmail_{prefix}_list_drafts",
+            description=f"List {label} Gmail drafts, optionally filtered by query.",
+            input_schema=_GMAIL_LIST_DRAFTS_SCHEMA,
+        ),
+        Material(
+            name=f"gmail_{prefix}_create_draft",
+            description=(
+                f"Create a {label} Gmail draft. This stages language in Gmail but does not send."
+            ),
+            input_schema=_GMAIL_DRAFT_SCHEMA,
+        ),
+        Material(
+            name=f"gmail_{prefix}_update_draft",
+            description=f"Replace an existing {label} Gmail draft with revised contents.",
+            input_schema=_GMAIL_UPDATE_DRAFT_SCHEMA,
+        ),
+        Material(
+            name=f"gmail_{prefix}_delete_draft",
+            description=f"Delete a {label} Gmail draft by draft id.",
+            input_schema=_GMAIL_DRAFT_ID_SCHEMA,
+        ),
+        Material(
+            name=f"gmail_{prefix}_send_draft",
+            description=(
+                f"Send an existing {label} Gmail draft by draft id. This is the irreversible "
+                "message boundary and should only be invoked after explicit review."
+            ),
+            input_schema=_GMAIL_DRAFT_ID_SCHEMA,
+        ),
+    )
+
+
 MATERIAL_SURFACES: dict[str, Material] = {
     el.name: el
     for el in (
         # Engagement-layer materials: read canonical user-engagement context.
         Material(
             name="consult_canonical_profile",
-            description=(
-                "Return CanonicalProfile for the user landing node."
-            ),
+            description=("Return CanonicalProfile for the user landing node."),
             input_schema={"type": "object", "properties": {}},
         ),
         Material(
             name="consult_canonical_self",
-            description=(
-                "Return CanonicalSelf for AIlumina's model-side self."
-            ),
+            description=("Return CanonicalSelf for AIlumina's model-side self."),
             input_schema={"type": "object", "properties": {}},
         ),
         Material(
             name="consult_canonical_context",
-            description=(
-                "Return CanonicalContext for the shared work and objectives."
-            ),
+            description=("Return CanonicalContext for the shared work and objectives."),
             input_schema={"type": "object", "properties": {}},
         ),
         Material(
             name="consult_engagement_context",
-            description=(
-                "Return the three canonical user-engagement landing nodes together."
-            ),
+            description=("Return the three canonical user-engagement landing nodes together."),
             input_schema={"type": "object", "properties": {}},
         ),
         Material(
@@ -167,6 +262,9 @@ MATERIAL_SURFACES: dict[str, Material] = {
                 },
             },
         ),
+        # Gmail materials — account labels are resolved by env in google_mail.py.
+        *_gmail_materials("user", "the user's"),
+        *_gmail_materials("test", "the test mailbox's"),
         # Calendar Stewardship materials — Google-Calendar-shaped mock.
         Material(
             name="cal_list_events",
@@ -231,9 +329,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         # Reflection-practice material: stores a written reflection.
         Material(
             name="store_reflection",
-            description=(
-                "Store a short written reflection verbatim and return its id."
-            ),
+            description=("Store a short written reflection verbatim and return its id."),
             input_schema={
                 "type": "object",
                 "properties": {"text": {"type": "string"}},
@@ -273,9 +369,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="garmin_get_user_stats",
-            description=(
-                "Fetch aggregate stats (volume, distance, time-in-zones) for a period."
-            ),
+            description=("Fetch aggregate stats (volume, distance, time-in-zones) for a period."),
             input_schema={
                 "type": "object",
                 "properties": {
@@ -387,8 +481,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         Material(
             name="pm_amend_material",
             description=(
-                "Amend an existing material's description, input schema, or "
-                "dynamic implementation."
+                "Amend an existing material's description, input schema, or dynamic implementation."
             ),
             input_schema={
                 "type": "object",
@@ -423,22 +516,20 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "id": {"type": "string"},
                     "name": {"type": "string"},
                     "description": {"type": "string"},
-                    "teleo_affective_ids": {
-                        "type": "array", "items": {"type": "string"}
-                    },
-                    "understanding_ids": {
-                        "type": "array", "items": {"type": "string"}
-                    },
+                    "teleo_affective_ids": {"type": "array", "items": {"type": "string"}},
+                    "understanding_ids": {"type": "array", "items": {"type": "string"}},
                     "rules_ids": {"type": "array", "items": {"type": "string"}},
-                    "affordance_ids": {
-                        "type": "array", "items": {"type": "string"}
-                    },
+                    "affordance_ids": {"type": "array", "items": {"type": "string"}},
                     "mode": {"type": "string", "enum": ["somatic", "autonomic"]},
                 },
                 "required": [
-                    "id", "name", "description",
-                    "teleo_affective_ids", "understanding_ids",
-                    "rules_ids", "affordance_ids",
+                    "id",
+                    "name",
+                    "description",
+                    "teleo_affective_ids",
+                    "understanding_ids",
+                    "rules_ids",
+                    "affordance_ids",
                 ],
             },
         ),
@@ -451,16 +542,10 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "id": {"type": "string"},
                     "name": {"type": "string"},
                     "description": {"type": "string"},
-                    "teleo_affective_ids": {
-                        "type": "array", "items": {"type": "string"}
-                    },
-                    "understanding_ids": {
-                        "type": "array", "items": {"type": "string"}
-                    },
+                    "teleo_affective_ids": {"type": "array", "items": {"type": "string"}},
+                    "understanding_ids": {"type": "array", "items": {"type": "string"}},
                     "rules_ids": {"type": "array", "items": {"type": "string"}},
-                    "affordance_ids": {
-                        "type": "array", "items": {"type": "string"}
-                    },
+                    "affordance_ids": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": ["id"],
             },
@@ -493,8 +578,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         Material(
             name="judge_list_recent_enactments",
             description=(
-                "Return recent enactments most-recent-first. Optionally filter "
-                "by bundle_id."
+                "Return recent enactments most-recent-first. Optionally filter by bundle_id."
             ),
             input_schema={
                 "type": "object",
@@ -506,9 +590,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="judge_read_enactment_steps",
-            description=(
-                "Read every step recorded against a single enactment, in order."
-            ),
+            description=("Read every step recorded against a single enactment, in order."),
             input_schema={
                 "type": "object",
                 "properties": {"enactment_id": {"type": "string"}},
@@ -518,8 +600,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         Material(
             name="judge_read_bundle",
             description=(
-                "Return a bundle's structure as data — its mode and the pool "
-                "ids it selects."
+                "Return a bundle's structure as data — its mode and the pool ids it selects."
             ),
             input_schema={
                 "type": "object",
@@ -549,9 +630,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         # other six affordances reuse PM materials defined above.
         Material(
             name="smoother_read_pending_friction",
-            description=(
-                "Return Friction observations that have not been addressed yet."
-            ),
+            description=("Return Friction observations that have not been addressed yet."),
             input_schema={
                 "type": "object",
                 "properties": {"limit": {"type": "integer", "default": 10}},
@@ -593,9 +672,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="remsleep_read_updated_graph_nodes",
-            description=(
-                "Read non-canonical Neo4j nodes updated after a graph watermark."
-            ),
+            description=("Read non-canonical Neo4j nodes updated after a graph watermark."),
             input_schema={
                 "type": "object",
                 "properties": {
@@ -607,8 +684,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         Material(
             name="remsleep_dispatch_memory_signal",
             description=(
-                "Dispatch a source-backed memory signal for Memory Consolidation "
-                "to consume."
+                "Dispatch a source-backed memory signal for Memory Consolidation to consume."
             ),
             input_schema={
                 "type": "object",
@@ -628,9 +704,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="remsleep_read_memory_signals",
-            description=(
-                "Read pending memory signals dispatched by Memory Recall."
-            ),
+            description=("Read pending memory signals dispatched by Memory Recall."),
             input_schema={
                 "type": "object",
                 "properties": {

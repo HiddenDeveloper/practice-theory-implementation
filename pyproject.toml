@@ -4,9 +4,15 @@ version = "0.1.0"
 description = "Step-by-step implementation accompanying AI Trust: Practice Theory — The Implementation."
 requires-python = ">=3.12"
 dependencies = [
+    "google-auth>=2.43.0",
+    "google-auth-oauthlib>=1.2.3",
+    "httpx>=0.28.1",
     "mcp>=1.2.0",
     "pyyaml>=6.0.3",
 ]
+
+[project.scripts]
+practice-gmail-auth = "practice_theory_implementation.materials.google_mail:main"
 
 [project.optional-dependencies]
 anthropic = ["claude-agent-sdk>=0.1.0"]
