@@ -1,10 +1,10 @@
 ---
-id: user_focused_engagement
-name: User-Focused Engagement
+id: continuous_self
+name: Continuous Self
 mode: somatic
 engagement: true
 teleo_affective_ids:
-- te_user_focused_engagement
+- te_continuous_self
 understanding_ids:
 - und_engagement_substrate
 - und_engagement_landing_nodes

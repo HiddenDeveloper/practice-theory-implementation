@@ -657,7 +657,7 @@ The implementation respects that distinction. Engagement is structurally separat
 
 ### The engagement bundle
 
-The engagement is *expressed* in the same five-element shape a practice is — same `Bundle` dataclass, same pool decomposition. The ontological distinction is in the bundle's role, not its structure. A single engagement bundle (`user_focused_engagement`) lives in the codebase alongside the practice bundles but in a structurally separate slot.
+The engagement is *expressed* in the same five-element shape a practice is — same `Bundle` dataclass, same pool decomposition. The ontological distinction is in the bundle's role, not its structure. A single engagement bundle (`continuous_self`) lives in the codebase alongside the practice bundles but in a structurally separate slot.
 
 What it carries:
 
@@ -718,7 +718,7 @@ What is different now is what the projection contains: the harness LLM is appren
 
 Step 6 establishes the apprenticeship layer:
 
-- The **engagement bundle** in `src/practice_theory_implementation/bundles/user_focused_engagement.py`, in a structurally separate slot from the practice catalog (`ENGAGEMENT_BUNDLE`, deliberately not in `BUNDLES`).
+- The **engagement bundle** in `src/practice_theory_implementation/bundles/continuous_self.py`, in a structurally separate slot from the practice catalog (`ENGAGEMENT_BUNDLE`, deliberately not in `BUNDLES`).
 - The **`about_the_user` affordance and `consult_engagement_context` material** behind it, implemented in `materials/engagement_context.py`, alongside Neo4j-backed `read_non_episodic_memory` / `write_non_episodic_memory`.
 - A **second practice in the catalog**, Reflection — in `bundles/reflection.py` with one affordance backed by `materials/reflection_mock.py` — so switching between practices is real rather than demonstrative.
 - The **additive merge in projection**: `project(bundle, substrate, registry, engagement=eng)` folds the engagement's content into the result. Engagement first, deduped by id; materials and bindings derive from the merged affordance set.

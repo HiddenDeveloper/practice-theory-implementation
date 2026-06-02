@@ -806,7 +806,7 @@ def _print_trail() -> None:
         for top in top_level:
             label = (
                 "engagement"
-                if top.practice_id == "user_focused_engagement"
+                if top.practice_id == "continuous_self"
                 else "practice (autonomic)"
             )
             _print_enactment(store, top, indent="  ", label=label)

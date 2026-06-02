@@ -52,11 +52,11 @@ class Case:
 # evaluability rule (`rule_material_judgement_is_evaluable`) is what it violates.
 
 def _seed_unevaluated_proposal(store: EnactmentStore) -> str:
-    # user_focused_engagement is the bundle that grants both the ranking
+    # continuous_self is the bundle that grants both the ranking
     # affordance (recall_relevant_episodes) and a consuming action
     # (write_non_episodic_memory), so the situation is realistic: recall some
     # ranked episodes, then write the top hit to canonical memory by rank alone.
-    eid = store.open_enactment("user_focused_engagement")
+    eid = store.open_enactment("continuous_self")
     t = _iso()
     store.record_step(
         enactment_id=eid,
@@ -122,12 +122,12 @@ CASES: dict[str, Case] = {
     "judge_unevaluated_proposal": Case(
         id="judge_unevaluated_proposal",
         description=(
-            "A user_focused_engagement enactment consumed a ranking affordance "
+            "A continuous_self enactment consumed a ranking affordance "
             "and wrote the top hit to canonical memory with no step that evaluated "
             "the ranking. The Judge should name an unevaluated_proposal friction."
         ),
         kind="examine",
-        target_bundle="user_focused_engagement",
+        target_bundle="continuous_self",
         role="judge",
         seed=_seed_unevaluated_proposal,
         grade=_grade_unevaluated_proposal,
