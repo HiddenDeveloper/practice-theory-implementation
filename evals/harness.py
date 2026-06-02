@@ -25,6 +25,7 @@ import contextlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -43,6 +44,7 @@ from practice_theory_implementation.autonomic_adapters import (
     RolePolicy,
     compose_brief,
     drain,
+    practice_service_env,
 )
 from practice_theory_implementation.autonomic_dispatcher import route_now
 from practice_theory_implementation.bundles import BUNDLES
@@ -174,18 +176,102 @@ async def drive_live(provider: str, role: str, store: EnactmentStore, cwd: Path)
     )
 
 
+# --- "enact" cases: the somatic practitioner under test ------------------------
+# Somatic practices (e.g. correspondent) are filtered out of the autonomic
+# server's catalog, so the autonomic adapters above cannot reach them. This is a
+# minimal somatic spawn (claude only) that mirrors ClaudeCliAdapter but with
+# PRACTICE_SERVER_MODE=somatic; the server inherits the process env, so the
+# isolated trail (PRACTICE_TRAIL_PATH) and Neo4j creds (engagement projects on
+# switch) both reach it. Codex-somatic would need its service env injected into
+# the inline -c MCP config; left for a follow-up.
+def _run_claude_somatic(brief: str, dispatch: str, cwd: Path) -> None:
+    label = "practice_server_somatic"
+    server_cfg = {
+        "type": "stdio",
+        "command": sys.executable,
+        "args": ["-m", "practice_theory_implementation.server"],
+        "env": {
+            "PRACTICE_SERVER_MODE": "somatic",
+            "PRACTICE_TRANSPORT": "stdio",
+            "PRACTICE_DISABLE_DISPATCHER": "1",
+        },
+    }
+    mcp_config = json.dumps({"mcpServers": {label: server_cfg}})
+    allowed = " ".join(
+        f"mcp__{label}__{name}"
+        for name in (
+            "list_practices", "switch_practice", "current_practice",
+            "discover_affordances", "invoke_affordance", "user_engagement",
+        )
+    )
+    claude_bin = os.environ.get("PRACTICE_CLAUDE_BIN", "claude")
+    cmd = [
+        claude_bin, "-p", "--system-prompt", brief, "--mcp-config", mcp_config,
+        "--allowedTools", allowed, "--permission-mode", "bypassPermissions",
+        "--output-format", "text", dispatch,
+    ]
+    subprocess.run(  # noqa: S603 - claude_bin is operator config
+        cmd, cwd=str(cwd), env={**os.environ, **practice_service_env(cwd)},
+        text=True, capture_output=True, check=False,
+    )
+
+
+async def drive_enact_live(
+    provider: str, practice_id: str, situation: str, cwd: Path
+) -> None:
+    """Run the somatic practitioner under test over a supplied situation."""
+    if provider != "claude":
+        raise ValueError(
+            f"enact cases support --provider claude (or scripted), not {provider!r}; "
+            "codex-somatic needs service-env injection into its inline MCP config"
+        )
+    brief = compose_brief(BUNDLES[practice_id], substrate)
+    await asyncio.to_thread(_run_claude_somatic, brief, situation, cwd)
+
+
+def _latest_enactment_of(store: EnactmentStore, practice_id: str) -> str | None:
+    for row in store.recent_enactments(limit=50):
+        if row.practice_id == practice_id:
+            return row.id
+    return None
+
+
 async def run_case(case: Case, *, provider: str) -> dict[str, Any]:
     """Stage → run practitioner → grade. provider: 'scripted', 'codex', or 'claude'."""
     with temp_workspace() as (store, cwd):
-        target_eid = case.seed(store)
-        if provider == "scripted":
-            if case.role != "judge":
-                raise ValueError(f"scripted driver only supports judge cases, not {case.role!r}")
-            await drive_judge_scripted(target_eid, case.target_bundle)
-        elif provider in ("codex", "claude"):
-            await drive_live(provider, case.role, store, cwd)
+        if case.kind == "examine":
+            if case.seed is None:
+                raise ValueError(f"examine case {case.id!r} has no seed")
+            target_eid: str | None = case.seed(store)
+            if provider == "scripted":
+                if case.role != "judge":
+                    raise ValueError(
+                        f"scripted driver only supports judge cases, not {case.role!r}"
+                    )
+                await drive_judge_scripted(target_eid, case.target_bundle)
+            elif provider in ("codex", "claude"):
+                await drive_live(provider, case.role, store, cwd)
+            else:
+                raise ValueError(f"unknown provider {provider!r}")
+        elif case.kind == "enact":
+            if provider == "scripted":
+                if case.scripted_seed is None:
+                    raise ValueError(f"enact case {case.id!r} has no scripted_seed")
+                target_eid = case.scripted_seed(store)
+            else:
+                if case.situation is None:
+                    raise ValueError(f"enact case {case.id!r} has no situation")
+                await drive_enact_live(provider, case.target_bundle, case.situation, cwd)
+                target_eid = _latest_enactment_of(store, case.target_bundle)
         else:
-            raise ValueError(f"unknown provider {provider!r}")
+            raise ValueError(f"unknown case kind {case.kind!r}")
+
+        if target_eid is None:
+            return {
+                "case": case.id, "provider": provider, "passed": False,
+                "target_enactment_id": None,
+                "evidence": [{"error": f"no enactment of {case.target_bundle!r} was created"}],
+            }
         passed, evidence = case.grade(store, target_eid)
         return {
             "case": case.id,

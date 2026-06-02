@@ -56,10 +56,10 @@ def main(argv: list[str] | None = None) -> int:
         if not result["passed"]:
             failures += 1
         print(f"{status} {case_id} [{args.provider}]")
-        for f in result["evidence"]:
-            print(f"    friction: kind={f.get('kind')!r} content={f.get('content')!r}")
+        for item in result["evidence"]:
+            print(f"    {item}")
         if not result["evidence"]:
-            print("    (no friction emitted on the target enactment)")
+            print("    (no evidence on the target enactment)")
 
     print(f"\n{len(selected) - failures}/{len(selected)} passed")
     return 1 if failures else 0
