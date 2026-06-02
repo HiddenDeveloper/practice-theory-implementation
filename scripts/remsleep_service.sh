@@ -15,6 +15,10 @@ cd "$REPO_ROOT"
 export PRACTICE_AUTONOMIC_PROVIDER="${PRACTICE_AUTONOMIC_PROVIDER:-anthropic_cli}"
 export PRACTICE_REMSLEEP_ONLY=1
 export PRACTICE_REMSLEEP_INTERVAL_SECONDS="${PRACTICE_REMSLEEP_INTERVAL_SECONDS:-21600}"
+# Connect each recall/consolidation dispatch to the long-lived autonomic HTTP
+# MCP server (start it with `make autonomic-http-up`) instead of spawning a
+# fresh stdio server per dispatch. Set to empty to fall back to stdio.
+export PRACTICE_AUTONOMIC_MCP_URL="${PRACTICE_AUTONOMIC_MCP_URL-http://127.0.0.1:7181/mcp}"
 # Autonomous keeper applies for real — capture-only preview must be off.
 unset PRACTICE_REMSLEEP_PREVIEW || true
 
