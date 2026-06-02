@@ -46,12 +46,14 @@ Run directly to serve over stdio (the client launches this as a subprocess):
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 from practice_theory_implementation.bundles import BUNDLES, ENGAGEMENT_BUNDLE
 from practice_theory_implementation.materials.judge import (
@@ -94,22 +96,22 @@ if _MODE not in ("somatic", "autonomic"):
     )
 
 # Transport is set at startup via PRACTICE_TRANSPORT; default stdio so the
-# verify works without configuration. HTTP is useful for manual experiments
-# with a long-lived server, but this module still keeps active projection
-# state in globals, so concurrent HTTP clients would race on that state.
+# verify works without configuration. HTTP runs one long-lived process serving
+# many clients; active practice/engagement state is scoped per MCP session (see
+# _SessionState / the session ContextVar below), so concurrent HTTP clients no
+# longer race. PRACTICE_EXPERIMENTAL_HTTP is still honoured for back-compat but
+# is no longer required.
 _TRANSPORT: str = os.environ.get("PRACTICE_TRANSPORT", "stdio")
 if _TRANSPORT not in ("stdio", "http"):
     raise ValueError(
         f"PRACTICE_TRANSPORT must be 'stdio' or 'http', got {_TRANSPORT!r}"
     )
-if _TRANSPORT == "http" and os.environ.get("PRACTICE_EXPERIMENTAL_HTTP") != "1":
-    raise ValueError(
-        "PRACTICE_TRANSPORT=http is experimental because active practice state "
-        "is process-global. Set PRACTICE_EXPERIMENTAL_HTTP=1 to opt in, and "
-        "use only one client per server process until per-session state lands."
-    )
 _HTTP_HOST: str = os.environ.get("PRACTICE_HTTP_HOST", "127.0.0.1")
 _HTTP_PORT: int = int(os.environ.get("PRACTICE_HTTP_PORT", "7180"))
+# Streamable HTTP gives no per-session close callback, so a periodic sweep
+# closes + drops sessions idle beyond this many seconds (0 disables). The stdio
+# session is never reaped — it lives for the process.
+_SESSION_REAP_SECONDS: int = int(os.environ.get("PRACTICE_SESSION_REAP_SECONDS", "300"))
 _ENGAGEMENT_IDLE_CLOSE_SECONDS: int = int(
     os.environ.get("PRACTICE_ENGAGEMENT_IDLE_CLOSE_SECONDS", "600")
 )
@@ -215,24 +217,84 @@ configure_judge(
     trail=_trail,
     substrate=substrate,
     bundle_catalog=_AUTHORING_BUNDLES,
-    observing_enactment_id_getter=lambda: _active_practice_enactment_id,
+    observing_enactment_id_getter=lambda: _session().active_practice_enactment_id,
 )
 configure_smoother(
     trail=_trail,
-    active_enactment_id_getter=lambda: _active_practice_enactment_id,
+    active_enactment_id_getter=lambda: _session().active_practice_enactment_id,
 )
 
-# The engagement is projected only in somatic mode. Autonomic practitioners
-# (Judge, Smoother in later steps) have no user-focus to inherit.
-_engagement: ProjectedPractice | None = None
-_engagement_bundle: Any | None = None
-_engagement_enactment_id: str | None = None
-_engagement_affordance_ids: frozenset[str] = frozenset()
-_last_step_at: datetime | None = None
+# Per-session state. Under stdio each process serves one client, so a single
+# session keyed by _STDIO_SESSION_KEY reproduces the old module-global
+# behaviour exactly. Under HTTP one process serves many clients concurrently,
+# so each MCP session gets its own _SessionState; a ContextVar carries the
+# active session key through the synchronous call chain (tool -> helpers ->
+# Judge/Smoother getters) within one asyncio task, so concurrent requests
+# never race on a shared active practice.
 
-# A practice is optional — none active until switch_practice is called.
-_active_practice: ProjectedPractice | None = None
-_active_practice_enactment_id: str | None = None
+
+@dataclass
+class _SessionState:
+    # The engagement is projected only in somatic mode. Autonomic practitioners
+    # (Judge, Smoother) have no user-focus to inherit, so it stays None there.
+    engagement: ProjectedPractice | None = None
+    engagement_bundle: Any | None = None
+    engagement_enactment_id: str | None = None
+    engagement_affordance_ids: frozenset[str] = field(default_factory=frozenset)
+    last_step_at: datetime | None = None
+    # A practice is optional — none active until switch_practice is called.
+    active_practice: ProjectedPractice | None = None
+    active_practice_enactment_id: str | None = None
+
+
+_STDIO_SESSION_KEY = "_stdio"
+_sessions: dict[str, _SessionState] = {}
+_current_session_key: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "practice_session_key", default=_STDIO_SESSION_KEY
+)
+
+
+def _session_for_key(key: str) -> _SessionState:
+    state = _sessions.get(key)
+    if state is None:
+        state = _SessionState()
+        _sessions[key] = state
+    return state
+
+
+def _session() -> _SessionState:
+    """The active session's state, per the ContextVar (defaults to stdio)."""
+    return _session_for_key(_current_session_key.get())
+
+
+def _bind_session(ctx: Context | None) -> _SessionState:
+    """Resolve the caller's session from the MCP request and make it current.
+
+    Under stdio (and any call without an HTTP request) the key is the fixed
+    stdio key, so there is exactly one session — identical to the old globals.
+    Under streamable HTTP the per-session `mcp-session-id` header is the key.
+    """
+    key = _STDIO_SESSION_KEY
+    request = getattr(ctx.request_context, "request", None) if ctx is not None else None
+    if request is not None:
+        key = request.headers.get("mcp-session-id") or _STDIO_SESSION_KEY
+    _current_session_key.set(key)
+    return _session_for_key(key)
+
+
+def _resource_session() -> _SessionState:
+    """Best-effort session for the static resource reads.
+
+    Static (no-argument) MCP resources are called without a Context, so they
+    cannot read the caller's session id. When exactly one session is active
+    (the common single-client case, including stdio) it is unambiguous; under
+    genuine concurrency the authoritative per-session read path is the
+    `current_practice` tool, so fall back to the stdio session.
+    """
+    active = [s for s in _sessions.values() if s.active_practice or s.engagement]
+    if len(active) == 1:
+        return active[0]
+    return _session_for_key(_STDIO_SESSION_KEY)
 
 
 def _now_dt() -> datetime:
@@ -269,11 +331,11 @@ def _configure_stateful_materials(
         trail=_trail,
         substrate=live_substrate,
         bundle_catalog=live_catalog,
-        observing_enactment_id_getter=lambda: _active_practice_enactment_id,
+        observing_enactment_id_getter=lambda: _session().active_practice_enactment_id,
     )
     smoother_module.configure(
         trail=_trail,
-        active_enactment_id_getter=lambda: _active_practice_enactment_id,
+        active_enactment_id_getter=lambda: _session().active_practice_enactment_id,
     )
 
 
@@ -287,7 +349,7 @@ def _reload_seed_substrate() -> dict[str, Any]:
     import importlib
 
     global BUNDLES, ENGAGEMENT_BUNDLE, FUNCTIONS, register_dynamic_material
-    global substrate, _AUTHORING_BUNDLES, _active_practice, _engagement_bundle
+    global substrate, _AUTHORING_BUNDLES
 
     previous_state = {
         "BUNDLES": BUNDLES,
@@ -363,9 +425,17 @@ def _reload_seed_substrate() -> dict[str, Any]:
             "source": "previous live state",
         }
 
-    _engagement_bundle = None
+    # Reload is a global substrate change; apply it to the current session
+    # (stdio for the usual authoring path). Other live sessions re-project
+    # from the new substrate on their next call (the projection is re-read
+    # each time, never cached).
+    reload_session = _session()
+    reload_session.engagement_bundle = None
     _refresh_engagement_projection(force=True)
-    if _active_practice is not None and _active_practice.id not in BUNDLES:
+    if (
+        reload_session.active_practice is not None
+        and reload_session.active_practice.id not in BUNDLES
+    ):
         _close_active_practice_enactment()
 
     return {
@@ -383,61 +453,59 @@ def _parse_dt(value: str) -> datetime:
 
 
 def _mark_activity(value: str | None = None) -> None:
-    global _last_step_at
-    _last_step_at = _parse_dt(value) if value is not None else _now_dt()
+    _session().last_step_at = _parse_dt(value) if value is not None else _now_dt()
 
 
 def _close_active_practice_enactment() -> None:
-    global _active_practice, _active_practice_enactment_id
-    if _active_practice_enactment_id is not None:
-        _trail.close_enactment(_active_practice_enactment_id)
-    _active_practice = None
-    _active_practice_enactment_id = None
+    s = _session()
+    if s.active_practice_enactment_id is not None:
+        _trail.close_enactment(s.active_practice_enactment_id)
+    s.active_practice = None
+    s.active_practice_enactment_id = None
 
 
 def _maybe_close_idle_engagement_segment() -> None:
     """Close a complete engagement segment after a noticeable idle gap."""
-    global _engagement_enactment_id, _last_step_at
     if _MODE != "somatic" or _ENGAGEMENT_IDLE_CLOSE_SECONDS <= 0:
         return
-    if _last_step_at is None:
+    s = _session()
+    if s.last_step_at is None:
         return
-    idle_for = _now_dt() - _last_step_at
+    idle_for = _now_dt() - s.last_step_at
     if idle_for < timedelta(seconds=_ENGAGEMENT_IDLE_CLOSE_SECONDS):
         return
     _close_active_practice_enactment()
-    if _engagement_enactment_id is not None:
-        _trail.close_enactment(_engagement_enactment_id)
-    _engagement_enactment_id = None
-    _last_step_at = None
+    if s.engagement_enactment_id is not None:
+        _trail.close_enactment(s.engagement_enactment_id)
+    s.engagement_enactment_id = None
+    s.last_step_at = None
     _refresh_engagement_projection(force=True)
 
 
 def _refresh_engagement_projection(*, force: bool = False) -> None:
-    """Keep projected practices in sync with the live substrate.
+    """Keep the current session's projections in sync with the live substrate.
 
     Projections are intentionally frozen snapshots, but the substrate is
     mutable at runtime. Re-project on each read/invoke boundary so Practice
     Management changes to affordances, materials, pool elements, or bundle
     selections become visible without restarting the MCP server.
     """
-    global _active_practice, _engagement, _engagement_affordance_ids
-    global _engagement_bundle, _engagement_enactment_id
     if _MODE != "somatic":
         return
+    s = _session()
     bundle = _AUTHORING_BUNDLES[ENGAGEMENT_BUNDLE.id]
-    _engagement = project(bundle, substrate, FUNCTIONS)
-    _engagement_bundle = bundle
-    _engagement_affordance_ids = frozenset(a.id for a in _engagement.affordances)
-    if _engagement_enactment_id is None:
-        _engagement_enactment_id = _trail.open_enactment(_engagement.id)
+    s.engagement = project(bundle, substrate, FUNCTIONS)
+    s.engagement_bundle = bundle
+    s.engagement_affordance_ids = frozenset(a.id for a in s.engagement.affordances)
+    if s.engagement_enactment_id is None:
+        s.engagement_enactment_id = _trail.open_enactment(s.engagement.id)
         _mark_activity()
-    if _active_practice is not None and _active_practice.id in BUNDLES:
-        _active_practice = project(
-            BUNDLES[_active_practice.id],
+    if s.active_practice is not None and s.active_practice.id in BUNDLES:
+        s.active_practice = project(
+            BUNDLES[s.active_practice.id],
             substrate,
             FUNCTIONS,
-            engagement=_engagement,
+            engagement=s.engagement,
         )
 
 
@@ -455,14 +523,14 @@ def list_practices() -> list[dict[str, str]]:
 
 
 @mcp_app.tool()
-def switch_practice(practice_id: str) -> dict[str, Any]:
+def switch_practice(practice_id: str, ctx: Context) -> dict[str, Any]:
     """Project the named bundle (with the engagement merged in) and activate it.
 
     Closes the current practice enactment (if any) and opens a new one whose
     parent_enactment_id points at the engagement enactment, so the trail
     records the layering.
     """
-    global _active_practice, _active_practice_enactment_id
+    s = _bind_session(ctx)
     _maybe_close_idle_engagement_segment()
     _refresh_engagement_projection()
     if practice_id not in BUNDLES:
@@ -477,26 +545,26 @@ def switch_practice(practice_id: str) -> dict[str, Any]:
                 f"practice {practice_id!r} is {bundle.mode}; server is {_MODE}"
             ),
         }
-    if _active_practice_enactment_id is not None:
-        _trail.close_enactment(_active_practice_enactment_id)
-    _active_practice = project(
-        bundle, substrate, FUNCTIONS, engagement=_engagement
+    if s.active_practice_enactment_id is not None:
+        _trail.close_enactment(s.active_practice_enactment_id)
+    s.active_practice = project(
+        bundle, substrate, FUNCTIONS, engagement=s.engagement
     )
-    _active_practice_enactment_id = _trail.open_enactment(
-        _active_practice.id, parent_enactment_id=_engagement_enactment_id
+    s.active_practice_enactment_id = _trail.open_enactment(
+        s.active_practice.id, parent_enactment_id=s.engagement_enactment_id
     )
     _mark_activity()
     return {
-        "active": _active_practice.id,
-        "name": _active_practice.name,
+        "active": s.active_practice.id,
+        "name": s.active_practice.name,
         "mode": _MODE,
-        "engagement_enactment_id": _engagement_enactment_id,
-        "practice_enactment_id": _active_practice_enactment_id,
+        "engagement_enactment_id": s.engagement_enactment_id,
+        "practice_enactment_id": s.active_practice_enactment_id,
     }
 
 
 @mcp_app.tool()
-def current_practice() -> dict[str, Any]:
+def current_practice(ctx: Context) -> dict[str, Any]:
     """Return the active practice's projection, with composition.
 
     Shape:
@@ -513,15 +581,16 @@ def current_practice() -> dict[str, Any]:
     tool; the composition returned here is the active practice's full
     projection (engagement content merged in).
     """
+    s = _bind_session(ctx)
     _refresh_engagement_projection()
-    if _active_practice is None:
+    if s.active_practice is None:
         return {
             "mode": _MODE,
             "practice": None,
             "enactment_id": None,
             "composition": None,
         }
-    p = _active_practice
+    p = s.active_practice
     return {
         "mode": _MODE,
         "practice": {
@@ -529,7 +598,7 @@ def current_practice() -> dict[str, Any]:
             "name": p.name,
             "description": p.description,
         },
-        "enactment_id": _active_practice_enactment_id,
+        "enactment_id": s.active_practice_enactment_id,
         "composition": compose_composition(p),
     }
 
@@ -542,7 +611,7 @@ def current_practice() -> dict[str, Any]:
 if _MODE == "somatic":
 
     @mcp_app.tool()
-    def user_engagement() -> dict[str, Any]:
+    def user_engagement(ctx: Context) -> dict[str, Any]:
         """Return the engagement layer's content (somatic only).
 
         Renders the engagement bundle — its teleo-affective, understanding,
@@ -554,9 +623,10 @@ if _MODE == "somatic":
         Distinct from `current_practice`, which returns the active practice
         with engagement merged in.
         """
+        s = _bind_session(ctx)
         _refresh_engagement_projection()
-        assert _engagement is not None  # somatic mode implies projection
-        e = _engagement
+        assert s.engagement is not None  # somatic mode implies projection
+        e = s.engagement
         return {
             "id": e.id,
             "name": e.name,
@@ -566,7 +636,9 @@ if _MODE == "somatic":
 
 
 @mcp_app.tool()
-def discover_affordances(query: str | None = None) -> list[dict[str, Any]]:
+def discover_affordances(
+    ctx: Context, query: str | None = None
+) -> list[dict[str, Any]]:
     """List the active projection's affordances, optionally filtered.
 
     Engagement affordances are always present (engagement is projected at
@@ -584,8 +656,9 @@ def discover_affordances(query: str | None = None) -> list[dict[str, Any]]:
     schema in front of the LLM at the same moment it learns the affordance
     exists.
     """
+    s = _bind_session(ctx)
     _refresh_engagement_projection()
-    active = _active_practice or _engagement
+    active = s.active_practice or s.engagement
     if active is None:
         return []
     q = query.lower() if query else None
@@ -616,7 +689,7 @@ def discover_affordances(query: str | None = None) -> list[dict[str, Any]]:
                 "description": aff.description,
                 "materials": material_views,
                 "layer": (
-                    "engagement" if aff.id in _engagement_affordance_ids else "practice"
+                    "engagement" if aff.id in s.engagement_affordance_ids else "practice"
                 ),
             }
         )
@@ -627,6 +700,7 @@ def discover_affordances(query: str | None = None) -> list[dict[str, Any]]:
 def invoke_affordance(
     affordance_id: str,
     material_name: str,
+    ctx: Context,
     arguments: dict[str, Any] | None = None,
 ) -> Any:
     """Dispatch through the active practice's invoke() and return the result.
@@ -641,13 +715,14 @@ def invoke_affordance(
     recorded, so the trail (and the Judge reading it) sees the failure too.
     """
     args = arguments or {}
+    s = _bind_session(ctx)
     _maybe_close_idle_engagement_segment()
     _refresh_engagement_projection()
-    is_engagement_call = affordance_id in _engagement_affordance_ids
-    active = _active_practice or _engagement
+    is_engagement_call = affordance_id in s.engagement_affordance_ids
+    active = s.active_practice or s.engagement
     if active is None:
         return {"error": "no active practice; call switch_practice first"}
-    if not is_engagement_call and _active_practice is None:
+    if not is_engagement_call and s.active_practice is None:
         return {"error": "no active practice; call switch_practice first"}
     with time_call() as timing:
         try:
@@ -662,7 +737,7 @@ def invoke_affordance(
             # and the type is what makes the recorded step diagnosable.
             result = {"error": f"{type(exc).__name__}: {exc}"}
     target_enactment = (
-        _engagement_enactment_id if is_engagement_call else _active_practice_enactment_id
+        s.engagement_enactment_id if is_engagement_call else s.active_practice_enactment_id
     )
     if target_enactment is not None:
         _trail.record_step(
@@ -697,12 +772,14 @@ _NO_ACTIVE_MARKDOWN = (
 def _active_for_resources() -> ProjectedPractice | None:
     """Return the active projection for resource reads.
 
-    In somatic mode the engagement is projected at startup and stands in
-    until a practice is switched into. In autonomic mode there is no
-    engagement, so resources resolve only when a practice is active.
+    Static resources get no Context (see `_resource_session`), so this is a
+    best-effort read of the sole active session — authoritative per-session
+    reads go through the `current_practice` tool. In somatic mode the
+    engagement stands in until a practice is switched into; in autonomic mode
+    there is no engagement, so resources resolve only when a practice is active.
     """
-    _refresh_engagement_projection()
-    return _active_practice or _engagement
+    s = _resource_session()
+    return s.active_practice or s.engagement
 
 
 @mcp_app.resource("practice://current", mime_type="text/markdown")
@@ -765,14 +842,45 @@ def resource_affordances() -> str:
 
 
 async def _shutdown_handler() -> None:
-    """Close still-open enactments so the dispatcher can route a complete trail."""
-    global _active_practice_enactment_id, _engagement_enactment_id
-    if _active_practice_enactment_id is not None:
-        _trail.close_enactment(_active_practice_enactment_id)
-        _active_practice_enactment_id = None
-    if _engagement_enactment_id is not None:
-        _trail.close_enactment(_engagement_enactment_id)
-        _engagement_enactment_id = None
+    """Close still-open enactments (every session) so the dispatcher routes a
+    complete trail."""
+    for s in list(_sessions.values()):
+        if s.active_practice_enactment_id is not None:
+            _trail.close_enactment(s.active_practice_enactment_id)
+            s.active_practice_enactment_id = None
+        if s.engagement_enactment_id is not None:
+            _trail.close_enactment(s.engagement_enactment_id)
+            s.engagement_enactment_id = None
+
+
+async def _reap_idle_sessions(stop: Any) -> None:
+    """Periodically close + drop HTTP sessions idle beyond the reap threshold.
+
+    Streamable HTTP gives no per-session close callback, so this sweep closes
+    orphaned sessions' enactments (so the dispatcher can route them) and frees
+    their state. The stdio session is never reaped — it lives for the process.
+    """
+    import asyncio as _asyncio
+    import contextlib as _contextlib
+
+    interval = min(30.0, float(_SESSION_REAP_SECONDS))
+    while not stop.is_set():
+        with _contextlib.suppress(TimeoutError):
+            await _asyncio.wait_for(stop.wait(), timeout=interval)
+        if stop.is_set():
+            break
+        cutoff = _now_dt() - timedelta(seconds=_SESSION_REAP_SECONDS)
+        for key, s in list(_sessions.items()):
+            if key == _STDIO_SESSION_KEY or s.last_step_at is None:
+                continue
+            if s.last_step_at > cutoff:
+                continue
+            if s.active_practice_enactment_id is not None:
+                _trail.close_enactment(s.active_practice_enactment_id)
+            if s.engagement_enactment_id is not None:
+                _trail.close_enactment(s.engagement_enactment_id)
+            _sessions.pop(key, None)
+            _log.info("reaped idle MCP session %s", key)
 
 
 async def _serve_with_dispatcher() -> None:
@@ -802,6 +910,9 @@ async def _serve_with_dispatcher() -> None:
     dispatcher: _asyncio.Task[None] | None = None
     if not dispatcher_disabled:
         dispatcher = _asyncio.create_task(dispatcher_task(stop, store=_trail))
+    reaper: _asyncio.Task[None] | None = None
+    if _TRANSPORT == "http" and _SESSION_REAP_SECONDS > 0:
+        reaper = _asyncio.create_task(_reap_idle_sessions(stop))
     try:
         if _TRANSPORT == "http":
             await mcp_app.run_streamable_http_async()
@@ -809,9 +920,10 @@ async def _serve_with_dispatcher() -> None:
             await mcp_app.run_stdio_async()
     finally:
         await _shutdown_handler()
-        if dispatcher is not None:
-            stop.set()
-            await dispatcher
+        stop.set()
+        for task in (dispatcher, reaper):
+            if task is not None:
+                await task
 
 
 if __name__ == "__main__":
