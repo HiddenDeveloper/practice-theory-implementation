@@ -2,62 +2,81 @@
 # Cognabot-style: make is the interface, pm2 is the supervisor (auto-restart on
 # crash; `pm2 save` + the existing pm2 boot agent resurrect on reboot).
 # Process definitions live in ecosystem.config.js; env wiring lives in scripts/.
+#
+# Every service has: up / down / restart / logs / status.
+# Across all services: all-up / all-down / all-restart / all-status / all-logs.
+# `restart` starts the service if it is not running, so you never have to know
+# whether it is up first.
 
-.PHONY: help up down status logs save \
-	keeper-up keeper-down keeper-logs \
-	somatic-http-up somatic-http-down \
-	autonomic-http-up autonomic-http-down
+.PHONY: help save \
+	keeper-up keeper-down keeper-restart keeper-logs keeper-status \
+	somatic-http-up somatic-http-down somatic-http-restart somatic-http-logs somatic-http-status \
+	autonomic-http-up autonomic-http-down autonomic-http-restart autonomic-http-logs autonomic-http-status \
+	all-up all-down all-restart all-status all-logs
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 # ── RemSleep keeper (Memory Recall + Consolidation; applies for real) ──
-keeper-up:  ## Start the RemSleep keeper under pm2
+keeper-up:  ## Start the RemSleep keeper
 	@pm2 start ecosystem.config.js --only remsleep-keeper
 	@pm2 save
-
 keeper-down:  ## Stop + remove the RemSleep keeper
-	@pm2 stop remsleep-keeper 2>/dev/null || true
 	@pm2 delete remsleep-keeper 2>/dev/null || true
 	@pm2 save
-
-keeper-logs:  ## Follow the keeper log
+keeper-restart:  ## Restart (or start) the RemSleep keeper
+	@pm2 startOrRestart ecosystem.config.js --only remsleep-keeper --update-env
+	@pm2 save
+keeper-logs:  ## Follow the RemSleep keeper log
 	@pm2 logs remsleep-keeper
+keeper-status:  ## Show the RemSleep keeper status
+	@pm2 describe remsleep-keeper
 
-# ── HTTP MCP servers (Phase 2b; per-session state makes them concurrent-safe) ──
-somatic-http-up:  ## Start the somatic HTTP MCP server (:7180)
+# ── Somatic HTTP MCP server (:7180) ──
+somatic-http-up:  ## Start the somatic HTTP server (:7180)
 	@pm2 start ecosystem.config.js --only practice-somatic-http
 	@pm2 save
-
-somatic-http-down:  ## Stop the somatic HTTP MCP server
-	@pm2 stop practice-somatic-http 2>/dev/null || true
+somatic-http-down:  ## Stop + remove the somatic HTTP server
 	@pm2 delete practice-somatic-http 2>/dev/null || true
 	@pm2 save
+somatic-http-restart:  ## Restart (or start) the somatic HTTP server
+	@pm2 startOrRestart ecosystem.config.js --only practice-somatic-http --update-env
+	@pm2 save
+somatic-http-logs:  ## Follow the somatic HTTP server log
+	@pm2 logs practice-somatic-http
+somatic-http-status:  ## Show the somatic HTTP server status
+	@pm2 describe practice-somatic-http
 
-autonomic-http-up:  ## Start the autonomic HTTP MCP server (:7181)
+# ── Autonomic HTTP MCP server (:7181) ──
+autonomic-http-up:  ## Start the autonomic HTTP server (:7181)
 	@pm2 start ecosystem.config.js --only practice-autonomic-http
 	@pm2 save
-
-autonomic-http-down:  ## Stop the autonomic HTTP MCP server
-	@pm2 stop practice-autonomic-http 2>/dev/null || true
+autonomic-http-down:  ## Stop + remove the autonomic HTTP server
 	@pm2 delete practice-autonomic-http 2>/dev/null || true
 	@pm2 save
+autonomic-http-restart:  ## Restart (or start) the autonomic HTTP server
+	@pm2 startOrRestart ecosystem.config.js --only practice-autonomic-http --update-env
+	@pm2 save
+autonomic-http-logs:  ## Follow the autonomic HTTP server log
+	@pm2 logs practice-autonomic-http
+autonomic-http-status:  ## Show the autonomic HTTP server status
+	@pm2 describe practice-autonomic-http
 
-# ── Aggregate ──
-up:  ## Start all services under pm2 (keeper + both HTTP servers)
+# ── All services ──
+all-up:  ## Start every service
 	@pm2 start ecosystem.config.js
 	@pm2 save
-
-down:  ## Stop + remove all services
+all-down:  ## Stop + remove every service
 	@pm2 delete ecosystem.config.js 2>/dev/null || true
 	@pm2 save
-
-status:  ## Show pm2 status + HTTP port health
+all-restart:  ## Restart (or start) every service
+	@pm2 startOrRestart ecosystem.config.js --update-env
+	@pm2 save
+all-status:  ## Show pm2 status + HTTP port health
 	@pm2 status
 	@printf "  somatic   :7180  "; lsof -iTCP:7180 -sTCP:LISTEN >/dev/null 2>&1 && echo "listening" || echo "down"
 	@printf "  autonomic :7181  "; lsof -iTCP:7181 -sTCP:LISTEN >/dev/null 2>&1 && echo "listening" || echo "down"
-
-logs:  ## Follow all service logs
+all-logs:  ## Follow every service log
 	@pm2 logs
 
 save:  ## Persist the pm2 process list (boot resurrection)
