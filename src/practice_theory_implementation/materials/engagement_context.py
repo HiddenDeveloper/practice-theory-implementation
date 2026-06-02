@@ -10,11 +10,14 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+
+from practice_theory_implementation.materials import remsleep_preview
 
 _NON_EPISODIC_EXCLUDED_LABELS = (
     "Episode",
@@ -53,6 +56,23 @@ _CANONICAL_ANCHORS = {
     "context": ("CanonicalContext", "shared_context"),
     "guidance": ("CanonicalGuidance", None),
 }
+
+# Fields on a canonical landing node that update_canonical_field must never
+# touch: identity/lineage keys and store bookkeeping. Everything else is
+# editable by a source-backed, preview-captured update.
+_PROTECTED_CANONICAL_FIELDS = frozenset(
+    {
+        "id",
+        "created_at",
+        "qdrant_collection",
+        "qdrant_point_id",
+        "qdrant_migrated_at",
+    }
+)
+_CANONICAL_FIELD_OPS = ("append", "replace")
+# A property name safe to interpolate (backtick-quoted) into Cypher. Validated
+# rather than passed as a dynamic key so the SET works across Neo4j versions.
+_SAFE_FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # The Self-rooted spine. CanonicalSelf is the single landing point; the other
 # canonical nodes hang off it by typed edges whose verbs carry the stance — the
@@ -208,12 +228,58 @@ def consult_canonical_context() -> dict[str, object]:
     )
 
 
+def _recent_attached_memory(
+    anchor_key: str, *, limit: int = 8
+) -> list[dict[str, object]]:
+    """Return a compact view of the non-episodic memory attached to an anchor.
+
+    Reuses `read_non_episodic_memory`'s one-hop walk and keeps only the genuine
+    satellites (HAS_NON_EPISODIC_MEMORY), so the living layer RemSleep writes
+    surfaces in the engagement projection alongside the landing-node fields.
+    """
+    result = read_non_episodic_memory(anchor=anchor_key, limit=limit)
+    memories = result.get("memories") if isinstance(result, dict) else None
+    if not isinstance(memories, list):
+        return []
+    compact: list[dict[str, object]] = []
+    for item in memories:
+        if not isinstance(item, dict):
+            continue
+        if item.get("relationship_from_anchor") != "HAS_NON_EPISODIC_MEMORY":
+            continue
+        props = item.get("properties")
+        if not isinstance(props, dict):
+            continue
+        compact.append(
+            {
+                "id": props.get("id"),
+                "kind": props.get("kind"),
+                "content": props.get("content"),
+                "tags": props.get("tags", []),
+                "confidence": props.get("confidence"),
+                "updated_at": props.get("updated_at"),
+            }
+        )
+    return compact
+
+
 def consult_engagement_context() -> dict[str, object]:
-    """Return the three landing nodes an apprenticing harness needs."""
+    """Return the three landing nodes an apprenticing harness needs.
+
+    Each landing node carries its own canonical fields; `attached_memory` adds
+    the recent non-episodic satellites hung off each anchor, so the living layer
+    RemSleep accretes reaches the session-open situated frame, not just the
+    landing-node fields.
+    """
     return {
         "user": consult_canonical_profile(),
         "self": consult_canonical_self(),
         "shared_context": consult_canonical_context(),
+        "attached_memory": {
+            "self": _recent_attached_memory("self"),
+            "user": _recent_attached_memory("user"),
+            "context": _recent_attached_memory("context"),
+        },
     }
 
 
@@ -229,6 +295,26 @@ def ensure_self_rooted_spine() -> dict[str, object]:
     The verbs carry the stance: companionship is *offered*, the self is
     *situated in* a shared context and *guided by* its conscience.
     """
+    if remsleep_preview.preview_enabled():
+        intended_edges = [
+            {"edge": rel, "target_label": label, "target_id": target_id}
+            for rel, label, target_id in _SELF_SPINE
+        ]
+        recorded = remsleep_preview.record(
+            {
+                "material": "ensure_self_rooted_spine",
+                "rooted_at": "CanonicalSelf",
+                "intended_edges": intended_edges,
+            }
+        )
+        return {
+            "preview": True,
+            "rooted_at": "CanonicalSelf",
+            "store": "neo4j",
+            "intended_spine": intended_edges,
+            "journal_path": str(remsleep_preview.preview_path()),
+            "recorded_at": recorded["recorded_at"],
+        }
     # Emit all OPTIONAL MATCHes first, then all FOREACHes: Cypher forbids a
     # MATCH directly after a FOREACH (it needs an intervening WITH), but
     # consecutive FOREACHes are fine.
@@ -458,6 +544,30 @@ def write_non_episodic_memory(
     }
     if confidence is not None:
         properties["confidence"] = confidence
+    if remsleep_preview.preview_enabled():
+        recorded = remsleep_preview.record(
+            {
+                "material": "write_non_episodic_memory",
+                "anchor": anchor_key,
+                "anchor_label": anchor_label,
+                "anchor_id": anchor_id,
+                "memory_id": memory_id,
+                "content": properties["content"],
+                "kind": kind,
+                "source": source,
+                "tags": tags or [],
+                "confidence": confidence,
+            }
+        )
+        return {
+            "preview": True,
+            "written": False,
+            "store": "neo4j",
+            "anchor": anchor_key,
+            "memory": properties,
+            "journal_path": str(remsleep_preview.preview_path()),
+            "recorded_at": recorded["recorded_at"],
+        }
     statement = """
     MERGE (m:Memory:NonEpisodicMemory {id: $id})
     ON CREATE SET m.created_at = $created_at
@@ -503,4 +613,124 @@ def write_non_episodic_memory(
         "store": "neo4j",
         "anchor": anchor_key,
         "memory": props if isinstance(props, dict) else properties,
+    }
+
+
+def update_canonical_field(
+    field: str,
+    value: object,
+    *,
+    anchor: str = "context",
+    op: str = "append",
+    sources: list[str] | None = None,
+) -> dict[str, object]:
+    """Update a field on a canonical landing node itself.
+
+    The deliberate counterpart to `write_non_episodic_memory`: that one attaches
+    a satellite; this one edits the landing node's own field, so the engagement
+    projection (which reads the landing nodes) reflects the change. High-impact,
+    so it is governed by the consolidation staging rule (stage genuinely
+    contentious or identity-sensitive rewords) and captured by
+    `PRACTICE_REMSLEEP_PREVIEW` like the other canonical mutators.
+
+    `op='append'` adds `value` (a scalar or list) to an existing list-valued
+    field (deduped, order-preserving). `op='replace'` sets the field outright —
+    use it for scalar fields like `summary` / `current_focus`.
+    """
+    field = field.strip()
+    if not field:
+        return {"error": "field must not be blank"}
+    if not _SAFE_FIELD.match(field):
+        return {"error": "field must match ^[A-Za-z_][A-Za-z0-9_]*$"}
+    if field in _PROTECTED_CANONICAL_FIELDS:
+        return {"error": f"field {field!r} is protected and cannot be updated"}
+    anchor_key = anchor.strip().lower()
+    if anchor_key not in _CANONICAL_ANCHORS:
+        return {"error": f"anchor must be one of {sorted(_CANONICAL_ANCHORS)}"}
+    op = op.strip().lower()
+    if op not in _CANONICAL_FIELD_OPS:
+        return {"error": f"op must be one of {list(_CANONICAL_FIELD_OPS)}"}
+    anchor_label, anchor_id = _CANONICAL_ANCHORS[anchor_key]
+    now = datetime.now(UTC).isoformat()
+
+    if remsleep_preview.preview_enabled():
+        recorded = remsleep_preview.record(
+            {
+                "material": "update_canonical_field",
+                "anchor": anchor_key,
+                "anchor_label": anchor_label,
+                "anchor_id": anchor_id,
+                "field": field,
+                "op": op,
+                "value": value,
+                "sources": sources or [],
+            }
+        )
+        return {
+            "preview": True,
+            "written": False,
+            "anchor": anchor_key,
+            "field": field,
+            "op": op,
+            "value": value,
+            "journal_path": str(remsleep_preview.preview_path()),
+            "recorded_at": recorded["recorded_at"],
+        }
+
+    # field is _SAFE_FIELD-validated, so backtick-quoting it into the Cypher is
+    # safe and portable (avoids depending on dynamic-property-key SET support).
+    if op == "append":
+        new_values = value if isinstance(value, list) else [value]
+        statement = f"""
+        MATCH (n)
+        WHERE $anchor_label IN labels(n)
+          AND ($anchor_id IS NULL OR n.id = $anchor_id)
+        WITH n, coalesce(n.`{field}`, []) AS existing
+        WITH n, existing, [v IN $new_values WHERE NOT v IN existing] AS additions
+        SET n.`{field}` = existing + additions, n.updated_at = $now
+        RETURN n.`{field}` AS value
+        """
+        params: dict[str, Any] = {
+            "anchor_label": anchor_label,
+            "anchor_id": anchor_id,
+            "new_values": new_values,
+            "now": now,
+        }
+    else:
+        statement = f"""
+        MATCH (n)
+        WHERE $anchor_label IN labels(n)
+          AND ($anchor_id IS NULL OR n.id = $anchor_id)
+        SET n.`{field}` = $value, n.updated_at = $now
+        RETURN n.`{field}` AS value
+        """
+        params = {
+            "anchor_label": anchor_label,
+            "anchor_id": anchor_id,
+            "value": value,
+            "now": now,
+        }
+    try:
+        payload = _neo4j_commit([{"statement": statement, "parameters": params}])
+    except (
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        urllib.error.URLError,
+        json.JSONDecodeError,
+    ) as exc:
+        return {"error": f"canonical field update unavailable: {exc}"}
+    results = payload.get("results") or []
+    rows = results[0].get("data") if results else []
+    if not rows:
+        return {"error": f"no {anchor_label} landing node matched anchor {anchor_key!r}"}
+    row = rows[0].get("row") or []
+    return {
+        "written": True,
+        "store": "neo4j",
+        "anchor": anchor_key,
+        "field": field,
+        "op": op,
+        "value": row[0] if row else value,
+        "sources": sources or [],
     }

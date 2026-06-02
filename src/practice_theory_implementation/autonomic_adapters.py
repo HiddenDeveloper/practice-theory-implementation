@@ -422,6 +422,7 @@ class ClaudeCliAdapter(AutonomicAdapter):
         model: str | None = None,
         max_budget_usd: float | None = None,
         effort: str | None = None,
+        permission_mode: str | None = "bypassPermissions",
     ) -> None:
         super().__init__(config)
         self._cwd = cwd or Path.cwd()
@@ -429,6 +430,11 @@ class ClaudeCliAdapter(AutonomicAdapter):
         self._model = model
         self._max_budget_usd = max_budget_usd
         self._effort = effort
+        # Default preserves the runner's behavior. Pass None to drop
+        # --permission-mode entirely and confine the practitioner to exactly
+        # the MCP tools in --allowedTools — the hardened path the RemSleep
+        # preview and the eval harness use (no shell, no file writes).
+        self._permission_mode = permission_mode
 
     async def open(self) -> None:
         return
@@ -478,11 +484,11 @@ class ClaudeCliAdapter(AutonomicAdapter):
             mcp_config_json,
             "--allowedTools",
             allowed_tools,
-            "--permission-mode",
-            "bypassPermissions",
             "--output-format",
             "text",
         ]
+        if self._permission_mode:
+            cmd.extend(["--permission-mode", self._permission_mode])
         if self._model:
             cmd.extend(["--model", self._model])
         if self._max_budget_usd is not None:

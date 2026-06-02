@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from practice_theory_implementation.materials import engagement_context
+from practice_theory_implementation.materials import engagement_context, remsleep_preview
 from practice_theory_implementation.materials.episodic_memory import (
     recall_contextual_episodes,
 )
@@ -370,6 +370,23 @@ def remsleep_record_checkpoint(
     if notes:
         payload["notes"] = notes
     path = _checkpoint_path()
+    if remsleep_preview.preview_enabled():
+        # Preview never advances the durable checkpoint, so the same episodes
+        # stay re-reviewable until a deliberate apply. Note the intended advance.
+        recorded = remsleep_preview.record(
+            {
+                "material": "remsleep_record_checkpoint",
+                "intended_checkpoint": payload,
+            }
+        )
+        return {
+            "preview": True,
+            "advanced": False,
+            "checkpoint": payload,
+            "path": str(path),
+            "journal_path": str(remsleep_preview.preview_path()),
+            "recorded_at": recorded["recorded_at"],
+        }
     try:
         _atomic_write_json(path, payload)
     except OSError as exc:

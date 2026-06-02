@@ -20,6 +20,7 @@ affordance_ids:
 - recall_recent_engagement
 - recall_contextual_episodes
 - write_non_episodic_memory
+- update_canonical_field
 - ensure_self_rooted_spine
 - read_remsleep_checkpoint
 - read_memory_signals

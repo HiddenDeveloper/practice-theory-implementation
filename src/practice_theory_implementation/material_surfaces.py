@@ -189,6 +189,34 @@ MATERIAL_SURFACES: dict[str, Material] = {
             },
         ),
         Material(
+            name="update_canonical_field",
+            description=(
+                "Update a field on a canonical landing node itself "
+                "(CanonicalSelf / CanonicalProfile / CanonicalContext / "
+                "CanonicalGuidance) — the deliberate counterpart to "
+                "write_non_episodic_memory, which only attaches a satellite. "
+                "op='append' adds to a list-valued field (active_projects, "
+                "recent_decisions, next_actions, open_threads, blockers, "
+                "public_handles); op='replace' sets a scalar field (summary, "
+                "current_focus). High-impact: stage genuinely contentious or "
+                "identity-sensitive rewords instead (see the consolidation rules)."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "field": {"type": "string"},
+                    "value": {},
+                    "anchor": {
+                        "type": "string",
+                        "enum": ["self", "user", "profile", "context", "guidance"],
+                    },
+                    "op": {"type": "string", "enum": ["append", "replace"]},
+                    "sources": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["field", "value"],
+            },
+        ),
+        Material(
             name="ensure_self_rooted_spine",
             description=(
                 "Idempotently root the canonical graph at CanonicalSelf: MERGE "
