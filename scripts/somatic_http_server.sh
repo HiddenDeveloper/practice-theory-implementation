@@ -21,5 +21,10 @@ export PRACTICE_SERVER_MODE=somatic
 export PRACTICE_TRANSPORT=http
 export PRACTICE_HTTP_HOST="${PRACTICE_HTTP_HOST:-127.0.0.1}"
 export PRACTICE_HTTP_PORT="${PRACTICE_SOMATIC_HTTP_PORT:-7180}"
+# Routing (closed enactments -> judge inbox, Friction -> smoother inbox) is owned
+# by the autonomic server's dispatcher over the shared trail. The somatic server
+# must not also route, or it fills judge_inbox with somatic enactments no judge
+# is draining.
+export PRACTICE_DISABLE_DISPATCHER=1
 
 exec uv run python -m practice_theory_implementation.server
