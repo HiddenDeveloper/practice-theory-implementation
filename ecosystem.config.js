@@ -31,14 +31,14 @@ module.exports = {
     },
     {
       ...common,
-      name: "practice-somatic-http",
+      name: "apprenticeship-somatic-http",
       script: "./scripts/somatic_http_server.sh",
       out_file: "./data/somatic_http.log",
       error_file: "./data/somatic_http.log",
     },
     {
       ...common,
-      name: "practice-autonomic-http",
+      name: "apprenticeship-autonomic-http",
       script: "./scripts/autonomic_http_server.sh",
       out_file: "./data/autonomic_http.log",
       error_file: "./data/autonomic_http.log",

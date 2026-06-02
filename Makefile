@@ -34,33 +34,33 @@ keeper-status:  ## Show the RemSleep keeper status
 
 # ── Somatic HTTP MCP server (:7180) ──
 somatic-http-up:  ## Start the somatic HTTP server (:7180)
-	@pm2 start ecosystem.config.js --only practice-somatic-http
+	@pm2 start ecosystem.config.js --only apprenticeship-somatic-http
 	@pm2 save
 somatic-http-down:  ## Stop + remove the somatic HTTP server
-	@pm2 delete practice-somatic-http 2>/dev/null || true
+	@pm2 delete apprenticeship-somatic-http 2>/dev/null || true
 	@pm2 save
 somatic-http-restart:  ## Restart (or start) the somatic HTTP server
-	@pm2 startOrRestart ecosystem.config.js --only practice-somatic-http --update-env
+	@pm2 startOrRestart ecosystem.config.js --only apprenticeship-somatic-http --update-env
 	@pm2 save
 somatic-http-logs:  ## Follow the somatic HTTP server log
-	@pm2 logs practice-somatic-http
+	@pm2 logs apprenticeship-somatic-http
 somatic-http-status:  ## Show the somatic HTTP server status
-	@pm2 describe practice-somatic-http
+	@pm2 describe apprenticeship-somatic-http
 
 # ── Autonomic HTTP MCP server (:7181) ──
 autonomic-http-up:  ## Start the autonomic HTTP server (:7181)
-	@pm2 start ecosystem.config.js --only practice-autonomic-http
+	@pm2 start ecosystem.config.js --only apprenticeship-autonomic-http
 	@pm2 save
 autonomic-http-down:  ## Stop + remove the autonomic HTTP server
-	@pm2 delete practice-autonomic-http 2>/dev/null || true
+	@pm2 delete apprenticeship-autonomic-http 2>/dev/null || true
 	@pm2 save
 autonomic-http-restart:  ## Restart (or start) the autonomic HTTP server
-	@pm2 startOrRestart ecosystem.config.js --only practice-autonomic-http --update-env
+	@pm2 startOrRestart ecosystem.config.js --only apprenticeship-autonomic-http --update-env
 	@pm2 save
 autonomic-http-logs:  ## Follow the autonomic HTTP server log
-	@pm2 logs practice-autonomic-http
+	@pm2 logs apprenticeship-autonomic-http
 autonomic-http-status:  ## Show the autonomic HTTP server status
-	@pm2 describe practice-autonomic-http
+	@pm2 describe apprenticeship-autonomic-http
 
 # ── All services ──
 all-up:  ## Start every service
