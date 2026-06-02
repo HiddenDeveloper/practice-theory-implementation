@@ -132,7 +132,7 @@ def _local_mcp_env(cwd: Path) -> dict[str, str]:
     # Prefer an explicit autonomic config if one exists, then fall back to the
     # somatic server's service credentials because both surfaces read the same
     # local Neo4j/Qdrant stores.
-    for server_name in ("practice_server_somatic", "practice_server_autonomic"):
+    for server_name in ("apprenticeship_somatic", "apprenticeship_autonomic"):
         server = servers.get(server_name)
         if not isinstance(server, dict):
             continue
@@ -306,7 +306,7 @@ class AnthropicSDKAdapter(AutonomicAdapter):
             ClaudeSDKClient,
         )
 
-        mcp_label = "practice_server_autonomic"
+        mcp_label = "apprenticeship_autonomic"
         allowed_tools = [
             f"mcp__{mcp_label}__list_practices",
             f"mcp__{mcp_label}__switch_practice",
@@ -443,7 +443,7 @@ class ClaudeCliAdapter(AutonomicAdapter):
         import json as _json
         import sys as _sys
 
-        mcp_label = "practice_server_autonomic"
+        mcp_label = "apprenticeship_autonomic"
         if self.config.mcp_url:
             server_cfg: dict[str, Any] = {"type": "http", "url": self.config.mcp_url}
         else:
@@ -543,7 +543,7 @@ class CodexExecAdapter(AutonomicAdapter):
     Stateless across dispatches. Each dispatch spawns a fresh `codex exec`
     with the brief as part of the prompt and the work's dispatch_message
     appended. The autonomic MCP server is injected inline via
-    `codex exec -c mcp_servers.practice_server_autonomic.…`, so the
+    `codex exec -c mcp_servers.apprenticeship_autonomic.…`, so the
     subprocess does not depend on the user's `~/.codex/config.toml` or a
     `.mcp.json` in cwd.
 
@@ -590,12 +590,12 @@ class CodexExecAdapter(AutonomicAdapter):
         cmd.extend(
             [
                 "-c",
-                f'mcp_servers.practice_server_autonomic.command="{py_quoted}"',
+                f'mcp_servers.apprenticeship_autonomic.command="{py_quoted}"',
                 "-c",
-                'mcp_servers.practice_server_autonomic.args=['
+                'mcp_servers.apprenticeship_autonomic.args=['
                 '"-m","practice_theory_implementation.server"]',
                 "-c",
-                'mcp_servers.practice_server_autonomic.env={'
+                'mcp_servers.apprenticeship_autonomic.env={'
                 'PRACTICE_SERVER_MODE="autonomic",'
                 'PRACTICE_TRANSPORT="stdio",'
                 'PRACTICE_DISABLE_DISPATCHER="1"}',

@@ -27,4 +27,4 @@ affordance_ids:
 - recall_recent_engagement
 - recall_contextual_episodes
 ---
-The engagement-recipe — projected at session scope as the substrate of being-here-for-this-user across whichever practice is reached for. Same shape as any practice; its content is inherited additively by every practice engaged from within the engagement.
+The engagement-recipe — projected at session scope as the substrate of being-here-with-this-person across whichever practice is reached for. Same shape as any practice; its content is inherited additively by every practice engaged from within the engagement.

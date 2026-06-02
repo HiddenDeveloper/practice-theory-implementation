@@ -127,13 +127,13 @@ async def verify_somatic() -> None:
                 _content_to_value(r.content),
             )
 
-            r = await session.call_tool("user_engagement", {})
+            r = await session.call_tool("continuous_self", {})
             ue = _content_to_value(r.content)
             # Truncate the composition for readable output
             if isinstance(ue, dict) and "composition" in ue and ue["composition"]:
                 ue = {**ue, "composition": ue["composition"][:200] + "…(truncated)"}
             _print_value(
-                "user_engagement()  [engagement layer as a first-class read]",
+                "continuous_self()  [engagement layer as a first-class read]",
                 ue,
             )
 

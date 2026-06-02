@@ -3,7 +3,7 @@
 A real-LLM enactment of the Calendar Stewardship practice described in
 [*Practice Theory — A Worked Example (Calendar Stewardship)*](ai-trust-practice-theory-calendar-stewardship.md).
 The harness is OpenAI Codex CLI (`codex` interactive) connected to this
-repo's somatic MCP server via the `.mcp.json` entry `practice_server_somatic`.
+repo's somatic MCP server via the `.mcp.json` entry `apprenticeship_somatic`.
 No scaffolding in the user's prompts; no bundle content surfaced to the user
 ahead of time; the LLM holds the practice through the MCP surface as designed.
 

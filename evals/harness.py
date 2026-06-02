@@ -209,7 +209,7 @@ async def drive_live(provider: str, role: str, store: EnactmentStore, cwd: Path)
 # switch) both reach it. Codex-somatic would need its service env injected into
 # the inline -c MCP config; left for a follow-up.
 def _run_claude_somatic(brief: str, dispatch: str, cwd: Path) -> None:
-    label = "practice_server_somatic"
+    label = "apprenticeship_somatic"
     server_cfg = {
         "type": "stdio",
         "command": sys.executable,
@@ -225,7 +225,7 @@ def _run_claude_somatic(brief: str, dispatch: str, cwd: Path) -> None:
         f"mcp__{label}__{name}"
         for name in (
             "list_practices", "switch_practice", "current_practice",
-            "discover_affordances", "invoke_affordance", "user_engagement",
+            "discover_affordances", "invoke_affordance", "continuous_self",
         )
     )
     claude_bin = os.environ.get("PRACTICE_CLAUDE_BIN", "claude")

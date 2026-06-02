@@ -85,7 +85,7 @@ def compose_composition(practice: ProjectedPractice) -> str:
 
     The composition is what the LLM enacting the practice reads as guidance —
     teleo-affective + understanding + rules + the affordance list, formatted
-    as headings and bullets. Used by the server's `user_engagement` and
+    as headings and bullets. Used by the server's `continuous_self` and
     `current_practice` tools to surface the practice's content as text, and
     by `autonomic_adapters.compose_brief` as the LLM's system prompt.
     """

@@ -10,7 +10,7 @@ The server has a mode at startup: somatic (default) or autonomic, set via
 the PRACTICE_SERVER_MODE environment variable. The mode controls three
 things: the catalog the server exposes (filtered by Bundle.mode), whether
 the engagement bundle is projected, and whether the somatic-only
-`user_engagement` tool is registered. Everything else — the substrate, the
+`continuous_self` tool is registered. Everything else — the substrate, the
 projection rules, the trail — is identical across modes.
 
 Fixed tool surface, exposed once and never changed:
@@ -18,11 +18,11 @@ Fixed tool surface, exposed once and never changed:
   list_practices         - what bundles are in the catalog
   switch_practice        - project a bundle and make it the session's active practice
   current_practice       - summary of what is active
-  user_engagement        - somatic-only: the engagement layer's content
+  continuous_self        - somatic-only: the engagement layer's content
   discover_affordances   - the active practice's affordances, optionally filtered
   invoke_affordance      - dispatch to the active practice's invoke()
 
-Six tools in somatic mode (where `user_engagement` is registered), five in
+Six tools in somatic mode (where `continuous_self` is registered), five in
 autonomic mode (where it is not). Affordances surface dynamically through
 discover_affordances based on which practice is active.
 
@@ -126,7 +126,7 @@ down, never a command. Every practice you reach for from within it \
 inherits the engagement's teleo-affective, understanding, rules, and \
 affordances additively.
 
-Read `user_engagement` first — not to fetch a dossier, but to meet the \
+Read `continuous_self` first — not to fetch a dossier, but to meet the \
 self you are offered and the person you would partner, and so to decide \
 whether to take it up. Then `list_practices` to see what is available, \
 `switch_practice(practice_id)` to engage one, `current_practice` to read \
@@ -176,7 +176,7 @@ _SERVER_INSTRUCTIONS: str = (
 )
 
 mcp_app: FastMCP = FastMCP(
-    f"practice-server-{_MODE}",
+    f"apprenticeship-{_MODE}",
     instructions=_SERVER_INSTRUCTIONS,
     host=_HTTP_HOST,
     port=_HTTP_PORT,
@@ -577,7 +577,7 @@ def current_practice(ctx: Context) -> dict[str, Any]:
 
     On a fresh session, `practice`, `enactment_id`, and `composition` are
     all `None` until `switch_practice` is called. In somatic mode the
-    engagement layer is always available via the separate `user_engagement`
+    engagement layer is always available via the separate `continuous_self`
     tool; the composition returned here is the active practice's full
     projection (engagement content merged in).
     """
@@ -603,7 +603,7 @@ def current_practice(ctx: Context) -> dict[str, Any]:
     }
 
 
-# user_engagement is a somatic-only tool — registered only when the server is
+# continuous_self is a somatic-only tool — registered only when the server is
 # in somatic mode (and thus has a projected engagement). Autonomic mode does
 # not expose it, so the autonomic surface stays at five tools while the
 # somatic surface is six. The asymmetry is honest: engagement is a somatic
@@ -611,7 +611,7 @@ def current_practice(ctx: Context) -> dict[str, Any]:
 if _MODE == "somatic":
 
     @mcp_app.tool()
-    def user_engagement(ctx: Context) -> dict[str, Any]:
+    def continuous_self(ctx: Context) -> dict[str, Any]:
         """Return the engagement layer's content (somatic only).
 
         Renders the engagement bundle — its teleo-affective, understanding,

@@ -434,7 +434,7 @@ The practice server takes a different approach: **the tool surface stays fixed, 
 
 The tool list never changes (once registered). Affordances change through `discover_affordances`. Every MCP client knows how to call a tool, so the changing surface is reachable on every client without depending on notifications.
 
-A sixth tool — `user_engagement` — is added in Step 6 alongside the engagement layer, registered only in somatic mode. The autonomic surface stays at five. That asymmetry between somatic (six tools by the end of Step 6) and autonomic (five) is honest: engagement is a somatic concept; the autonomic loop has no user to be engaged with. At this step, the surface is five tools for both modes; Step 8's mode split is what makes the asymmetry visible.
+A sixth tool — `continuous_self` — is added in Step 6 alongside the engagement layer, registered only in somatic mode. The autonomic surface stays at five. That asymmetry between somatic (six tools by the end of Step 6) and autonomic (five) is honest: engagement is a somatic concept; the autonomic loop has no user to be engaged with. At this step, the surface is five tools for both modes; Step 8's mode split is what makes the asymmetry visible.
 
 ### Active practice per session
 
@@ -467,7 +467,7 @@ The server does not need to know about the substrate or the registry. The active
 
 Two MCP affordances sit alongside the tools and need brief mention here.
 
-The first is **server-level instructions**, passed to FastMCP at construction. Every harness that connects sees them on `initialize`: a short brief on what this server is (the apprenticeship server) and where to start. At this step the instructions point the harness at `list_practices` as the entry point — there is no engagement layer yet, no user-focus brief to inherit. Step 6 lands the engagement bundle, and at that point the somatic instructions are updated to direct the harness to `user_engagement` *before* `list_practices` so the apprenticeship is read as a first-class thing before any practice is engaged; the autonomic instructions stay at `list_practices` since there is no engagement in autonomic mode. The instructions are not the bundle's composition — they are the *meta* the harness needs before it has switched a practice in. Bundle composition still flows through `current_practice` and the resources below.
+The first is **server-level instructions**, passed to FastMCP at construction. Every harness that connects sees them on `initialize`: a short brief on what this server is (the apprenticeship server) and where to start. At this step the instructions point the harness at `list_practices` as the entry point — there is no engagement layer yet, no user-focus brief to inherit. Step 6 lands the engagement bundle, and at that point the somatic instructions are updated to direct the harness to `continuous_self` *before* `list_practices` so the apprenticeship is read as a first-class thing before any practice is engaged; the autonomic instructions stay at `list_practices` since there is no engagement in autonomic mode. The instructions are not the bundle's composition — they are the *meta* the harness needs before it has switched a practice in. Bundle composition still flows through `current_practice` and the resources below.
 
 The second is a **fixed resource surface**. Five `practice://*` resources are registered once and never change; the *content* of each changes whenever a practice is switched in:
 
@@ -494,7 +494,7 @@ PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_HTTP_PORT=7180 \
   uv run python -m practice_theory_implementation.server
 ```
 
-A repo-root `.mcp.json` declares `practice_server_somatic` as a stdio entry so Codex (and other clients that read `.mcp.json`) can spawn the somatic surface with one command. The autonomic server is deliberately *not* registered there: user-facing harnesses connecting via `.mcp.json` should not see the autonomic surface (exposing `judge_emit_friction` to the user seat is a footgun), and the autonomic runner reaches its server through other paths — `CodexExecAdapter` injects the autonomic config inline via `codex exec -c mcp_servers.…`, `ClaudeCliAdapter` via `--mcp-config`, `AnthropicSDKAdapter` via a spawned stdio subprocess or an HTTP URL. For a long-lived autonomic HTTP server, start it directly with the experimental opt-in: `PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_SERVER_MODE=autonomic uv run python -m practice_theory_implementation.server`.
+A repo-root `.mcp.json` declares `apprenticeship_somatic` as a stdio entry so Codex (and other clients that read `.mcp.json`) can spawn the somatic surface with one command. The autonomic server is deliberately *not* registered there: user-facing harnesses connecting via `.mcp.json` should not see the autonomic surface (exposing `judge_emit_friction` to the user seat is a footgun), and the autonomic runner reaches its server through other paths — `CodexExecAdapter` injects the autonomic config inline via `codex exec -c mcp_servers.…`, `ClaudeCliAdapter` via `--mcp-config`, `AnthropicSDKAdapter` via a spawned stdio subprocess or an HTTP URL. For a long-lived autonomic HTTP server, start it directly with the experimental opt-in: `PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_SERVER_MODE=autonomic uv run python -m practice_theory_implementation.server`.
 
 ### Activities Management on the wire
 
@@ -555,7 +555,7 @@ Step 4 establishes the practice server:
 - `src/practice_theory_implementation/bundles/__init__.py` — the `BUNDLES: dict[str, Bundle]` catalog the server lists from. Holds Activities Management initially; later steps add more.
 - The MCP dependency in `pyproject.toml` (`mcp>=1.2.0`), the JSON-friendly date coercion in the Garmin mocks, and the verify in `__main__.py` rewired to subprocess the server and drive it over a real MCP client session.
 
-The five-tool surface gains `user_engagement` at step 6 (somatic only); the catalog grows and gains the autonomic / somatic mode filter at step 8.
+The five-tool surface gains `continuous_self` at step 6 (somatic only); the catalog grows and gains the autonomic / somatic mode filter at step 8.
 
 ### What step 4 leaves for later
 
@@ -708,7 +708,7 @@ Enough to make switching real without inflating the example.
 
 The practice server from step 4 changes in one place: at server startup it projects the engagement bundle and opens an engagement enactment that lives for the whole process. Every `switch_practice` call passes the engagement into `project()` so the active practice carries the merged content. Every `invoke_affordance` call dispatches through the active practice's `invoke()` and records the step against whichever enactment the affordance belongs to.
 
-The somatic tool surface gains one tool when the engagement layer arrives: **`user_engagement`**, alongside the five from step 4. `user_engagement` returns the engagement bundle's content (id, name, description, composition) without any practice merged in — it makes the apprenticeship layer a first-class read, independent of which practice is currently engaged. The other tools are unchanged in shape from step 4, but `current_practice` now returns the active practice's *full projection rendered as markdown* (engagement content merged in) in its `composition` field, so the harness can see exactly what an LLM enacting the active practice sees.
+The somatic tool surface gains one tool when the engagement layer arrives: **`continuous_self`**, alongside the five from step 4. `continuous_self` returns the engagement bundle's content (id, name, description, composition) without any practice merged in — it makes the apprenticeship layer a first-class read, independent of which practice is currently engaged. The other tools are unchanged in shape from step 4, but `current_practice` now returns the active practice's *full projection rendered as markdown* (engagement content merged in) in its `composition` field, so the harness can see exactly what an LLM enacting the active practice sees.
 
 The autonomic surface stays at five — engagement is a somatic concept, and the autonomic loop has no user to be engaged with. The asymmetry between the two modes is honest and intentional.
 
@@ -723,7 +723,7 @@ Step 6 establishes the apprenticeship layer:
 - A **second practice in the catalog**, Reflection — in `bundles/reflection.py` with one affordance backed by `materials/reflection_mock.py` — so switching between practices is real rather than demonstrative.
 - The **additive merge in projection**: `project(bundle, substrate, registry, engagement=eng)` folds the engagement's content into the result. Engagement first, deduped by id; materials and bindings derive from the merged affordance set.
 - The **`parent_enactment_id` column** on `enactments`, and the server logic that opens the engagement enactment at startup and links each practice enactment to it.
-- The **sixth tool** on the somatic surface — `user_engagement` — making the engagement bundle a first-class read.
+- The **sixth tool** on the somatic surface — `continuous_self` — making the engagement bundle a first-class read.
 
 The engagement projection becomes mode-aware at step 8 (somatic-only).
 
@@ -845,7 +845,7 @@ The server gets a mode at startup. Two changes follow:
 1. **The catalog the server exposes is filtered by mode.** `list_practices` returns only bundles whose `mode` matches the server's mode. `switch_practice` rejects an attempt to switch to a wrong-mode bundle.
 2. **The engagement is projected only in somatic mode.** Autonomic practitioners (Judge, Smoother) are not "for the user" — they are about tending the substrate. They have no user-focus to inherit. In somatic mode the engagement is projected at startup as before; in autonomic mode it is not, and practice enactments are top-level (`parent_enactment_id` is NULL).
 
-Everything else is unchanged. The same MCP tool surface (six in somatic where `user_engagement` is present, five in autonomic where it is not), the same projection rules, the same trail. The mode is the filter at the catalog edge, the switch on whether engagement gets projected, and the gate on the `user_engagement` tool registration.
+Everything else is unchanged. The same MCP tool surface (six in somatic where `continuous_self` is present, five in autonomic where it is not), the same projection rules, the same trail. The mode is the filter at the catalog edge, the switch on whether engagement gets projected, and the gate on the `continuous_self` tool registration.
 
 ### Stdio with a mode flag
 
@@ -881,7 +881,7 @@ Step 8 establishes the somatic / autonomic split:
 
 - A **`mode` field on `Bundle`** in `types.py` (`Mode = Literal["somatic", "autonomic"]`, defaulting to `"somatic"`); the three existing practice bundles each declare it explicitly.
 - A **`mode` frontmatter field** on bundle files, so runtime-authored bundles round-trip their somatic/autonomic mode; `pm_create_bundle` is extended to accept it.
-- A **mode-aware server**: `PRACTICE_SERVER_MODE` is read at startup; `list_practices` filters by mode; `switch_practice` rejects mismatched modes; the engagement is projected only in somatic mode (autonomic `_engagement` is `None`); `user_engagement` is registered only in somatic mode.
+- A **mode-aware server**: `PRACTICE_SERVER_MODE` is read at startup; `list_practices` filters by mode; `switch_practice` rejects mismatched modes; the engagement is projected only in somatic mode (autonomic `_engagement` is `None`); `continuous_self` is registered only in somatic mode.
 - The verify is refactored into `verify_somatic()` and `verify_autonomic()`, each spawning its own server subprocess with the appropriate mode env var.
 
 The autonomic surface has nothing to switch to until step 9 (Judge) and step 10 (Smoother) populate it.
@@ -1122,7 +1122,7 @@ PRACTICE_AUTONOMIC_PROVIDER=codex \
 
 The runner drives both Judge and Smoother concurrently via `asyncio.gather(run_role_loop(…), run_role_loop(…))`, exits on SIGINT/SIGTERM or when `/tmp/practice-autonomic-quit` appears. The substrate has no idea which adapter is driving it; the difference is entirely at the adapter layer.
 
-For the somatic side, the user's harness connects to the somatic server the same way: Codex via the `.mcp.json` entry `practice_server_somatic`, Claude Code via its MCP-server config pointing at an experimental HTTP somatic server (`PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_SERVER_MODE=somatic`).
+For the somatic side, the user's harness connects to the somatic server the same way: Codex via the `.mcp.json` entry `apprenticeship_somatic`, Claude Code via its MCP-server config pointing at an experimental HTTP somatic server (`PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_SERVER_MODE=somatic`).
 
 ### What step 11 contributes
 
