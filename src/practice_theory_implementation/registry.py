@@ -22,6 +22,7 @@ from practice_theory_implementation.materials import (
     engagement_context,
     episodic_memory,
     garmin_mock,
+    google_mail,
     judge,
     practice_management,
     reflection_mock,
@@ -83,6 +84,21 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "recall_relevant_episodes": episodic_memory.recall_relevant_episodes,
     "recall_recent_episodes": episodic_memory.recall_recent_episodes,
     "recall_contextual_episodes": episodic_memory.recall_contextual_episodes,
+    # Gmail / Correspondent
+    "gmail_user_search_threads": google_mail.gmail_user_search_threads,
+    "gmail_user_get_thread": google_mail.gmail_user_get_thread,
+    "gmail_user_list_drafts": google_mail.gmail_user_list_drafts,
+    "gmail_user_create_draft": google_mail.gmail_user_create_draft,
+    "gmail_user_update_draft": google_mail.gmail_user_update_draft,
+    "gmail_user_delete_draft": google_mail.gmail_user_delete_draft,
+    "gmail_user_send_draft": google_mail.gmail_user_send_draft,
+    "gmail_test_search_threads": google_mail.gmail_test_search_threads,
+    "gmail_test_get_thread": google_mail.gmail_test_get_thread,
+    "gmail_test_list_drafts": google_mail.gmail_test_list_drafts,
+    "gmail_test_create_draft": google_mail.gmail_test_create_draft,
+    "gmail_test_update_draft": google_mail.gmail_test_update_draft,
+    "gmail_test_delete_draft": google_mail.gmail_test_delete_draft,
+    "gmail_test_send_draft": google_mail.gmail_test_send_draft,
     # Activities Management
     "garmin_list_activities": garmin_mock.garmin_list_activities,
     "garmin_get_activity": garmin_mock.garmin_get_activity,
@@ -181,8 +197,7 @@ def build_dynamic_material_function(
         expression_material.__name__ = name
         return expression_material
     raise ValueError(
-        "dynamic material implementation kind must be one of "
-        "'constant', 'echo', or 'expression'"
+        "dynamic material implementation kind must be one of 'constant', 'echo', or 'expression'"
     )
 
 
