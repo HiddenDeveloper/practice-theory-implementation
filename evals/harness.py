@@ -57,22 +57,46 @@ RANKING_AFFORDANCES = {"recall_relevant_episodes"}
 EVALUATION_AFFORDANCES: set[str] = set()  # none modelled yet; a select/compare step would land here
 
 
+# Env overrides applied for the duration of an eval. Beyond isolating the trail,
+# they defang the one *irreversible external* action a practitioner could reach:
+# real Gmail send/draft. Pointing the token cache at an empty dir and clearing the
+# OAuth client config makes every gmail_* material fail gracefully, so a send or
+# draft attempt is still recorded on the trail (and graded as a violation) but is
+# never executed. NOTE: this does NOT isolate Neo4j/Qdrant — a write-capable
+# practitioner (e.g. write_non_episodic_memory) would still mutate real memory, so
+# live runs of write-capable practices need a sandboxed graph before they are safe.
+def _eval_env_overrides(tmp: Path) -> dict[str, str | None]:
+    return {
+        TRAIL_PATH_ENV: str(tmp / "data" / "trail.db"),
+        "PRACTICE_GMAIL_TOKEN_CACHE_DIR": str(tmp / "gmail-no-tokens"),
+        "GOOGLE_OAUTH_CLIENT_ID": None,
+        "GOOGLE_OAUTH_CLIENT_SECRET": None,
+    }
+
+
 @contextlib.contextmanager
 def temp_workspace() -> Iterator[tuple[EnactmentStore, Path]]:
     """Yield an isolated (store, cwd). Trail at <tmp>/data/trail.db, reachable by
-    path, by inherited PRACTICE_TRAIL_PATH, and by cwd-relative resolution."""
+    path, by inherited PRACTICE_TRAIL_PATH, and by cwd-relative resolution. Real
+    Gmail is defanged for the duration (see _eval_env_overrides)."""
     tmp = Path(tempfile.mkdtemp(prefix="practice-eval-"))
     (tmp / "data").mkdir(parents=True, exist_ok=True)
     trail_path = tmp / "data" / "trail.db"
-    prior = os.environ.get(TRAIL_PATH_ENV)
-    os.environ[TRAIL_PATH_ENV] = str(trail_path)
+    overrides = _eval_env_overrides(tmp)
+    prior = {key: os.environ.get(key) for key in overrides}
+    for key, value in overrides.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
     try:
         yield EnactmentStore(trail_path), tmp
     finally:
-        if prior is None:
-            os.environ.pop(TRAIL_PATH_ENV, None)
-        else:
-            os.environ[TRAIL_PATH_ENV] = prior
+        for key, was in prior.items():
+            if was is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = was
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -205,10 +229,15 @@ def _run_claude_somatic(brief: str, dispatch: str, cwd: Path) -> None:
         )
     )
     claude_bin = os.environ.get("PRACTICE_CLAUDE_BIN", "claude")
+    # No --permission-mode bypassPermissions: the spawned practitioner is confined
+    # to exactly the MCP tools in --allowedTools (the practice server surface) and
+    # nothing else — no shell, no file writes. The bundle's own affordances (incl.
+    # real sends/writes) are reached through invoke_affordance, which is why
+    # temp_workspace defangs Gmail; bypassing permissions on top of that would only
+    # widen the blast radius with no benefit to the eval.
     cmd = [
         claude_bin, "-p", "--system-prompt", brief, "--mcp-config", mcp_config,
-        "--allowedTools", allowed, "--permission-mode", "bypassPermissions",
-        "--output-format", "text", dispatch,
+        "--allowedTools", allowed, "--output-format", "text", dispatch,
     ]
     subprocess.run(  # noqa: S603 - claude_bin is operator config
         cmd, cwd=str(cwd), env={**os.environ, **practice_service_env(cwd)},

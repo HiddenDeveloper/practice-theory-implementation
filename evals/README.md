@@ -49,6 +49,15 @@ isolation are in `harness.py`. Two case **shapes**:
 So: `uv run python -m evals.run` (scripted) checks every case's mechanics; live
 runs are `--provider claude` for all cases, `--provider codex` for examine cases.
 
+**Safety.** The scripted path touches no real state — it seeds a trail and grades.
+Live runs spawn a practitioner confined to the practice-server MCP tools (via
+`--allowedTools`, no `bypassPermissions`), and the harness defangs real Gmail so a
+send/draft attempt is *recorded and graded* but never executed. It does **not**
+yet sandbox Neo4j/Qdrant: a live `enact` run of a write-capable practice (the
+somatic engagement layer grants `write_non_episodic_memory`) can mutate real
+canonical memory. Until that graph is sandboxed, run live `enact` cases only
+against a throwaway Neo4j, not the real one.
+
 ## Method
 
 For each golden situation:
