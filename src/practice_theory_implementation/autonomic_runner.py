@@ -62,6 +62,7 @@ logger = logging.getLogger(__name__)
 
 QUIT_SENTINEL = Path("/tmp/practice-autonomic-quit")  # noqa: S108
 REMSLEEP_ENABLED_ENV = "PRACTICE_REMSLEEP_ENABLED"
+REMSLEEP_ONLY_ENV = "PRACTICE_REMSLEEP_ONLY"
 REMSLEEP_INTERVAL_ENV = "PRACTICE_REMSLEEP_INTERVAL_SECONDS"
 REMSLEEP_SIGNAL_POLL_ENV = "PRACTICE_REMSLEEP_SIGNAL_POLL_SECONDS"
 DEFAULT_REMSLEEP_INTERVAL_SECONDS = 6 * 60 * 60
@@ -118,6 +119,22 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
     if not raw:
         return default
     return raw in ("1", "true", "yes", "on")
+
+
+def _selected_roles() -> tuple[bool, bool]:
+    """Decide which loops run, from the env flags. Pure, so it is unit-testable.
+
+    Returns ``(run_inbox_roles, run_remsleep)``. RemSleep-only
+    (``PRACTICE_REMSLEEP_ONLY``) is a focused keeper: just the memory loops, no
+    Judge/Smoother and no dispatcher (the dispatcher only routes the Judge/
+    Smoother inboxes this process never uses). It implies RemSleep enabled.
+    Otherwise Judge+Smoother always run, and RemSleep runs when
+    ``PRACTICE_REMSLEEP_ENABLED`` is set.
+    """
+    remsleep_only = _env_flag(REMSLEEP_ONLY_ENV)
+    run_inbox_roles = not remsleep_only
+    run_remsleep = remsleep_only or _env_flag(REMSLEEP_ENABLED_ENV)
+    return run_inbox_roles, run_remsleep
 
 
 def _remsleep_interval_seconds() -> float:
@@ -266,19 +283,27 @@ async def main_async() -> None:
             "anthropic, anthropic_cli, codex"
         )
 
+    run_inbox_roles, run_remsleep = _selected_roles()
+    if run_remsleep and not run_inbox_roles:
+        logger.info("RemSleep-only mode: memory recall + consolidation, no Judge/Smoother")
+
     store = EnactmentStore()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    judge = _build_adapter(provider, "judge")
-    smoother = _build_adapter(provider, "smoother")
+    judge: AutonomicAdapter | None = None
+    smoother: AutonomicAdapter | None = None
+    if run_inbox_roles:
+        judge = _build_adapter(provider, "judge")
+        smoother = _build_adapter(provider, "smoother")
+
     memory_recall: AutonomicAdapter | None = None
     memory_consolidation: AutonomicAdapter | None = None
     remsleep_interval = _remsleep_interval_seconds()
     signal_poll = _remsleep_signal_poll_seconds()
-    if _env_flag(REMSLEEP_ENABLED_ENV):
+    if run_remsleep:
         missing = [
             bundle_id
             for bundle_id in ("memory_recall", "memory_consolidation")
@@ -286,35 +311,38 @@ async def main_async() -> None:
         ]
         if missing:
             raise RuntimeError(
-                "PRACTICE_REMSLEEP_ENABLED=1 but RemSleep bundle(s) "
+                "RemSleep is enabled but bundle(s) "
                 f"{', '.join(missing)!r} are not loaded"
             )
         memory_recall = _build_adapter(provider, "memory_recall")
         memory_consolidation = _build_adapter(provider, "memory_consolidation")
 
     try:
-        # The dispatcher routes closed enactments → judge_inbox and emitted
-        # Friction → smoother_inbox while the role loops run. Workers (the
-        # adapters' subprocesses) have PRACTICE_DISABLE_DISPATCHER=1 so they
-        # don't double-route; routing is owned by this runner's process.
-        tasks = [
-            dispatcher_task(stop, store=store),
-            run_role_loop(
-                judge,
-                RolePolicy(role="judge"),
-                store,
-                stop=stop,
-                worker_id=f"{provider}-judge",
-            ),
-            run_role_loop(
-                smoother,
-                RolePolicy(role="smoother"),
-                store,
-                stop=stop,
-                worker_id=f"{provider}-smoother",
-            ),
-            _watch_sentinel(stop),
-        ]
+        tasks = [_watch_sentinel(stop)]
+        if run_inbox_roles and judge is not None and smoother is not None:
+            # The dispatcher routes closed enactments → judge_inbox and emitted
+            # Friction → smoother_inbox while the role loops run. Workers (the
+            # adapters' subprocesses) have PRACTICE_DISABLE_DISPATCHER=1 so they
+            # don't double-route; routing is owned by this runner's process.
+            tasks.append(dispatcher_task(stop, store=store))
+            tasks.append(
+                run_role_loop(
+                    judge,
+                    RolePolicy(role="judge"),
+                    store,
+                    stop=stop,
+                    worker_id=f"{provider}-judge",
+                )
+            )
+            tasks.append(
+                run_role_loop(
+                    smoother,
+                    RolePolicy(role="smoother"),
+                    store,
+                    stop=stop,
+                    worker_id=f"{provider}-smoother",
+                )
+            )
         if memory_recall is not None and memory_consolidation is not None:
             tasks.append(
                 _run_memory_recall_loop(

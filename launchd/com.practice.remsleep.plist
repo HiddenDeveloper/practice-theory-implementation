@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for the unattended RemSleep keeper.
+
+  Paths below are machine-specific (this checkout under /Users/monyet); a forker
+  must edit ProgramArguments, WorkingDirectory, the log paths, and PATH for
+  their own home/checkout. PATH must include the dir holding `uv` and `claude`
+  (here ~/.local/bin).
+
+  Install:
+    cp launchd/com.practice.remsleep.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.practice.remsleep.plist
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.practice.remsleep.plist
+    # or, for a graceful in-cycle stop: touch /tmp/practice-autonomic-quit
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.practice.remsleep</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/monyet/develop/home/practic-theory-implementation/scripts/remsleep_service.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/monyet/develop/home/practic-theory-implementation</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/monyet/.local/bin:/Users/monyet/.proto/shims:/Users/monyet/.proto/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/monyet/develop/home/practic-theory-implementation/data/remsleep_service.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/monyet/develop/home/practic-theory-implementation/data/remsleep_service.log</string>
+</dict>
+</plist>
