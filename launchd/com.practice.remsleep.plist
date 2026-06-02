@@ -2,6 +2,11 @@
 <!--
   launchd job for the unattended RemSleep keeper.
 
+  SUPERSEDED by the pm2 path (`make keeper-up`, see Makefile + ecosystem.config.js),
+  which matches the Cognabot ops model and gives auto-restart + boot resurrection
+  via the existing pm2 boot agent. Kept here only as a launchd fallback for hosts
+  without pm2; do not load it alongside the pm2 keeper (they would double-run).
+
   Paths below are machine-specific (this checkout under /Users/monyet); a forker
   must edit ProgramArguments, WorkingDirectory, the log paths, and PATH for
   their own home/checkout. PATH must include the dir holding `uv` and `claude`
