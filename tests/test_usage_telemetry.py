@@ -110,6 +110,23 @@ def test_parse_claude_cli_result_tolerates_garbage() -> None:
     assert _parse_claude_cli_result("", model=None) == (None, None)
 
 
+def test_parse_claude_cli_result_model_from_modelusage() -> None:
+    # Confirmed against live `claude -p --output-format json`: the model name is
+    # not a top-level field — it is the key of `modelUsage`. Recover it there.
+    blob = (
+        '{"type":"result","subtype":"success","result":"hi",'
+        '"model":null,"total_cost_usd":0.04,"num_turns":1,'
+        '"usage":{"input_tokens":10,"output_tokens":5},'
+        '"modelUsage":{"claude-opus-4-8[1m]":{"input_tokens":10}}}'
+    )
+    usage, _ = _parse_claude_cli_result(blob, model=None)
+    assert usage is not None
+    assert usage.model == "claude-opus-4-8[1m]"
+    # An explicit configured model still takes precedence.
+    usage2, _ = _parse_claude_cli_result(blob, model="claude-sonnet-4-6")
+    assert usage2 is not None and usage2.model == "claude-sonnet-4-6"
+
+
 class _UsageAdapter(AutonomicAdapter):
     """Test adapter: enacts a judge enactment and reports fixed usage."""
 

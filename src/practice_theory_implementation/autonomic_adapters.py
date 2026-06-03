@@ -427,9 +427,16 @@ def _parse_claude_cli_result(
     if not isinstance(data, dict):
         return None, None
     u = data.get("usage") or {}
+    # The model name isn't a top-level field; with --output-format json it lives
+    # as the key(s) of `modelUsage` (confirmed against live `claude -p` output).
+    resolved_model = model or data.get("model")
+    if resolved_model is None:
+        mu = data.get("modelUsage")
+        if isinstance(mu, dict) and mu:
+            resolved_model = ",".join(mu) if len(mu) > 1 else next(iter(mu))
     usage = UsageRecord(
         provider="anthropic_cli",
-        model=model or data.get("model"),
+        model=resolved_model,
         input_tokens=u.get("input_tokens"),
         output_tokens=u.get("output_tokens"),
         cache_read_tokens=u.get("cache_read_input_tokens"),
