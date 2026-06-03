@@ -65,8 +65,13 @@ REMSLEEP_ENABLED_ENV = "PRACTICE_REMSLEEP_ENABLED"
 REMSLEEP_ONLY_ENV = "PRACTICE_REMSLEEP_ONLY"
 REMSLEEP_INTERVAL_ENV = "PRACTICE_REMSLEEP_INTERVAL_SECONDS"
 REMSLEEP_SIGNAL_POLL_ENV = "PRACTICE_REMSLEEP_SIGNAL_POLL_SECONDS"
+REFLECTIVE_INTERVAL_ENV = "PRACTICE_REFLECTIVE_INTERVAL_SECONDS"
 DEFAULT_REMSLEEP_INTERVAL_SECONDS = 6 * 60 * 60
 DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS = 60
+# The reflective loop runs on its own (slow) timescale, distinct from the
+# reactive dispatcher's seconds-scale poll. Hourly by default — see
+# trail.route_autonomic_history_to_judge_inbox and the strange-loop essay.
+DEFAULT_REFLECTIVE_INTERVAL_SECONDS = 60 * 60
 
 
 def _build_adapter(provider: str, role: str) -> AutonomicAdapter:
@@ -153,6 +158,22 @@ def _remsleep_interval_seconds() -> float:
         return float(DEFAULT_REMSLEEP_INTERVAL_SECONDS)
 
 
+def _reflective_interval_seconds() -> float:
+    raw = os.environ.get(REFLECTIVE_INTERVAL_ENV, "").strip()
+    if not raw:
+        return float(DEFAULT_REFLECTIVE_INTERVAL_SECONDS)
+    try:
+        return max(60.0, float(raw))
+    except ValueError:
+        logger.warning(
+            "invalid %s=%r, falling back to %s",
+            REFLECTIVE_INTERVAL_ENV,
+            raw,
+            DEFAULT_REFLECTIVE_INTERVAL_SECONDS,
+        )
+        return float(DEFAULT_REFLECTIVE_INTERVAL_SECONDS)
+
+
 def _remsleep_signal_poll_seconds() -> float:
     raw = os.environ.get(REMSLEEP_SIGNAL_POLL_ENV, "").strip()
     if not raw:
@@ -167,6 +188,36 @@ def _remsleep_signal_poll_seconds() -> float:
             DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS,
         )
         return float(DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS)
+
+
+async def _run_reflective_judge_loop(
+    store: EnactmentStore,
+    *,
+    stop: asyncio.Event,
+    interval_seconds: float,
+) -> None:
+    """Route autonomic history into the Judge inbox on a slow schedule.
+
+    The reflective half of the two-loop design. The reactive dispatcher routes
+    only somatic completions; this loop, in its own (much slower) time, hands
+    the Judge the closed autonomic enactments — its own and the Smoother's —
+    to examine. Pure routing, so it needs only the store, not an adapter; the
+    Judge's run_role_loop then claims and judges what this routes. See
+    trail.route_autonomic_history_to_judge_inbox and the strange-loop essay.
+    """
+    while not stop.is_set():
+        try:
+            n = await asyncio.to_thread(
+                store.route_autonomic_history_to_judge_inbox, None
+            )
+            if n:
+                logger.info(
+                    "[reflective] routed autonomic history: +%d to judge_inbox", n
+                )
+        except Exception:
+            logger.exception("[reflective] routing failed; continuing")
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
 
 
 async def _run_memory_recall_loop(
@@ -325,6 +376,17 @@ async def main_async() -> None:
             # adapters' subprocesses) have PRACTICE_DISABLE_DISPATCHER=1 so they
             # don't double-route; routing is owned by this runner's process.
             tasks.append(dispatcher_task(stop, store=store))
+            # Reflective loop: on a slow timescale, route closed *autonomic*
+            # enactments to the Judge. The reactive dispatcher above routes only
+            # somatic completions, so the Judge examining its own/the Smoother's
+            # work happens here, paced apart — two timescales, no self-spin.
+            tasks.append(
+                _run_reflective_judge_loop(
+                    store,
+                    stop=stop,
+                    interval_seconds=_reflective_interval_seconds(),
+                )
+            )
             tasks.append(
                 run_role_loop(
                     judge,

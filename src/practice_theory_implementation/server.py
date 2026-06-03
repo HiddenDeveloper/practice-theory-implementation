@@ -502,7 +502,10 @@ def _refresh_engagement_projection(*, force: bool = False) -> None:
     s.engagement_bundle = bundle
     s.engagement_affordance_ids = frozenset(a.id for a in s.engagement.affordances)
     if s.engagement_enactment_id is None:
-        s.engagement_enactment_id = _trail.open_enactment(s.engagement.id)
+        # The engagement layer is somatic-only (this runs under _MODE=='somatic').
+        s.engagement_enactment_id = _trail.open_enactment(
+            s.engagement.id, mode="somatic"
+        )
         _mark_activity()
     if s.active_practice is not None and s.active_practice.id in BUNDLES:
         s.active_practice = project(
@@ -554,8 +557,13 @@ def switch_practice(practice_id: str, ctx: Context) -> dict[str, Any]:
     s.active_practice = project(
         bundle, substrate, FUNCTIONS, engagement=s.engagement
     )
+    # bundle.mode == _MODE here (validated above); it decides which loop later
+    # routes this enactment to the Judge — reactive (somatic) or reflective
+    # (autonomic).
     s.active_practice_enactment_id = _trail.open_enactment(
-        s.active_practice.id, parent_enactment_id=s.engagement_enactment_id
+        s.active_practice.id,
+        parent_enactment_id=s.engagement_enactment_id,
+        mode=bundle.mode,
     )
     _mark_activity()
     return {

@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS enactments (
     id                  TEXT PRIMARY KEY,
     practice_id         TEXT NOT NULL,
     parent_enactment_id TEXT REFERENCES enactments(id),
+    mode                TEXT NOT NULL DEFAULT 'somatic',
     opened_at           TEXT NOT NULL,
     closed_at           TEXT
 );
@@ -198,6 +199,25 @@ class EnactmentStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA)
         self._lock = threading.Lock()
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Bring a pre-existing trail DB up to the current schema.
+
+        Fresh DBs get every column from SCHEMA; this backfills older ones.
+        The somatic/autonomic `mode` column lets routing split the reactive
+        loop (somatic completions) from the reflective loop (autonomic
+        history) — see `route_closed_enactments_to_judge_inbox`. Existing
+        rows default to 'somatic'; going-forward correctness comes from
+        `open_enactment(mode=...)`, which the server passes per bundle mode.
+        """
+        with self._cursor() as cur:
+            cols = {row["name"] for row in cur.execute("PRAGMA table_info(enactments)")}
+            if "mode" not in cols:
+                cur.execute(
+                    "ALTER TABLE enactments "
+                    "ADD COLUMN mode TEXT NOT NULL DEFAULT 'somatic'"
+                )
 
     def close(self) -> None:
         self._conn.close()
@@ -216,13 +236,19 @@ class EnactmentStore:
         practice_id: str,
         *,
         parent_enactment_id: str | None = None,
+        mode: str = "somatic",
     ) -> str:
+        """Open an enactment. `mode` is the bundle's somatic/autonomic mode;
+        it decides which loop later routes the closed enactment to the Judge
+        (reactive for somatic, reflective for autonomic). Defaults to somatic
+        so an unspecified caller is examined, not silently skipped."""
         eid = str(uuid.uuid4())
         with self._cursor() as cur:
             cur.execute(
-                "INSERT INTO enactments(id, practice_id, parent_enactment_id, opened_at) "
-                "VALUES (?, ?, ?, ?)",
-                (eid, practice_id, parent_enactment_id, _now()),
+                "INSERT INTO enactments"
+                "(id, practice_id, parent_enactment_id, mode, opened_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (eid, practice_id, parent_enactment_id, mode, _now()),
             )
         return eid
 
@@ -366,16 +392,50 @@ class EnactmentStore:
     # --- inbox routing (dispatcher writes here) -----------------------------
 
     def route_closed_enactments_to_judge_inbox(self, since: str | None = None) -> int:
-        """Insert closed enactments into judge_inbox. Idempotent on enactment_id.
+        """Route closed *somatic* enactments into judge_inbox — the reactive loop.
 
-        `since` is an ISO timestamp; only enactments closed after it are routed.
-        Returns the number of new rows inserted.
+        Idempotent on enactment_id. `since` is an ISO timestamp; only
+        enactments closed after it are routed. Returns new rows inserted.
+
+        Autonomic enactments (Judge, Smoother, RemSleep) are deliberately
+        excluded. A reactive notification on an autonomic completion would
+        make the Judge judge its own judging — each pass finishing, dispatching,
+        triggering another, a self-consuming spin that never quiets. Autonomic
+        history is examined instead by the reflective loop, on its own
+        timescale: `route_autonomic_history_to_judge_inbox`. The two loops on
+        two timescales keep each other clean (strange-loop essay, §"A smile and
+        a wink to Douglas Hofstadter"; cf. MAPE-K).
         """
         with self._cursor() as cur:
             cur.execute(
                 "INSERT OR IGNORE INTO judge_inbox(enactment_id, bundle_id, closed_at, routed_at) "
                 "SELECT id, practice_id, closed_at, ? FROM enactments "
                 "WHERE closed_at IS NOT NULL "
+                "AND mode = 'somatic' "
+                "AND (? IS NULL OR closed_at >= ?)",
+                (_now(), since, since),
+            )
+            return max(0, cur.rowcount)
+
+    def route_autonomic_history_to_judge_inbox(self, since: str | None = None) -> int:
+        """Route closed *autonomic* enactments into judge_inbox — the reflective loop.
+
+        The counterpart to the reactive route. Autonomic completions dispatch
+        no reactive notification; a scheduled secondary loop calls this in its
+        own time, so the Judge examines autonomic history — its own and the
+        Smoother's enactments included — on a slower timescale than somatic
+        work. This is the Hofstadter mirror: the participants observing the
+        loop they are part of, but paced so the observation does useful work
+        instead of consuming itself.
+
+        Idempotent on enactment_id. Returns the number of new rows inserted.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO judge_inbox(enactment_id, bundle_id, closed_at, routed_at) "
+                "SELECT id, practice_id, closed_at, ? FROM enactments "
+                "WHERE closed_at IS NOT NULL "
+                "AND mode = 'autonomic' "
                 "AND (? IS NULL OR closed_at >= ?)",
                 (_now(), since, since),
             )
