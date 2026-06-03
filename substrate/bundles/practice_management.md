@@ -14,6 +14,7 @@ rules_ids:
 - rule_pm_check_git_and_code_alignment
 - rule_pm_update_affected_documentation
 - rule_material_judgement_is_evaluable
+- rule_adapt_after_failed_invocation
 affordance_ids:
 - read_pool
 - author_pool_element
