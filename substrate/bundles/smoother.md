@@ -11,7 +11,6 @@ rules_ids:
 - rule_smoother_address_what_friction_names
 - rule_smoother_do_not_invent
 - rule_smoother_mark_when_done
-- rule_pm_check_git_and_code_alignment
 - rule_substrate_no_id_collision
 - rule_substrate_amend_additively
 - rule_material_judgement_is_evaluable
@@ -24,5 +23,6 @@ affordance_ids:
 - amend_affordance
 - amend_material
 - amend_bundle
+- reload_seed_substrate
 ---
 Read pending Friction. Interpret it. Apply the smallest substrate amendment that addresses what the Friction names. Mark the Friction addressed. Reuses Practice Management's amendment affordances — autonomic counterpart, same machinery.

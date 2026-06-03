@@ -4,4 +4,4 @@ name: Read an enactment's steps
 materials:
 - judge_read_enactment_steps
 ---
-Return the full sequence of steps recorded against a single enactment, with affordances, materials, arguments, and results.
+Return the full sequence of steps recorded against a single enactment, with affordances, materials, arguments, and results. Invoke this affordance with the reached material `judge_read_enactment_steps`; names such as `trail` are stale aliases and are not valid material names.

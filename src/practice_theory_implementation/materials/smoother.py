@@ -36,10 +36,12 @@ def _need() -> tuple[EnactmentStore, Any]:
     return _trail, _active_enactment_id_getter
 
 
-def smoother_read_pending_friction(limit: int = 10) -> list[dict[str, Any]]:
-    """Return Friction observations that have not been addressed yet."""
+def smoother_read_pending_friction(
+    limit: int = 10, friction_id: int | None = None
+) -> list[dict[str, Any]]:
+    """Return pending Friction, optionally narrowed to one id."""
     trail, _ = _need()
-    pending = trail.pending_friction(limit=limit)
+    pending = trail.pending_friction(limit=limit, friction_id=friction_id)
     out: list[dict[str, Any]] = []
     for f in pending:
         observation_data = (

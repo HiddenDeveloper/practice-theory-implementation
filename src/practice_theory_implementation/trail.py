@@ -405,8 +405,19 @@ class EnactmentStore:
             row_id = cur.lastrowid
         return row_id or 0
 
-    def pending_friction(self, *, limit: int = 20) -> list[FrictionRow]:
+    def pending_friction(
+        self, *, limit: int = 20, friction_id: int | None = None
+    ) -> list[FrictionRow]:
         with self._cursor() as cur:
+            if friction_id is not None:
+                cur.execute(
+                    "SELECT id, observing_enactment_id, target_enactment_id, kind,"
+                    " content, observation_data_json, observed_at, addressed_at,"
+                    " addressed_by_enactment_id FROM friction_observations "
+                    "WHERE addressed_at IS NULL AND id = ?",
+                    (friction_id,),
+                )
+                return [FrictionRow(**dict(r)) for r in cur.fetchall()]
             cur.execute(
                 "SELECT id, observing_enactment_id, target_enactment_id, kind,"
                 " content, observation_data_json, observed_at, addressed_at,"
