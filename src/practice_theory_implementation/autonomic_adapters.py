@@ -44,7 +44,7 @@ import subprocess
 import tomllib
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -600,6 +600,57 @@ CODEX_BIN_ENV = "PRACTICE_CODEX_BIN"
 DEFAULT_CODEX_BIN = "codex"
 
 
+def _parse_codex_exec_usage(
+    stdout: str, *, model: str | None
+) -> tuple[UsageRecord | None, str | None]:
+    """Parse `codex exec --json` JSONL into (usage, result_text).
+
+    Confirmed against live `codex exec --json` (codex-cli 0.136.0): usage rides
+    the `turn.completed` event as {input_tokens, cached_input_tokens,
+    output_tokens, reasoning_output_tokens}; the agent text is the last
+    `item.completed` agent_message. Codex reports no cost and no creation/read
+    cache split, so cost_usd and cache_creation_tokens stay null. Best-effort:
+    returns (None, None) if no usage event is present, never raises.
+    """
+    import json as _json
+
+    usage: UsageRecord | None = None
+    text: str | None = None
+    turns = 0
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ev = _json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if ev.get("type") == "turn.completed":
+            turns += 1
+            u = ev.get("usage") or {}
+            usage = UsageRecord(
+                provider="codex",
+                model=model,
+                input_tokens=u.get("input_tokens"),
+                output_tokens=u.get("output_tokens"),
+                cache_read_tokens=u.get("cached_input_tokens"),
+                cache_creation_tokens=None,
+                cost_usd=None,
+                num_turns=None,  # set after the loop from the turn count
+            )
+        elif ev.get("type") == "item.completed":
+            item = ev.get("item") or {}
+            if isinstance(item, dict) and item.get("type") == "agent_message":
+                t = item.get("text")
+                if isinstance(t, str):
+                    text = t
+    if usage is not None and turns:
+        usage = replace(usage, num_turns=turns)
+    return usage, text
+
+
 class CodexExecAdapter(AutonomicAdapter):
     """Drives Codex via `codex exec` subprocess per work item.
 
@@ -638,6 +689,7 @@ class CodexExecAdapter(AutonomicAdapter):
         cmd: list[str] = [
             self._codex_bin,
             "exec",
+            "--json",  # JSONL events; the turn.completed event carries usage
             "--cd",
             str(self._cwd),
             "--sandbox",
@@ -708,12 +760,17 @@ class CodexExecAdapter(AutonomicAdapter):
                 result.stderr.strip()[:500],
             )
         else:
-            # Best-effort: Codex exec does not surface a stable usage block here,
-            # so record provider/model only (tokens/cost null). The run-loop still
-            # attributes dispatch_ms to the enactment. TODO: parse `codex exec
-            # --json` token events if/when that format is relied on.
-            self.last_usage = UsageRecord(provider="codex", model=self._model)
-            logger.info("[%s] codex exec completed", self.config.role)
+            usage, _text = _parse_codex_exec_usage(result.stdout, model=self._model)
+            # Fall back to provider/model only if the usage event was absent, so
+            # dispatch_ms is still attributed to the enactment.
+            self.last_usage = usage or UsageRecord(provider="codex", model=self._model)
+            logger.info(
+                "[%s] codex exec completed (in=%s out=%s cached=%s)",
+                self.config.role,
+                self.last_usage.input_tokens,
+                self.last_usage.output_tokens,
+                self.last_usage.cache_read_tokens,
+            )
         return None
 
     async def close(self) -> None:

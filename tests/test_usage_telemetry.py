@@ -16,6 +16,7 @@ from practice_theory_implementation.autonomic_adapters import (
     RolePolicy,
     WorkItem,
     _parse_claude_cli_result,
+    _parse_codex_exec_usage,
     drain,
 )
 from practice_theory_implementation.trail import EnactmentStore, UsageRecord
@@ -125,6 +126,43 @@ def test_parse_claude_cli_result_model_from_modelusage() -> None:
     # An explicit configured model still takes precedence.
     usage2, _ = _parse_claude_cli_result(blob, model="claude-sonnet-4-6")
     assert usage2 is not None and usage2.model == "claude-sonnet-4-6"
+
+
+def test_parse_codex_exec_usage_from_jsonl() -> None:
+    # Confirmed against live `codex exec --json` (codex-cli 0.136.0): usage on
+    # the turn.completed event, agent text on the last item.completed.
+    jsonl = "\n".join(
+        [
+            '{"type":"thread.started","thread_id":"t1"}',
+            '{"type":"turn.started"}',
+            '{"type":"item.completed","item":{"id":"item_0",'
+            '"type":"agent_message","text":"a small poem"}}',
+            '{"type":"turn.completed","usage":{"input_tokens":11357,'
+            '"cached_input_tokens":2432,"output_tokens":35,'
+            '"reasoning_output_tokens":0}}',
+        ]
+    )
+    usage, text = _parse_codex_exec_usage(jsonl, model="gpt-5-codex")
+    assert usage is not None
+    assert usage.provider == "codex"
+    assert usage.model == "gpt-5-codex"
+    assert usage.input_tokens == 11357
+    assert usage.output_tokens == 35
+    assert usage.cache_read_tokens == 2432  # codex's cached_input_tokens
+    assert usage.cache_creation_tokens is None  # codex has no creation/read split
+    assert usage.cost_usd is None  # codex --json reports no cost
+    assert usage.num_turns == 1
+    assert text == "a small poem"
+
+
+def test_parse_codex_exec_usage_tolerates_garbage() -> None:
+    assert _parse_codex_exec_usage("not jsonl at all", model=None) == (None, None)
+    assert _parse_codex_exec_usage("", model=None) == (None, None)
+    # Valid events but no turn.completed -> no usage captured.
+    assert _parse_codex_exec_usage('{"type":"turn.started"}', model=None) == (
+        None,
+        None,
+    )
 
 
 class _UsageAdapter(AutonomicAdapter):
