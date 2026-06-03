@@ -43,5 +43,19 @@ module.exports = {
       out_file: "./data/autonomic_http.log",
       error_file: "./data/autonomic_http.log",
     },
+    {
+      // Periodic one-shot (not a long-lived service): snapshot the loop's
+      // substrate self-amendments onto the autonomic/substrate quarantine
+      // branch for review. autorestart:false + cron_restart = run, exit, repeat.
+      name: "autonomic-substrate-janitor",
+      script: "./scripts/autonomic_substrate_janitor.sh",
+      interpreter: "bash",
+      cwd,
+      autorestart: false,
+      cron_restart: "*/15 * * * *",
+      out_file: "./data/substrate_janitor.log",
+      error_file: "./data/substrate_janitor.log",
+      merge_logs: true,
+    },
   ],
 };
