@@ -258,6 +258,28 @@ class ScriptedAdapter(AutonomicAdapter):
 # ---------------------------------------------------------------------------
 
 
+def _usage_from_sdk_result(msg: Any, *, model: str | None) -> UsageRecord:
+    """Build a UsageRecord from a claude-agent-sdk ResultMessage.
+
+    Confirmed against a live ClaudeSDKClient query (claude-agent-sdk 0.2.87):
+    `msg.usage` is a dict with input_tokens / output_tokens /
+    cache_read_input_tokens / cache_creation_input_tokens; `total_cost_usd` and
+    `num_turns` are attributes (`float | None` / `int`). Same usage keys as the
+    Claude CLI, since both wrap the same API.
+    """
+    u = getattr(msg, "usage", None) or {}
+    return UsageRecord(
+        provider="anthropic",
+        model=model,
+        input_tokens=u.get("input_tokens"),
+        output_tokens=u.get("output_tokens"),
+        cache_read_tokens=u.get("cache_read_input_tokens"),
+        cache_creation_tokens=u.get("cache_creation_input_tokens"),
+        cost_usd=getattr(msg, "total_cost_usd", None),
+        num_turns=getattr(msg, "num_turns", None),
+    )
+
+
 class AnthropicSDKAdapter(AutonomicAdapter):
     """Drives Claude via `claude-agent-sdk`.
 
@@ -381,17 +403,7 @@ class AnthropicSDKAdapter(AutonomicAdapter):
                     if text:
                         logger.info("[%s] %s", self.config.role, text.strip())
             elif isinstance(msg, ResultMessage):
-                u = msg.usage or {}
-                self.last_usage = UsageRecord(
-                    provider="anthropic",
-                    model=self._model,
-                    input_tokens=u.get("input_tokens"),
-                    output_tokens=u.get("output_tokens"),
-                    cache_read_tokens=u.get("cache_read_input_tokens"),
-                    cache_creation_tokens=u.get("cache_creation_input_tokens"),
-                    cost_usd=getattr(msg, "total_cost_usd", None),
-                    num_turns=getattr(msg, "num_turns", None),
-                )
+                self.last_usage = _usage_from_sdk_result(msg, model=self._model)
                 logger.info(
                     "[%s] turn done: in=%s out=%s cost=%s",
                     self.config.role,

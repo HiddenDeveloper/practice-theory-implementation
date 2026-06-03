@@ -17,6 +17,7 @@ from practice_theory_implementation.autonomic_adapters import (
     WorkItem,
     _parse_claude_cli_result,
     _parse_codex_exec_usage,
+    _usage_from_sdk_result,
     drain,
 )
 from practice_theory_implementation.trail import EnactmentStore, UsageRecord
@@ -163,6 +164,41 @@ def test_parse_codex_exec_usage_tolerates_garbage() -> None:
         None,
         None,
     )
+
+
+def test_usage_from_sdk_result_matches_live_shape() -> None:
+    # Confirmed against a live ClaudeSDKClient query (claude-agent-sdk 0.2.87):
+    # usage is a dict with these keys; total_cost_usd / num_turns are attributes.
+    import types
+
+    msg = types.SimpleNamespace(
+        usage={
+            "input_tokens": 6,
+            "output_tokens": 71,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 17181,
+            "service_tier": "standard",
+        },
+        total_cost_usd=0.10968725,
+        num_turns=1,
+    )
+    u = _usage_from_sdk_result(msg, model="claude-sonnet-4-6")
+    assert u.provider == "anthropic"
+    assert u.model == "claude-sonnet-4-6"
+    assert u.input_tokens == 6
+    assert u.output_tokens == 71
+    assert u.cache_read_tokens == 0
+    assert u.cache_creation_tokens == 17181
+    assert u.cost_usd == 0.10968725
+    assert u.num_turns == 1
+
+
+def test_usage_from_sdk_result_tolerates_missing_fields() -> None:
+    import types
+
+    u = _usage_from_sdk_result(types.SimpleNamespace(), model=None)
+    assert u.provider == "anthropic"
+    assert u.input_tokens is None and u.cost_usd is None
 
 
 class _UsageAdapter(AutonomicAdapter):
