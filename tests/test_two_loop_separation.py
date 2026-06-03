@@ -63,6 +63,21 @@ def test_reflective_route_carries_autonomic_history(tmp_path: Path) -> None:
     store.close()
 
 
+def test_reflective_route_respects_since_watermark(tmp_path: Path) -> None:
+    # The reflective loop passes a moving `since` cutoff so it never re-grinds
+    # pre-existing autonomic history. A `since` after the enactment closed routes
+    # nothing; a `since` before it routes it.
+    store = EnactmentStore(tmp_path / "trail.db")
+    eid = store.open_enactment("judge", mode="autonomic")
+    store.close_enactment(eid)
+
+    assert store.route_autonomic_history_to_judge_inbox("2099-01-01T00:00:00") == 0
+    routed = store.route_autonomic_history_to_judge_inbox("2000-01-01T00:00:00")
+    assert routed == 1
+    assert eid in _claim_all_judge_inbox(store)
+    store.close()
+
+
 def test_default_mode_is_somatic(tmp_path: Path) -> None:
     # A caller that does not specify mode is treated as somatic (reactive),
     # so an unlabelled enactment is examined, never silently skipped.

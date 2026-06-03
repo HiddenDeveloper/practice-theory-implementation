@@ -204,15 +204,30 @@ async def _run_reflective_judge_loop(
     to examine. Pure routing, so it needs only the store, not an adapter; the
     Judge's run_role_loop then claims and judges what this routes. See
     trail.route_autonomic_history_to_judge_inbox and the strange-loop essay.
+
+    Watermark: the loop only examines autonomic enactments closed since a
+    moving cutoff that starts at boot and advances each pass, so it never
+    re-grinds pre-existing autonomic history (an already-audited, already-fixed
+    backlog). In-memory by design — on restart we resume from "now", not from
+    the whole backlog. Reactive somatic routing is unaffected; every somatic
+    enactment is still examined. (Routing is INSERT OR IGNORE, so the watermark
+    is an efficiency/scope bound, not a correctness gate.)
     """
+    from datetime import UTC, datetime
+
+    since = datetime.now(UTC).isoformat(timespec="microseconds")
     while not stop.is_set():
+        pass_start = datetime.now(UTC).isoformat(timespec="microseconds")
         try:
             n = await asyncio.to_thread(
-                store.route_autonomic_history_to_judge_inbox, None
+                store.route_autonomic_history_to_judge_inbox, since
             )
+            since = pass_start  # advance only on success; a failure retries the window
             if n:
                 logger.info(
-                    "[reflective] routed autonomic history: +%d to judge_inbox", n
+                    "[reflective] routed autonomic history since watermark: "
+                    "+%d to judge_inbox",
+                    n,
                 )
         except Exception:
             logger.exception("[reflective] routing failed; continuing")
