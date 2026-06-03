@@ -49,7 +49,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from practice_theory_implementation.projection import compose_composition, project
-from practice_theory_implementation.trail import EnactmentStore
+from practice_theory_implementation.trail import EnactmentStore, UsageRecord
 from practice_theory_implementation.types import Bundle, Substrate
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,10 @@ class AutonomicAdapter(ABC):
 
     def __init__(self, config: AdapterConfig) -> None:
         self.config = config
+        # Set by an LLM adapter during dispatch; read by the run-loop after the
+        # consumer enactment is resolved, then recorded against it. None means
+        # no usage was captured for the last dispatch (e.g. the scripted adapter).
+        self.last_usage: UsageRecord | None = None
 
     @abstractmethod
     async def open(self) -> None:
@@ -350,6 +354,7 @@ class AnthropicSDKAdapter(AutonomicAdapter):
     async def dispatch(self, work: WorkItem) -> str | None:
         if self._client is None:
             raise RuntimeError("AnthropicSDKAdapter.open() not called")
+        self.last_usage = None
         await self._client.query(work.dispatch_message)
         await self._drain()
         # Consumer id discovered by the run-loop via the trail.
@@ -376,11 +381,23 @@ class AnthropicSDKAdapter(AutonomicAdapter):
                     if text:
                         logger.info("[%s] %s", self.config.role, text.strip())
             elif isinstance(msg, ResultMessage):
+                u = msg.usage or {}
+                self.last_usage = UsageRecord(
+                    provider="anthropic",
+                    model=self._model,
+                    input_tokens=u.get("input_tokens"),
+                    output_tokens=u.get("output_tokens"),
+                    cache_read_tokens=u.get("cache_read_input_tokens"),
+                    cache_creation_tokens=u.get("cache_creation_input_tokens"),
+                    cost_usd=getattr(msg, "total_cost_usd", None),
+                    num_turns=getattr(msg, "num_turns", None),
+                )
                 logger.info(
-                    "[%s] turn done: in=%s out=%s",
+                    "[%s] turn done: in=%s out=%s cost=%s",
                     self.config.role,
-                    (msg.usage or {}).get("input_tokens"),
-                    (msg.usage or {}).get("output_tokens"),
+                    self.last_usage.input_tokens,
+                    self.last_usage.output_tokens,
+                    self.last_usage.cost_usd,
                 )
 
 
@@ -391,6 +408,37 @@ class AnthropicSDKAdapter(AutonomicAdapter):
 
 CLAUDE_BIN_ENV = "PRACTICE_CLAUDE_BIN"
 DEFAULT_CLAUDE_BIN = "claude"
+
+
+def _parse_claude_cli_result(
+    stdout: str, *, model: str | None
+) -> tuple[UsageRecord | None, str | None]:
+    """Parse `claude -p --output-format json` stdout into (usage, result_text).
+
+    Returns (None, None) if the output is not the expected single JSON result
+    object — telemetry is best-effort and must never raise into the dispatch.
+    """
+    import json as _json
+
+    try:
+        data = _json.loads(stdout.strip())
+    except (ValueError, TypeError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    u = data.get("usage") or {}
+    usage = UsageRecord(
+        provider="anthropic_cli",
+        model=model or data.get("model"),
+        input_tokens=u.get("input_tokens"),
+        output_tokens=u.get("output_tokens"),
+        cache_read_tokens=u.get("cache_read_input_tokens"),
+        cache_creation_tokens=u.get("cache_creation_input_tokens"),
+        cost_usd=data.get("total_cost_usd"),
+        num_turns=data.get("num_turns"),
+    )
+    result_text = data.get("result")
+    return usage, result_text if isinstance(result_text, str) else None
 
 
 class ClaudeCliAdapter(AutonomicAdapter):
@@ -445,6 +493,7 @@ class ClaudeCliAdapter(AutonomicAdapter):
         import json as _json
         import sys as _sys
 
+        self.last_usage = None
         mcp_label = "apprenticeship_autonomic"
         if self.config.mcp_url:
             server_cfg: dict[str, Any] = {"type": "http", "url": self.config.mcp_url}
@@ -487,7 +536,7 @@ class ClaudeCliAdapter(AutonomicAdapter):
             "--allowedTools",
             allowed_tools,
             "--output-format",
-            "text",
+            "json",
         ]
         if self._permission_mode:
             cmd.extend(["--permission-mode", self._permission_mode])
@@ -518,10 +567,15 @@ class ClaudeCliAdapter(AutonomicAdapter):
                 result.stderr.strip()[:500],
             )
         else:
-            tail = result.stdout.strip().splitlines()[-3:]
+            usage, text = _parse_claude_cli_result(result.stdout, model=self._model)
+            self.last_usage = usage
+            tail = (text or result.stdout).strip().splitlines()[-3:]
             logger.info(
-                "[%s] claude -p completed; last lines: %s",
+                "[%s] claude -p completed (in=%s out=%s cost=%s); last lines: %s",
                 self.config.role,
+                usage.input_tokens if usage else None,
+                usage.output_tokens if usage else None,
+                usage.cost_usd if usage else None,
                 " | ".join(tail),
             )
         return None
@@ -639,6 +693,7 @@ class CodexExecAdapter(AutonomicAdapter):
 
         result = await asyncio.to_thread(_run)
         if result.returncode != 0:
+            self.last_usage = None
             logger.warning(
                 "[%s] codex exec exited %d: %s",
                 self.config.role,
@@ -646,6 +701,11 @@ class CodexExecAdapter(AutonomicAdapter):
                 result.stderr.strip()[:500],
             )
         else:
+            # Best-effort: Codex exec does not surface a stable usage block here,
+            # so record provider/model only (tokens/cost null). The run-loop still
+            # attributes dispatch_ms to the enactment. TODO: parse `codex exec
+            # --json` token events if/when that format is relied on.
+            self.last_usage = UsageRecord(provider="codex", model=self._model)
             logger.info("[%s] codex exec completed", self.config.role)
         return None
 
@@ -741,6 +801,8 @@ async def drain(
     Returns the number of items processed. Unlike `run_role_loop`, this does
     not idle-poll — it exits as soon as the inbox is empty.
     """
+    import time as _time
+
     await adapter.open()
     processed = 0
     try:
@@ -748,6 +810,7 @@ async def drain(
             work = policy.next_work(store, worker_id=worker_id)
             if work is None:
                 break
+            _t0 = _time.monotonic()
             try:
                 consumer_id = await adapter.dispatch(work)
             except Exception:
@@ -757,6 +820,14 @@ async def drain(
                 continue
             if consumer_id:
                 policy.mark_consumed(store, work.primary_id, consumer_id)
+                usage = getattr(adapter, "last_usage", None)
+                if usage is not None:
+                    with contextlib.suppress(Exception):
+                        store.record_usage(
+                            consumer_id,
+                            usage,
+                            dispatch_ms=int((_time.monotonic() - _t0) * 1000),
+                        )
             processed += 1
     finally:
         await adapter.close()
@@ -798,6 +869,7 @@ async def run_role_loop(
     a trail query (`_resolve_consumer_id`) — the SDK adapters return None
     from dispatch, so the fallback is what marks their work consumed.
     """
+    import time as _time
     from datetime import UTC as _UTC
     from datetime import datetime as _datetime
 
@@ -811,6 +883,7 @@ async def run_role_loop(
                 continue
             logger.info("[%s] dispatching %s", adapter.config.role, work.primary_id)
             dispatch_started = _datetime.now(_UTC).isoformat(timespec="microseconds")
+            _t0 = _time.monotonic()
             try:
                 consumer_id = await adapter.dispatch(work)
             except Exception:
@@ -826,6 +899,21 @@ async def run_role_loop(
                 )
             if consumer_id:
                 policy.mark_consumed(store, work.primary_id, consumer_id)
+                # Telemetry is best-effort — a usage write must never break the loop.
+                usage = getattr(adapter, "last_usage", None)
+                if usage is not None:
+                    try:
+                        store.record_usage(
+                            consumer_id,
+                            usage,
+                            dispatch_ms=int((_time.monotonic() - _t0) * 1000),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[%s] usage record failed for %s; continuing",
+                            adapter.config.role,
+                            consumer_id,
+                        )
             else:
                 logger.warning(
                     "[%s] no consumer id for %s; left for next claim",

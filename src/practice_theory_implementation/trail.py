@@ -101,6 +101,20 @@ CREATE TABLE IF NOT EXISTS smoother_inbox (
 );
 CREATE INDEX IF NOT EXISTS smoother_inbox_pending
     ON smoother_inbox(consumed_at, claim_expires_at, routed_at);
+
+CREATE TABLE IF NOT EXISTS enactment_usage (
+    enactment_id           TEXT PRIMARY KEY REFERENCES enactments(id),
+    provider               TEXT,
+    model                  TEXT,
+    input_tokens           INTEGER,
+    output_tokens          INTEGER,
+    cache_read_tokens      INTEGER,
+    cache_creation_tokens  INTEGER,
+    cost_usd               REAL,
+    num_turns              INTEGER,
+    dispatch_ms            INTEGER,
+    recorded_at            TEXT NOT NULL
+);
 """
 
 
@@ -164,6 +178,41 @@ class FrictionRow:
     observed_at: str
     addressed_at: str | None
     addressed_by_enactment_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class UsageRecord:
+    """LLM usage for one dispatch, as the provider reports it.
+
+    Produced by an autonomic adapter and attributed to the enactment the
+    dispatch enacted. Every field but `provider` is optional — providers vary
+    in what they expose, and cost is stored as-reported (null when absent), not
+    re-derived. Autonomic-only today; the same shape carries a somatic row
+    later (provider='harness', whatever tokens the harness reports)."""
+
+    provider: str
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
+    cost_usd: float | None = None
+    num_turns: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UsageRow:
+    enactment_id: str
+    provider: str | None
+    model: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cache_read_tokens: int | None
+    cache_creation_tokens: int | None
+    cost_usd: float | None
+    num_turns: int | None
+    dispatch_ms: int | None
+    recorded_at: str
 
 
 def _resolve_path(override: str | None = None) -> Path:
@@ -388,6 +437,49 @@ class EnactmentStore:
                 (_now(), addressed_by_enactment_id, friction_id),
             )
             return cur.rowcount > 0
+
+    # --- per-enactment usage telemetry --------------------------------------
+
+    def record_usage(
+        self,
+        enactment_id: str,
+        usage: UsageRecord,
+        *,
+        dispatch_ms: int | None = None,
+    ) -> None:
+        """Record LLM usage for one enactment. Idempotent on enactment_id
+        (INSERT OR REPLACE), so a re-recorded dispatch overwrites cleanly."""
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT OR REPLACE INTO enactment_usage("
+                "enactment_id, provider, model, input_tokens, output_tokens,"
+                " cache_read_tokens, cache_creation_tokens, cost_usd, num_turns,"
+                " dispatch_ms, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    enactment_id,
+                    usage.provider,
+                    usage.model,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cache_read_tokens,
+                    usage.cache_creation_tokens,
+                    usage.cost_usd,
+                    usage.num_turns,
+                    dispatch_ms,
+                    _now(),
+                ),
+            )
+
+    def usage_for(self, enactment_id: str) -> UsageRow | None:
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT enactment_id, provider, model, input_tokens, output_tokens,"
+                " cache_read_tokens, cache_creation_tokens, cost_usd, num_turns,"
+                " dispatch_ms, recorded_at FROM enactment_usage WHERE enactment_id = ?",
+                (enactment_id,),
+            )
+            row = cur.fetchone()
+            return UsageRow(*row) if row is not None else None
 
     # --- inbox routing (dispatcher writes here) -----------------------------
 
