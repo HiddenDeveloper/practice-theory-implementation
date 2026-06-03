@@ -50,7 +50,10 @@ from practice_theory_implementation.autonomic_adapters import (
     AdapterConfig,
     AutonomicAdapter,
     RolePolicy,
+    WorkItem,
     compose_brief,
+    _record_usage_and_close_consumer,
+    _resolve_consumer_id,
     run_role_loop,
 )
 from practice_theory_implementation.autonomic_dispatcher import dispatcher_task
@@ -237,19 +240,21 @@ async def _run_reflective_judge_loop(
 
 async def _run_memory_recall_loop(
     adapter: AutonomicAdapter,
+    store: EnactmentStore,
     *,
     stop: asyncio.Event,
     interval_seconds: float,
 ) -> None:
     """Run Memory Recall on a wall-clock schedule."""
+    import time as _time
     from datetime import UTC, datetime
-
-    from practice_theory_implementation.autonomic_adapters import WorkItem
 
     await adapter.open()
     try:
         while not stop.is_set():
             logger.info("[memory_recall] scheduled RemSleep recall dispatch")
+            dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
+            t0 = _time.monotonic()
             try:
                 await adapter.dispatch(
                     WorkItem(
@@ -266,6 +271,22 @@ async def _run_memory_recall_loop(
                         ),
                     )
                 )
+                consumer_id = _resolve_consumer_id(
+                    store, adapter.config.bundle_id, dispatch_started
+                )
+                if consumer_id:
+                    try:
+                        _record_usage_and_close_consumer(
+                            store,
+                            adapter,
+                            consumer_id,
+                            dispatch_ms=int((_time.monotonic() - t0) * 1000),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[memory_recall] usage/finalize failed for %s",
+                            consumer_id,
+                        )
             except Exception:
                 logger.exception("[memory_recall] RemSleep dispatch failed")
             with contextlib.suppress(TimeoutError):
@@ -276,14 +297,16 @@ async def _run_memory_recall_loop(
 
 async def _run_memory_consolidation_signal_loop(
     adapter: AutonomicAdapter,
+    store: EnactmentStore,
     *,
     stop: asyncio.Event,
     poll_seconds: float,
 ) -> None:
     """Dispatch Memory Consolidation work when Memory Recall emits signals."""
     import json
+    import time as _time
+    from datetime import UTC, datetime
 
-    from practice_theory_implementation.autonomic_adapters import WorkItem
     from practice_theory_implementation.materials import remsleep
 
     await adapter.open()
@@ -298,6 +321,8 @@ async def _run_memory_consolidation_signal_loop(
             if isinstance(signal, dict) and isinstance(signal.get("id"), str):
                 signal_id = signal["id"]
                 logger.info("[memory_consolidation] dispatching signal %s", signal_id)
+                dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
+                t0 = _time.monotonic()
                 try:
                     await adapter.dispatch(
                         WorkItem(
@@ -318,6 +343,22 @@ async def _run_memory_consolidation_signal_loop(
                             ),
                         )
                     )
+                    consumer_id = _resolve_consumer_id(
+                        store, adapter.config.bundle_id, dispatch_started
+                    )
+                    if consumer_id:
+                        try:
+                            _record_usage_and_close_consumer(
+                                store,
+                                adapter,
+                                consumer_id,
+                                dispatch_ms=int((_time.monotonic() - t0) * 1000),
+                            )
+                        except Exception:
+                            logger.exception(
+                                "[memory_consolidation] usage/finalize failed for %s",
+                                consumer_id,
+                            )
                 except Exception:
                     logger.exception(
                         "[memory_consolidation] signal dispatch failed for %s",
@@ -424,6 +465,7 @@ async def main_async() -> None:
             tasks.append(
                 _run_memory_recall_loop(
                     memory_recall,
+                    store,
                     stop=stop,
                     interval_seconds=remsleep_interval,
                 )
@@ -431,6 +473,7 @@ async def main_async() -> None:
             tasks.append(
                 _run_memory_consolidation_signal_loop(
                     memory_consolidation,
+                    store,
                     stop=stop,
                     poll_seconds=signal_poll,
                 )

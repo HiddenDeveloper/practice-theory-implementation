@@ -29,6 +29,9 @@ from typing import Any
 
 import yaml
 
+from practice_theory_implementation.engagement_aliases import (
+    HISTORICAL_ENGAGEMENT_IDS,
+)
 from practice_theory_implementation.material_surfaces import MATERIAL_SURFACES
 from practice_theory_implementation.types import (
     Affordance,
@@ -173,6 +176,12 @@ def _load_bundles(root: Path, errors: list[str]) -> tuple[dict[str, Bundle], lis
     for stem, fm, body in _read_dir(root / "bundles", errors):
         if fm.get("id") != stem:
             errors.append(f"bundles/{stem}.md: frontmatter id {fm.get('id')!r} != filename")
+            continue
+        if stem in HISTORICAL_ENGAGEMENT_IDS:
+            errors.append(
+                f"bundles/{stem}.md: historical engagement id is reserved; "
+                "do not load it as a practice bundle"
+            )
             continue
         mode = fm.get("mode", "somatic")
         if mode not in ("somatic", "autonomic"):

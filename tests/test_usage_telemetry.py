@@ -23,6 +23,19 @@ from practice_theory_implementation.autonomic_adapters import (
 from practice_theory_implementation.trail import EnactmentStore, UsageRecord
 
 
+def _record_dummy_step(store: EnactmentStore, enactment_id: str) -> None:
+    store.record_step(
+        enactment_id=enactment_id,
+        affordance_id="test_affordance",
+        material_name="test_material",
+        arguments={},
+        result={"ok": True},
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:01+00:00",
+        duration_ms=1000,
+    )
+
+
 def test_record_and_read_usage_roundtrip(tmp_path: Path) -> None:
     store = EnactmentStore(tmp_path / "trail.db")
     eid = store.open_enactment("judge", mode="autonomic")
@@ -226,10 +239,19 @@ class _UsageAdapter(AutonomicAdapter):
         return eid
 
 
+class _OpenUsageAdapter(_UsageAdapter):
+    async def dispatch(self, work: WorkItem) -> str | None:
+        eid = self._store.open_enactment("judge", mode="autonomic")
+        self.last_usage = self._usage
+        self.last_eid = eid
+        return eid
+
+
 def test_loop_records_usage_keyed_by_consumer_enactment(tmp_path: Path) -> None:
     store = EnactmentStore(tmp_path / "trail.db")
     # A closed somatic enactment becomes Judge work.
     som = store.open_enactment("correspondent", mode="somatic")
+    _record_dummy_step(store, som)
     store.close_enactment(som)
     assert store.route_closed_enactments_to_judge_inbox() == 1
 
@@ -254,4 +276,28 @@ def test_loop_records_usage_keyed_by_consumer_enactment(tmp_path: Path) -> None:
     assert row.cost_usd == 0.5
     assert row.dispatch_ms is not None and row.dispatch_ms >= 0
     assert store.usage_for(som) is None  # the examined enactment has no usage row
+    store.close()
+
+
+def test_drain_closes_open_consumer_enactment_after_dispatch(tmp_path: Path) -> None:
+    store = EnactmentStore(tmp_path / "trail.db")
+    som = store.open_enactment("correspondent", mode="somatic")
+    _record_dummy_step(store, som)
+    store.close_enactment(som)
+    assert store.route_closed_enactments_to_judge_inbox() == 1
+
+    adapter = _OpenUsageAdapter(
+        AdapterConfig(role="judge", bundle_id="judge", brief=""),
+        store,
+        UsageRecord(provider="codex", input_tokens=11),
+    )
+    n = asyncio.run(
+        drain(adapter, RolePolicy(role="judge"), store, worker_id="t", max_items=1)
+    )
+    assert n == 1
+
+    assert adapter.last_eid is not None
+    rows = [row for row in store.recent_enactments(limit=10) if row.id == adapter.last_eid]
+    assert rows and rows[0].closed_at is not None
+    assert store.usage_for(adapter.last_eid) is not None
     store.close()

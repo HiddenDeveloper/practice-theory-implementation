@@ -504,6 +504,7 @@ class EnactmentStore:
                 "SELECT id, practice_id, closed_at, ? FROM enactments "
                 "WHERE closed_at IS NOT NULL "
                 "AND mode = 'somatic' "
+                "AND EXISTS (SELECT 1 FROM steps WHERE steps.enactment_id = enactments.id) "
                 "AND (? IS NULL OR closed_at >= ?)",
                 (_now(), since, since),
             )
@@ -528,6 +529,7 @@ class EnactmentStore:
                 "SELECT id, practice_id, closed_at, ? FROM enactments "
                 "WHERE closed_at IS NOT NULL "
                 "AND mode = 'autonomic' "
+                "AND EXISTS (SELECT 1 FROM steps WHERE steps.enactment_id = enactments.id) "
                 "AND (? IS NULL OR closed_at >= ?)",
                 (_now(), since, since),
             )

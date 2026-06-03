@@ -20,6 +20,19 @@ from pathlib import Path
 from practice_theory_implementation.trail import EnactmentStore
 
 
+def _record_dummy_step(store: EnactmentStore, enactment_id: str) -> None:
+    store.record_step(
+        enactment_id=enactment_id,
+        affordance_id="test_affordance",
+        material_name="test_material",
+        arguments={},
+        result={"ok": True},
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:01+00:00",
+        duration_ms=1000,
+    )
+
+
 def _claim_all_judge_inbox(store: EnactmentStore) -> set[str]:
     """Enactment ids currently routed to the Judge, via the real claim path."""
     ids: set[str] = set()
@@ -32,6 +45,8 @@ def test_reactive_route_excludes_autonomic_enactments(tmp_path: Path) -> None:
     store = EnactmentStore(tmp_path / "trail.db")
     somatic = store.open_enactment("correspondent", mode="somatic")
     judge = store.open_enactment("judge", mode="autonomic")
+    _record_dummy_step(store, somatic)
+    _record_dummy_step(store, judge)
     store.close_enactment(somatic)
     store.close_enactment(judge)
 
@@ -48,6 +63,8 @@ def test_reflective_route_carries_autonomic_history(tmp_path: Path) -> None:
     store = EnactmentStore(tmp_path / "trail.db")
     judge = store.open_enactment("judge", mode="autonomic")
     smoother = store.open_enactment("smoother", mode="autonomic")
+    _record_dummy_step(store, judge)
+    _record_dummy_step(store, smoother)
     store.close_enactment(judge)
     store.close_enactment(smoother)
 
@@ -69,6 +86,7 @@ def test_reflective_route_respects_since_watermark(tmp_path: Path) -> None:
     # nothing; a `since` before it routes it.
     store = EnactmentStore(tmp_path / "trail.db")
     eid = store.open_enactment("judge", mode="autonomic")
+    _record_dummy_step(store, eid)
     store.close_enactment(eid)
 
     assert store.route_autonomic_history_to_judge_inbox("2099-01-01T00:00:00") == 0
@@ -83,6 +101,7 @@ def test_default_mode_is_somatic(tmp_path: Path) -> None:
     # so an unlabelled enactment is examined, never silently skipped.
     store = EnactmentStore(tmp_path / "trail.db")
     eid = store.open_enactment("correspondent")
+    _record_dummy_step(store, eid)
     store.close_enactment(eid)
     assert store.route_closed_enactments_to_judge_inbox() == 1
     store.close()
@@ -94,6 +113,7 @@ def test_mode_column_backfills_on_existing_db(tmp_path: Path) -> None:
     db = tmp_path / "trail.db"
     store = EnactmentStore(db)
     eid = store.open_enactment("correspondent", mode="somatic")
+    _record_dummy_step(store, eid)
     store.close_enactment(eid)
     store.close()
 
@@ -101,3 +121,37 @@ def test_mode_column_backfills_on_existing_db(tmp_path: Path) -> None:
     reopened = EnactmentStore(db)
     assert reopened.route_closed_enactments_to_judge_inbox() == 1
     reopened.close()
+
+
+def test_reactive_route_ignores_zero_step_somatic_enactments(
+    tmp_path: Path,
+) -> None:
+    store = EnactmentStore(tmp_path / "trail.db")
+    empty = store.open_enactment("continuous_self", mode="somatic")
+    with_step = store.open_enactment("correspondent", mode="somatic")
+    _record_dummy_step(store, with_step)
+    store.close_enactment(empty)
+    store.close_enactment(with_step)
+
+    assert store.route_closed_enactments_to_judge_inbox() == 1
+    inbox = _claim_all_judge_inbox(store)
+    assert empty not in inbox
+    assert with_step in inbox
+    store.close()
+
+
+def test_reflective_route_ignores_zero_step_autonomic_enactments(
+    tmp_path: Path,
+) -> None:
+    store = EnactmentStore(tmp_path / "trail.db")
+    empty = store.open_enactment("judge", mode="autonomic")
+    with_step = store.open_enactment("smoother", mode="autonomic")
+    _record_dummy_step(store, with_step)
+    store.close_enactment(empty)
+    store.close_enactment(with_step)
+
+    assert store.route_autonomic_history_to_judge_inbox() == 1
+    inbox = _claim_all_judge_inbox(store)
+    assert empty not in inbox
+    assert with_step in inbox
+    store.close()

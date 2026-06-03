@@ -757,6 +757,7 @@ class CodexExecAdapter(AutonomicAdapter):
                 cmd,
                 cwd=self._cwd,
                 env=_subprocess_env(self._cwd),
+                stdin=subprocess.DEVNULL,
                 text=True,
                 capture_output=True,
                 check=False,
@@ -896,14 +897,13 @@ async def drain(
                 continue
             if consumer_id:
                 policy.mark_consumed(store, work.primary_id, consumer_id)
-                usage = getattr(adapter, "last_usage", None)
-                if usage is not None:
-                    with contextlib.suppress(Exception):
-                        store.record_usage(
-                            consumer_id,
-                            usage,
-                            dispatch_ms=int((_time.monotonic() - _t0) * 1000),
-                        )
+                with contextlib.suppress(Exception):
+                    _record_usage_and_close_consumer(
+                        store,
+                        adapter,
+                        consumer_id,
+                        dispatch_ms=int((_time.monotonic() - _t0) * 1000),
+                    )
             processed += 1
     finally:
         await adapter.close()
@@ -926,6 +926,22 @@ def _resolve_consumer_id(
         if row.practice_id == bundle_id and row.opened_at >= dispatch_started:
             return row.id
     return None
+
+
+def _record_usage_and_close_consumer(
+    store: EnactmentStore,
+    adapter: AutonomicAdapter,
+    consumer_id: str,
+    *,
+    dispatch_ms: int,
+) -> None:
+    """Finalize an autonomic subprocess's trail row after its dispatch returns."""
+    # The HTTP MCP session may linger until its idle reaper runs. For an
+    # autonomic subprocess, process exit is the lifecycle boundary.
+    store.close_enactment(consumer_id)
+    usage = getattr(adapter, "last_usage", None)
+    if usage is not None:
+        store.record_usage(consumer_id, usage, dispatch_ms=dispatch_ms)
 
 
 async def run_role_loop(
@@ -976,20 +992,19 @@ async def run_role_loop(
             if consumer_id:
                 policy.mark_consumed(store, work.primary_id, consumer_id)
                 # Telemetry is best-effort — a usage write must never break the loop.
-                usage = getattr(adapter, "last_usage", None)
-                if usage is not None:
-                    try:
-                        store.record_usage(
-                            consumer_id,
-                            usage,
-                            dispatch_ms=int((_time.monotonic() - _t0) * 1000),
-                        )
-                    except Exception:
-                        logger.exception(
-                            "[%s] usage record failed for %s; continuing",
-                            adapter.config.role,
-                            consumer_id,
-                        )
+                try:
+                    _record_usage_and_close_consumer(
+                        store,
+                        adapter,
+                        consumer_id,
+                        dispatch_ms=int((_time.monotonic() - _t0) * 1000),
+                    )
+                except Exception:
+                    logger.exception(
+                        "[%s] usage/finalize failed for %s; continuing",
+                        adapter.config.role,
+                        consumer_id,
+                    )
             else:
                 logger.warning(
                     "[%s] no consumer id for %s; left for next claim",

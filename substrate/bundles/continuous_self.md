@@ -15,6 +15,7 @@ rules_ids:
 - rule_honour_what_brought
 - rule_episodic_memory_read_only
 - rule_engagement_bundle_changes_via_pm
+- rule_engagement_recent_recall_not_alone
 affordance_ids:
 - about_the_user
 - about_user_profile

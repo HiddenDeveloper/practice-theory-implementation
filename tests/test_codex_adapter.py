@@ -21,6 +21,7 @@ def _capture_cmd(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     def _fake_run(cmd: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
         captured["cmd"] = cmd
+        captured["kwargs"] = _
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(autonomic_adapters.subprocess, "run", _fake_run)
@@ -70,3 +71,15 @@ def test_codex_injects_stdio_when_no_mcp_url(
     assert "apprenticeship_autonomic.args=" in joined
     # No HTTP url when spawning stdio.
     assert "apprenticeship_autonomic.url=" not in joined
+
+
+def test_codex_exec_closes_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _capture_cmd(monkeypatch)
+    adapter = CodexExecAdapter(
+        AdapterConfig(role="judge", bundle_id="judge", brief="brief")
+    )
+    _run_dispatch(adapter)
+
+    assert captured["kwargs"]["stdin"] == subprocess.DEVNULL

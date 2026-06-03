@@ -23,6 +23,9 @@ from pathlib import Path
 from typing import Any
 
 from practice_theory_implementation import substrate_writer
+from practice_theory_implementation.engagement_aliases import (
+    HISTORICAL_ENGAGEMENT_IDS,
+)
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
@@ -419,6 +422,13 @@ def pm_create_bundle(
     mode: str = "somatic",
 ) -> dict[str, Any]:
     s, catalog = _need_substrate()
+    if id in HISTORICAL_ENGAGEMENT_IDS:
+        return {
+            "error": (
+                f"bundle id {id!r} is reserved as a historical engagement id; "
+                "do not recreate it as a switchable practice bundle"
+            )
+        }
     if id in catalog:
         return {"error": f"bundle {id!r} already exists in catalog"}
     if mode not in ("somatic", "autonomic"):

@@ -16,7 +16,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-export PRACTICE_AUTONOMIC_PROVIDER="${PRACTICE_AUTONOMIC_PROVIDER:-anthropic_cli}"
+export PRACTICE_AUTONOMIC_PROVIDER="${PRACTICE_AUTONOMIC_PROVIDER:-codex}"
 # Run the full autonomic loop: Judge + Smoother (inbox roles, with the reactive
 # dispatcher and the reflective autonomic-history loop) AND RemSleep memory.
 # (REMSLEEP_ENABLED keeps the memory loops; dropping REMSLEEP_ONLY turns the
