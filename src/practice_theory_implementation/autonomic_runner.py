@@ -51,13 +51,17 @@ from practice_theory_implementation.autonomic_adapters import (
     AutonomicAdapter,
     RolePolicy,
     WorkItem,
-    compose_brief,
     _record_usage_and_close_consumer,
     _resolve_consumer_id,
+    compose_brief,
     run_role_loop,
 )
 from practice_theory_implementation.autonomic_dispatcher import dispatcher_task
 from practice_theory_implementation.bundles import BUNDLES
+from practice_theory_implementation.observability import (
+    annotate_dispatch_result,
+    autonomic_dispatch_span,
+)
 from practice_theory_implementation.pools import substrate
 from practice_theory_implementation.trail import EnactmentStore
 
@@ -254,41 +258,64 @@ async def _run_memory_recall_loop(
         while not stop.is_set():
             logger.info("[memory_recall] scheduled RemSleep recall dispatch")
             dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
+            work = WorkItem(
+                primary_id=datetime.now(UTC).isoformat(timespec="seconds"),
+                role="memory_recall",
+                dispatch_message=(
+                    "Run one RemSleep memory-recall pass. Switch to "
+                    "`memory_recall`, then read the checkpoint, the "
+                    "current canonical/user context, the unreviewed "
+                    "episodes after the checkpoint, and the non-canonical "
+                    "graph nodes updated after the graph watermark. Judge "
+                    "what you read and dispatch memory_signals "
+                    "accordingly. Stop after one recall pass."
+                ),
+            )
             t0 = _time.monotonic()
-            try:
-                await adapter.dispatch(
-                    WorkItem(
-                        primary_id=datetime.now(UTC).isoformat(timespec="seconds"),
-                        role="memory_recall",
-                        dispatch_message=(
-                            "Run one RemSleep memory-recall pass. Switch to "
-                            "`memory_recall`, then read the checkpoint, the "
-                            "current canonical/user context, the unreviewed "
-                            "episodes after the checkpoint, and the non-canonical "
-                            "graph nodes updated after the graph watermark. Judge "
-                            "what you read and dispatch memory_signals "
-                            "accordingly. Stop after one recall pass."
-                        ),
+            with autonomic_dispatch_span(
+                role=adapter.config.role,
+                bundle_id=adapter.config.bundle_id,
+                primary_id=work.primary_id,
+                worker_id="memory-recall-scheduler",
+                metadata=work.metadata,
+            ) as span:
+                try:
+                    await adapter.dispatch(work)
+                    consumer_id = _resolve_consumer_id(
+                        store, adapter.config.bundle_id, dispatch_started
                     )
-                )
-                consumer_id = _resolve_consumer_id(
-                    store, adapter.config.bundle_id, dispatch_started
-                )
-                if consumer_id:
-                    try:
-                        _record_usage_and_close_consumer(
-                            store,
-                            adapter,
-                            consumer_id,
-                            dispatch_ms=int((_time.monotonic() - t0) * 1000),
+                    dispatch_ms = int((_time.monotonic() - t0) * 1000)
+                    if consumer_id:
+                        try:
+                            _record_usage_and_close_consumer(
+                                store,
+                                adapter,
+                                consumer_id,
+                                dispatch_ms=dispatch_ms,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "[memory_recall] usage/finalize failed for %s",
+                                consumer_id,
+                            )
+                        annotate_dispatch_result(
+                            span,
+                            status="ok",
+                            consumer_id=consumer_id,
+                            usage=getattr(adapter, "last_usage", None),
+                            dispatch_ms=dispatch_ms,
                         )
-                    except Exception:
-                        logger.exception(
-                            "[memory_recall] usage/finalize failed for %s",
-                            consumer_id,
+                    else:
+                        annotate_dispatch_result(
+                            span,
+                            status="no_consumer",
+                            usage=getattr(adapter, "last_usage", None),
+                            dispatch_ms=dispatch_ms,
+                            error="no consumer id resolved",
                         )
-            except Exception:
-                logger.exception("[memory_recall] RemSleep dispatch failed")
+                except Exception as exc:
+                    annotate_dispatch_result(span, status="error", error=str(exc))
+                    logger.exception("[memory_recall] RemSleep dispatch failed")
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
     finally:
@@ -322,48 +349,72 @@ async def _run_memory_consolidation_signal_loop(
                 signal_id = signal["id"]
                 logger.info("[memory_consolidation] dispatching signal %s", signal_id)
                 dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
+                work = WorkItem(
+                    primary_id=signal_id,
+                    role="memory_consolidation",
+                    dispatch_message=(
+                        "Run one RemSleep memory-consolidation pass. "
+                        "Switch to `memory_consolidation`. Consume the "
+                        "following memory_signal by reading any cited "
+                        "evidence, comparing it with canonicals, and then "
+                        "either writing additive non-episodic memory, "
+                        "staging an ambiguous/high-impact candidate, or "
+                        "recording why no canonical change is warranted. "
+                        "Only after the signal has been handled should you "
+                        "mark it handled and record the checkpoint if the "
+                        "review range is complete. Stop after this signal.\n\n"
+                        f"memory_signal:\n{json.dumps(signal, sort_keys=True)}"
+                    ),
+                    metadata={"memory_signal_id": signal_id},
+                )
                 t0 = _time.monotonic()
-                try:
-                    await adapter.dispatch(
-                        WorkItem(
-                            primary_id=signal_id,
-                            role="memory_consolidation",
-                            dispatch_message=(
-                                "Run one RemSleep memory-consolidation pass. "
-                                "Switch to `memory_consolidation`. Consume the "
-                                "following memory_signal by reading any cited "
-                                "evidence, comparing it with canonicals, and then "
-                                "either writing additive non-episodic memory, "
-                                "staging an ambiguous/high-impact candidate, or "
-                                "recording why no canonical change is warranted. "
-                                "Only after the signal has been handled should you "
-                                "mark it handled and record the checkpoint if the "
-                                "review range is complete. Stop after this signal.\n\n"
-                                f"memory_signal:\n{json.dumps(signal, sort_keys=True)}"
-                            ),
+                with autonomic_dispatch_span(
+                    role=adapter.config.role,
+                    bundle_id=adapter.config.bundle_id,
+                    primary_id=work.primary_id,
+                    worker_id="memory-consolidation-signal",
+                    metadata=work.metadata,
+                ) as span:
+                    try:
+                        await adapter.dispatch(work)
+                        consumer_id = _resolve_consumer_id(
+                            store, adapter.config.bundle_id, dispatch_started
                         )
-                    )
-                    consumer_id = _resolve_consumer_id(
-                        store, adapter.config.bundle_id, dispatch_started
-                    )
-                    if consumer_id:
-                        try:
-                            _record_usage_and_close_consumer(
-                                store,
-                                adapter,
-                                consumer_id,
-                                dispatch_ms=int((_time.monotonic() - t0) * 1000),
+                        dispatch_ms = int((_time.monotonic() - t0) * 1000)
+                        if consumer_id:
+                            try:
+                                _record_usage_and_close_consumer(
+                                    store,
+                                    adapter,
+                                    consumer_id,
+                                    dispatch_ms=dispatch_ms,
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "[memory_consolidation] usage/finalize failed for %s",
+                                    consumer_id,
+                                )
+                            annotate_dispatch_result(
+                                span,
+                                status="ok",
+                                consumer_id=consumer_id,
+                                usage=getattr(adapter, "last_usage", None),
+                                dispatch_ms=dispatch_ms,
                             )
-                        except Exception:
-                            logger.exception(
-                                "[memory_consolidation] usage/finalize failed for %s",
-                                consumer_id,
+                        else:
+                            annotate_dispatch_result(
+                                span,
+                                status="no_consumer",
+                                usage=getattr(adapter, "last_usage", None),
+                                dispatch_ms=dispatch_ms,
+                                error="no consumer id resolved",
                             )
-                except Exception:
-                    logger.exception(
-                        "[memory_consolidation] signal dispatch failed for %s",
-                        signal_id,
-                    )
+                    except Exception as exc:
+                        annotate_dispatch_result(span, status="error", error=str(exc))
+                        logger.exception(
+                            "[memory_consolidation] signal dispatch failed for %s",
+                            signal_id,
+                        )
                 continue
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=poll_seconds)

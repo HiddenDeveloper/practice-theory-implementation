@@ -13,10 +13,12 @@ from pathlib import Path
 from practice_theory_implementation.autonomic_adapters import (
     AdapterConfig,
     AutonomicAdapter,
+    CodexExecAdapter,
     RolePolicy,
     WorkItem,
     _parse_claude_cli_result,
     _parse_codex_exec_usage,
+    _read_codex_config_model,
     _usage_from_sdk_result,
     drain,
 )
@@ -177,6 +179,40 @@ def test_parse_codex_exec_usage_tolerates_garbage() -> None:
         None,
         None,
     )
+
+
+def test_read_codex_config_model_uses_codex_home(tmp_path: Path, monkeypatch) -> None:
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        'model = "gpt-5.5"\nmodel_reasoning_effort = "medium"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    assert _read_codex_config_model() == "gpt-5.5"
+
+
+def test_codex_adapter_records_config_model_when_no_explicit_model(
+    tmp_path: Path, monkeypatch
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text('model = "gpt-5.5"\n', encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    adapter = CodexExecAdapter(
+        AdapterConfig(role="judge", bundle_id="judge", brief="brief"),
+        cwd=tmp_path,
+    )
+    assert adapter._model == "gpt-5.5"
+
+    explicit = CodexExecAdapter(
+        AdapterConfig(role="judge", bundle_id="judge", brief="brief"),
+        cwd=tmp_path,
+        model="gpt-5.3-codex",
+    )
+    assert explicit._model == "gpt-5.3-codex"
 
 
 def test_usage_from_sdk_result_matches_live_shape() -> None:

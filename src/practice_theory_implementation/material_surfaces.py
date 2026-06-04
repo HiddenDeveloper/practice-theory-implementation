@@ -139,6 +139,33 @@ MATERIAL_SURFACES: dict[str, Material] = {
             input_schema={"type": "object", "properties": {}},
         ),
         Material(
+            name="read_system_observability",
+            description=(
+                "Read the local operational observability summary: OTEL export "
+                "configuration, queue/backlog timing, recent usage telemetry, "
+                "and latency/token aggregates from the trail."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+                },
+            },
+        ),
+        Material(
+            name="read_autonomic_maintenance_context",
+            description=(
+                "Read recent Smoother enactments with the Friction each addressed, "
+                "their purpose, visible closure basis, and any substrate ids they changed."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+                },
+            },
+        ),
+        Material(
             name="read_non_episodic_memory",
             description=(
                 "Read durable non-episodic memory from Neo4j through the "

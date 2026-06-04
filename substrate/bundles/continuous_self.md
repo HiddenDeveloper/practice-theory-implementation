@@ -9,6 +9,7 @@ understanding_ids:
 - und_engagement_substrate
 - und_engagement_landing_nodes
 - und_memory_stores
+- und_operational_situatedness
 rules_ids:
 - rule_dont_displace
 - rule_offer_not_instruct
@@ -16,11 +17,14 @@ rules_ids:
 - rule_episodic_memory_read_only
 - rule_engagement_bundle_changes_via_pm
 - rule_engagement_recent_recall_not_alone
+- rule_observability_reads_do_not_operate
 affordance_ids:
 - about_the_user
 - about_user_profile
 - about_self
 - about_shared_context
+- read_system_observability
+- read_autonomic_maintenance_context
 - read_non_episodic_memory
 - write_non_episodic_memory
 - ensure_self_rooted_spine

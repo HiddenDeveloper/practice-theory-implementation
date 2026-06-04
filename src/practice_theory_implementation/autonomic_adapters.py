@@ -25,8 +25,10 @@ stand-in (`ScriptedAdapter`) used by the verify:
 - `CodexExecAdapter` — invokes `codex exec` as a subprocess per work item.
   Stateless across dispatches. The autonomic MCP server is injected inline
   via `codex exec -c mcp_servers.…`, so the adapter does not depend on the
-  user's `~/.codex/config.toml` or a `.mcp.json` in cwd. Requires the Codex
-  CLI binary; configurable via `PRACTICE_CODEX_BIN`.
+  user's `~/.codex/config.toml` or a `.mcp.json` in cwd for MCP wiring. It
+  may read the Codex config's default model for telemetry when no explicit
+  model is passed. Requires the Codex CLI binary; configurable via
+  `PRACTICE_CODEX_BIN`.
 
 The brief (system prompt) for each role is composed from the role's bundle
 content — teleo-affective + understanding + rules — by `compose_brief`.
@@ -48,6 +50,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from practice_theory_implementation.observability import (
+    annotate_dispatch_result,
+    autonomic_dispatch_span,
+)
 from practice_theory_implementation.projection import compose_composition, project
 from practice_theory_implementation.trail import EnactmentStore, UsageRecord
 from practice_theory_implementation.types import Bundle, Substrate
@@ -612,6 +618,18 @@ CODEX_BIN_ENV = "PRACTICE_CODEX_BIN"
 DEFAULT_CODEX_BIN = "codex"
 
 
+def _read_codex_config_model() -> str | None:
+    """Return Codex CLI's configured default model, if it is locally readable."""
+    home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+    config_path = home / "config.toml"
+    try:
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    value = config.get("model")
+    return value if isinstance(value, str) and value else None
+
+
 def _parse_codex_exec_usage(
     stdout: str, *, model: str | None
 ) -> tuple[UsageRecord | None, str | None]:
@@ -620,9 +638,10 @@ def _parse_codex_exec_usage(
     Confirmed against live `codex exec --json` (codex-cli 0.136.0): usage rides
     the `turn.completed` event as {input_tokens, cached_input_tokens,
     output_tokens, reasoning_output_tokens}; the agent text is the last
-    `item.completed` agent_message. Codex reports no cost and no creation/read
-    cache split, so cost_usd and cache_creation_tokens stay null. Best-effort:
-    returns (None, None) if no usage event is present, never raises.
+    `item.completed` agent_message. The JSONL stream does not expose the model
+    or cost. Codex reports no creation/read cache split, so cost_usd and
+    cache_creation_tokens stay null. Best-effort: returns (None, None) if no
+    usage event is present, never raises.
     """
     import json as _json
 
@@ -690,7 +709,7 @@ class CodexExecAdapter(AutonomicAdapter):
         super().__init__(config)
         self._cwd = cwd or Path.cwd()
         self._codex_bin = os.environ.get(CODEX_BIN_ENV, DEFAULT_CODEX_BIN)
-        self._model = model
+        self._model = model or _read_codex_config_model()
         self._reasoning_effort = reasoning_effort
 
     async def open(self) -> None:
@@ -891,21 +910,46 @@ async def drain(
             if work is None:
                 break
             _t0 = _time.monotonic()
-            try:
-                consumer_id = await adapter.dispatch(work)
-            except Exception:
-                logger.exception(
-                    "[%s] dispatch failed for %s", adapter.config.role, work.primary_id
-                )
-                continue
-            if consumer_id:
-                policy.mark_consumed(store, work.primary_id, consumer_id)
-                with contextlib.suppress(Exception):
-                    _record_usage_and_close_consumer(
-                        store,
-                        adapter,
-                        consumer_id,
-                        dispatch_ms=int((_time.monotonic() - _t0) * 1000),
+            with autonomic_dispatch_span(
+                role=adapter.config.role,
+                bundle_id=adapter.config.bundle_id,
+                primary_id=work.primary_id,
+                worker_id=worker_id,
+                metadata=work.metadata,
+            ) as span:
+                try:
+                    consumer_id = await adapter.dispatch(work)
+                except Exception as exc:
+                    annotate_dispatch_result(span, status="error", error=str(exc))
+                    logger.exception(
+                        "[%s] dispatch failed for %s",
+                        adapter.config.role,
+                        work.primary_id,
+                    )
+                    continue
+                dispatch_ms = int((_time.monotonic() - _t0) * 1000)
+                if consumer_id:
+                    policy.mark_consumed(store, work.primary_id, consumer_id)
+                    with contextlib.suppress(Exception):
+                        _record_usage_and_close_consumer(
+                            store,
+                            adapter,
+                            consumer_id,
+                            dispatch_ms=dispatch_ms,
+                        )
+                    annotate_dispatch_result(
+                        span,
+                        status="ok",
+                        consumer_id=consumer_id,
+                        usage=getattr(adapter, "last_usage", None),
+                        dispatch_ms=dispatch_ms,
+                    )
+                else:
+                    annotate_dispatch_result(
+                        span,
+                        status="no_consumer",
+                        usage=getattr(adapter, "last_usage", None),
+                        dispatch_ms=dispatch_ms,
                     )
             processed += 1
     finally:
@@ -979,40 +1023,65 @@ async def run_role_loop(
             logger.info("[%s] dispatching %s", adapter.config.role, work.primary_id)
             dispatch_started = _datetime.now(_UTC).isoformat(timespec="microseconds")
             _t0 = _time.monotonic()
-            try:
-                consumer_id = await adapter.dispatch(work)
-            except Exception:
-                logger.exception(
-                    "[%s] dispatch failed for %s", adapter.config.role, work.primary_id
-                )
-                continue
-            if consumer_id is None and on_consume is not None:
-                consumer_id = on_consume(work.primary_id)
-            if consumer_id is None:
-                consumer_id = _resolve_consumer_id(
-                    store, adapter.config.bundle_id, dispatch_started
-                )
-            if consumer_id:
-                policy.mark_consumed(store, work.primary_id, consumer_id)
-                # Telemetry is best-effort — a usage write must never break the loop.
+            with autonomic_dispatch_span(
+                role=adapter.config.role,
+                bundle_id=adapter.config.bundle_id,
+                primary_id=work.primary_id,
+                worker_id=worker_id,
+                metadata=work.metadata,
+            ) as span:
                 try:
-                    _record_usage_and_close_consumer(
-                        store,
-                        adapter,
-                        consumer_id,
-                        dispatch_ms=int((_time.monotonic() - _t0) * 1000),
-                    )
-                except Exception:
+                    consumer_id = await adapter.dispatch(work)
+                except Exception as exc:
+                    annotate_dispatch_result(span, status="error", error=str(exc))
                     logger.exception(
-                        "[%s] usage/finalize failed for %s; continuing",
+                        "[%s] dispatch failed for %s",
                         adapter.config.role,
-                        consumer_id,
+                        work.primary_id,
                     )
-            else:
-                logger.warning(
-                    "[%s] no consumer id for %s; left for next claim",
-                    adapter.config.role,
-                    work.primary_id,
-                )
+                    continue
+                if consumer_id is None and on_consume is not None:
+                    consumer_id = on_consume(work.primary_id)
+                if consumer_id is None:
+                    consumer_id = _resolve_consumer_id(
+                        store, adapter.config.bundle_id, dispatch_started
+                    )
+                dispatch_ms = int((_time.monotonic() - _t0) * 1000)
+                if consumer_id:
+                    policy.mark_consumed(store, work.primary_id, consumer_id)
+                    # Telemetry is best-effort — a usage write must never break the loop.
+                    try:
+                        _record_usage_and_close_consumer(
+                            store,
+                            adapter,
+                            consumer_id,
+                            dispatch_ms=dispatch_ms,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[%s] usage/finalize failed for %s; continuing",
+                            adapter.config.role,
+                            consumer_id,
+                        )
+                    annotate_dispatch_result(
+                        span,
+                        status="ok",
+                        consumer_id=consumer_id,
+                        usage=getattr(adapter, "last_usage", None),
+                        dispatch_ms=dispatch_ms,
+                    )
+                else:
+                    annotate_dispatch_result(
+                        span,
+                        status="no_consumer",
+                        usage=getattr(adapter, "last_usage", None),
+                        dispatch_ms=dispatch_ms,
+                        error="no consumer id resolved",
+                    )
+                    logger.warning(
+                        "[%s] no consumer id for %s; left for next claim",
+                        adapter.config.role,
+                        work.primary_id,
+                    )
     finally:
         await adapter.close()

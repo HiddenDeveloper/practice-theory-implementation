@@ -24,6 +24,7 @@ from practice_theory_implementation.materials import (
     garmin_mock,
     google_mail,
     judge,
+    operational_observability,
     practice_management,
     reflection_mock,
     remsleep,
@@ -82,6 +83,10 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "write_non_episodic_memory": engagement_context.write_non_episodic_memory,
     "update_canonical_field": engagement_context.update_canonical_field,
     "ensure_self_rooted_spine": engagement_context.ensure_self_rooted_spine,
+    "read_system_observability": operational_observability.read_system_observability,
+    "read_autonomic_maintenance_context": (
+        operational_observability.read_autonomic_maintenance_context
+    ),
     "recall_relevant_episodes": episodic_memory.recall_relevant_episodes,
     "recall_recent_episodes": episodic_memory.recall_recent_episodes,
     "recall_contextual_episodes": episodic_memory.recall_contextual_episodes,
