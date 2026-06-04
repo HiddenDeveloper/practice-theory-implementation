@@ -4,4 +4,4 @@ name: Mark Friction addressed
 materials:
 - smoother_mark_addressed
 ---
-Mark a Friction observation as addressed by this Smoother enactment. For dispatched Smoother work, invoke this only after the same enactment has recorded a targeted read of that friction_id, so the readable trail exposes the Friction content and observation_data as the resolution basis; a truncated batch read is not enough.
+Mark a Friction observation as addressed by this Smoother enactment. For dispatched Smoother work, invoke this only after the same enactment has recorded a targeted read of that friction_id, so the readable trail exposes the Friction content and observation_data as the resolution basis; a truncated batch read is not enough. The mark must also carry a concise rationale: after a substrate amendment, name the persisted amended id or surface; when no mutation is made, name the explicit no-mutation, already-addressed, absent/no-longer-pending, failed-persistence, or blocker basis. Do not use this affordance for inspection-only closure with no visible judgement basis.

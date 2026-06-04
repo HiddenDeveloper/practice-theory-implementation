@@ -707,10 +707,17 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="smoother_mark_addressed",
-            description="Mark a Friction observation as addressed by this enactment.",
+            description=(
+                "Mark a Friction observation as addressed by this enactment. "
+                "When closing without a substrate mutation, pass rationale so "
+                "the accepted mark result carries the no-mutation basis."
+            ),
             input_schema={
                 "type": "object",
-                "properties": {"friction_id": {"type": "integer"}},
+                "properties": {
+                    "friction_id": {"type": "integer"},
+                    "rationale": {"type": "string"},
+                },
                 "required": ["friction_id"],
             },
         ),

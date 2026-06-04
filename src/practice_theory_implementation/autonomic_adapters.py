@@ -50,6 +50,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from practice_theory_implementation.harness_errors import (
+    CircuitBreaker,
+    ModelError,
+    classify_dispatch_error,
+    classify_exception,
+    observe_dispatch,
+)
 from practice_theory_implementation.observability import (
     annotate_dispatch_result,
     autonomic_dispatch_span,
@@ -211,6 +218,11 @@ class AutonomicAdapter(ABC):
         # consumer enactment is resolved, then recorded against it. None means
         # no usage was captured for the last dispatch (e.g. the scripted adapter).
         self.last_usage: UsageRecord | None = None
+        # Set by an LLM adapter when the last dispatch failed at the model level
+        # (quota, rate limit, auth, repeated error). None means the last dispatch
+        # did not surface a model error. The run-loop feeds this to the circuit
+        # breaker so a quota outage stops the loop instead of spinning.
+        self.last_error: ModelError | None = None
 
     @abstractmethod
     async def open(self) -> None:
@@ -383,8 +395,21 @@ class AnthropicSDKAdapter(AutonomicAdapter):
         if self._client is None:
             raise RuntimeError("AnthropicSDKAdapter.open() not called")
         self.last_usage = None
-        await self._client.query(work.dispatch_message)
-        await self._drain()
+        self.last_error = None
+        try:
+            await self._client.query(work.dispatch_message)
+            await self._drain()
+        except Exception as exc:
+            # Surface model-level failures (quota/rate/auth) to the breaker
+            # instead of letting them bubble as a generic dispatch exception.
+            self.last_error = classify_exception("anthropic", exc)
+            logger.warning(
+                "[%s] anthropic sdk failed (%s): %s",
+                self.config.role,
+                self.last_error.kind.value,
+                self.last_error.message,
+            )
+            return None
         # Consumer id discovered by the run-loop via the trail.
         return None
 
@@ -584,12 +609,16 @@ class ClaudeCliAdapter(AutonomicAdapter):
             )
 
         result = await asyncio.to_thread(_run)
-        if result.returncode != 0:
+        self.last_error = classify_dispatch_error(
+            "anthropic_cli", result.returncode, result.stdout, result.stderr
+        )
+        if self.last_error is not None:
+            self.last_usage = None
             logger.warning(
-                "[%s] claude -p exited %d: %s",
+                "[%s] claude -p failed (%s): %s",
                 self.config.role,
-                result.returncode,
-                result.stderr.strip()[:500],
+                self.last_error.kind.value,
+                self.last_error.message,
             )
         else:
             usage, text = _parse_claude_cli_result(result.stdout, model=self._model)
@@ -783,7 +812,20 @@ class CodexExecAdapter(AutonomicAdapter):
             )
 
         result = await asyncio.to_thread(_run)
-        if result.returncode != 0:
+        self.last_error = classify_dispatch_error(
+            "codex", result.returncode, result.stdout, result.stderr
+        )
+        if self.last_error is not None:
+            self.last_usage = None
+            # The real failure (e.g. usage limit) rides stdout JSONL, not stderr —
+            # log the classified message so the cause is visible in the keeper log.
+            logger.warning(
+                "[%s] codex exec failed (%s): %s",
+                self.config.role,
+                self.last_error.kind.value,
+                self.last_error.message,
+            )
+        elif result.returncode != 0:
             self.last_usage = None
             logger.warning(
                 "[%s] codex exec exited %d: %s",
@@ -1000,6 +1042,7 @@ async def run_role_loop(
     worker_id: str,
     idle_seconds: float = 5.0,
     on_consume: Callable[[object], str | None] | None = None,
+    breaker: CircuitBreaker | None = None,
 ) -> None:
     """Generic run-loop: poll inbox, dispatch, mark consumed, repeat.
 
@@ -1007,6 +1050,10 @@ async def run_role_loop(
     consumer enactment id when the adapter cannot. If unset, falls back to
     a trail query (`_resolve_consumer_id`) — the SDK adapters return None
     from dispatch, so the fallback is what marks their work consumed.
+
+    `breaker` (shared across roles) observes each dispatch's model outcome: a
+    quota/auth failure or a repeated model error halts the whole autonomic loop
+    deterministically (no LLM) instead of spinning failed dispatches.
     """
     import time as _time
     from datetime import UTC as _UTC
@@ -1083,5 +1130,13 @@ async def run_role_loop(
                         adapter.config.role,
                         work.primary_id,
                     )
+            # Deterministic circuit-breaker: a model-level failure (quota/auth/
+            # repeated error) halts the loop instead of spinning.
+            if observe_dispatch(
+                breaker,
+                getattr(adapter, "last_error", None),
+                on_stop_signal=stop.set,
+            ):
+                break
     finally:
         await adapter.close()

@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS smoother_inbox (
 CREATE INDEX IF NOT EXISTS smoother_inbox_pending
     ON smoother_inbox(consumed_at, claim_expires_at, routed_at);
 
+CREATE TABLE IF NOT EXISTS triage_log (
+    enactment_id  TEXT PRIMARY KEY,
+    outcome       TEXT NOT NULL,   -- 'clean' | 'friction' | 'ambiguous'
+    kind          TEXT,            -- friction kind / detector reason / NULL
+    decided_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS enactment_usage (
     enactment_id           TEXT PRIMARY KEY REFERENCES enactments(id),
     provider               TEXT,
@@ -566,6 +573,81 @@ class EnactmentStore:
                 "FROM friction_observations "
                 "WHERE ? IS NULL OR observed_at >= ?",
                 (_now(), since, since),
+            )
+            return max(0, cur.rowcount)
+
+    # --- deterministic triage (gate LLM dispatch on found work) -------------
+
+    def closed_enactments_pending_triage(
+        self, *, mode: str, since: str | None = None, limit: int = 200
+    ) -> list[EnactmentRow]:
+        """Closed enactments of `mode` not yet triaged and not already queued.
+
+        The candidate set for deterministic triage: mirrors the routing filters
+        (closed, has steps, optional `since` watermark) but excludes anything
+        already decided in `triage_log` or already sitting in `judge_inbox`, so
+        triage is idempotent and never re-grinds a decided enactment.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT id, practice_id, parent_enactment_id, opened_at, closed_at "
+                "FROM enactments e "
+                "WHERE closed_at IS NOT NULL AND mode = ? "
+                "AND EXISTS (SELECT 1 FROM steps WHERE steps.enactment_id = e.id) "
+                "AND (? IS NULL OR closed_at >= ?) "
+                "AND id NOT IN (SELECT enactment_id FROM triage_log) "
+                "AND id NOT IN (SELECT enactment_id FROM judge_inbox) "
+                "ORDER BY closed_at LIMIT ?",
+                (mode, since, since, limit),
+            )
+            return [EnactmentRow(**dict(r)) for r in cur.fetchall()]
+
+    def record_triage(
+        self, enactment_id: str, *, outcome: str, kind: str | None = None
+    ) -> None:
+        """Record a deterministic triage decision. Idempotent on enactment_id.
+
+        `outcome` is 'clean' (deterministic no-finding — no LLM), 'friction'
+        (a Friction was emitted deterministically), or 'ambiguous' (routed to
+        the Judge LLM). This row is also what keeps triage from re-deciding the
+        same enactment.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO triage_log(enactment_id, outcome, kind, decided_at) "
+                "VALUES (?, ?, ?, ?)",
+                (enactment_id, outcome, kind, _now()),
+            )
+
+    def enqueue_judge_inbox(
+        self, *, enactment_id: str, bundle_id: str, closed_at: str
+    ) -> int:
+        """Insert one enactment into judge_inbox (the ambiguous → LLM path).
+
+        Idempotent on enactment_id. Used by triage after a deterministic check
+        finds the enactment needs intelligent judgement; the bulk
+        `route_*_to_judge_inbox` paths are retained for the legacy/test routes.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO judge_inbox("
+                "enactment_id, bundle_id, closed_at, routed_at) VALUES (?, ?, ?, ?)",
+                (enactment_id, bundle_id, closed_at, _now()),
+            )
+            return max(0, cur.rowcount)
+
+    def clear_judge_inbox(self, *, reason: str) -> int:
+        """Mark every pending judge_inbox row consumed with a sentinel.
+
+        For operator maintenance — e.g. clearing a backlog that accumulated
+        while dispatch was failing. Auditable (the sentinel lands in
+        consumed_by_enactment_id) and reprocessing-safe. Returns rows cleared.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "UPDATE judge_inbox SET consumed_at = ?, consumed_by_enactment_id = ? "
+                "WHERE consumed_at IS NULL",
+                (_now(), reason),
             )
             return max(0, cur.rowcount)
 

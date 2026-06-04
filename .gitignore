@@ -11,5 +11,10 @@ data/
 
 # macOS / editor / harness scratch
 .DS_Store
-.codex/
+.codex/*
+!.codex/hooks.json
+!.codex/hooks/
+!.codex/hooks/**
+# but never the compiled cache under the whitelisted hooks dir
+.codex/hooks/**/__pycache__/
 social-media

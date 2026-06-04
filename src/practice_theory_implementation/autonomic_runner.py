@@ -58,6 +58,10 @@ from practice_theory_implementation.autonomic_adapters import (
 )
 from practice_theory_implementation.autonomic_dispatcher import dispatcher_task
 from practice_theory_implementation.bundles import BUNDLES
+from practice_theory_implementation.harness_errors import (
+    CircuitBreaker,
+    observe_dispatch,
+)
 from practice_theory_implementation.observability import (
     annotate_dispatch_result,
     autonomic_dispatch_span,
@@ -72,9 +76,15 @@ REMSLEEP_ENABLED_ENV = "PRACTICE_REMSLEEP_ENABLED"
 REMSLEEP_ONLY_ENV = "PRACTICE_REMSLEEP_ONLY"
 REMSLEEP_INTERVAL_ENV = "PRACTICE_REMSLEEP_INTERVAL_SECONDS"
 REMSLEEP_SIGNAL_POLL_ENV = "PRACTICE_REMSLEEP_SIGNAL_POLL_SECONDS"
+REMSLEEP_STARTUP_DELAY_ENV = "PRACTICE_REMSLEEP_STARTUP_DELAY_SECONDS"
+REMSLEEP_MAX_BACKLOG_ENV = "PRACTICE_REMSLEEP_MAX_AUTONOMIC_BACKLOG"
+REMSLEEP_BACKLOG_RETRY_ENV = "PRACTICE_REMSLEEP_BACKLOG_RETRY_SECONDS"
 REFLECTIVE_INTERVAL_ENV = "PRACTICE_REFLECTIVE_INTERVAL_SECONDS"
 DEFAULT_REMSLEEP_INTERVAL_SECONDS = 6 * 60 * 60
 DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS = 60
+DEFAULT_REMSLEEP_STARTUP_DELAY_SECONDS = 5 * 60
+DEFAULT_REMSLEEP_MAX_AUTONOMIC_BACKLOG = 10
+DEFAULT_REMSLEEP_BACKLOG_RETRY_SECONDS = 5 * 60
 # The reflective loop runs on its own (slow) timescale, distinct from the
 # reactive dispatcher's seconds-scale poll. Hourly by default — see
 # trail.route_autonomic_history_to_judge_inbox and the strange-loop essay.
@@ -165,6 +175,65 @@ def _remsleep_interval_seconds() -> float:
         return float(DEFAULT_REMSLEEP_INTERVAL_SECONDS)
 
 
+def _env_float(
+    name: str,
+    *,
+    default: float,
+    minimum: float = 0.0,
+) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except ValueError:
+        logger.warning("invalid %s=%r, falling back to %s", name, raw, default)
+        return default
+
+
+def _env_int(
+    name: str,
+    *,
+    default: int,
+    minimum: int | None = None,
+) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("invalid %s=%r, falling back to %s", name, raw, default)
+        return default
+    return max(minimum, value) if minimum is not None else value
+
+
+def _remsleep_startup_delay_seconds() -> float:
+    return _env_float(
+        REMSLEEP_STARTUP_DELAY_ENV,
+        default=float(DEFAULT_REMSLEEP_STARTUP_DELAY_SECONDS),
+    )
+
+
+def _remsleep_backlog_retry_seconds() -> float:
+    return _env_float(
+        REMSLEEP_BACKLOG_RETRY_ENV,
+        default=float(DEFAULT_REMSLEEP_BACKLOG_RETRY_SECONDS),
+        minimum=10.0,
+    )
+
+
+def _remsleep_max_autonomic_backlog() -> int:
+    return _env_int(
+        REMSLEEP_MAX_BACKLOG_ENV,
+        default=DEFAULT_REMSLEEP_MAX_AUTONOMIC_BACKLOG,
+    )
+
+
+def _autonomic_inbox_backlog(store: EnactmentStore) -> int:
+    return store.pending_judge_inbox_count() + store.pending_smoother_inbox_count()
+
+
 def _reflective_interval_seconds() -> float:
     raw = os.environ.get(REFLECTIVE_INTERVAL_ENV, "").strip()
     if not raw:
@@ -226,18 +295,22 @@ async def _run_reflective_judge_loop(
     while not stop.is_set():
         pass_start = datetime.now(UTC).isoformat(timespec="microseconds")
         try:
-            n = await asyncio.to_thread(
-                store.route_autonomic_history_to_judge_inbox, since
+            from practice_theory_implementation.judge_triage import triage_and_route
+
+            summary = await asyncio.to_thread(
+                triage_and_route, store, mode="autonomic", since=since
             )
             since = pass_start  # advance only on success; a failure retries the window
-            if n:
+            if summary.examined:
                 logger.info(
-                    "[reflective] routed autonomic history since watermark: "
-                    "+%d to judge_inbox",
-                    n,
+                    "[reflective] triaged autonomic history since watermark: "
+                    "judge_inbox +%d friction +%d clean %d",
+                    summary.ambiguous,
+                    summary.friction,
+                    summary.clean,
                 )
         except Exception:
-            logger.exception("[reflective] routing failed; continuing")
+            logger.exception("[reflective] triage failed; continuing")
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
 
@@ -248,6 +321,10 @@ async def _run_memory_recall_loop(
     *,
     stop: asyncio.Event,
     interval_seconds: float,
+    startup_delay_seconds: float = 0.0,
+    max_autonomic_backlog: int = -1,
+    backlog_retry_seconds: float = 300.0,
+    breaker: CircuitBreaker | None = None,
 ) -> None:
     """Run Memory Recall on a wall-clock schedule."""
     import time as _time
@@ -255,7 +332,25 @@ async def _run_memory_recall_loop(
 
     await adapter.open()
     try:
+        if startup_delay_seconds > 0:
+            logger.info(
+                "[memory_recall] startup delay %.1fs before first dispatch",
+                startup_delay_seconds,
+            )
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=startup_delay_seconds)
         while not stop.is_set():
+            if max_autonomic_backlog >= 0:
+                backlog = _autonomic_inbox_backlog(store)
+                if backlog > max_autonomic_backlog:
+                    logger.info(
+                        "[memory_recall] deferring: autonomic inbox backlog %d > %d",
+                        backlog,
+                        max_autonomic_backlog,
+                    )
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(stop.wait(), timeout=backlog_retry_seconds)
+                    continue
             logger.info("[memory_recall] scheduled RemSleep recall dispatch")
             dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
             work = WorkItem(
@@ -316,6 +411,10 @@ async def _run_memory_recall_loop(
                 except Exception as exc:
                     annotate_dispatch_result(span, status="error", error=str(exc))
                     logger.exception("[memory_recall] RemSleep dispatch failed")
+            if observe_dispatch(
+                breaker, getattr(adapter, "last_error", None), on_stop_signal=stop.set
+            ):
+                break
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
     finally:
@@ -328,6 +427,7 @@ async def _run_memory_consolidation_signal_loop(
     *,
     stop: asyncio.Event,
     poll_seconds: float,
+    breaker: CircuitBreaker | None = None,
 ) -> None:
     """Dispatch Memory Consolidation work when Memory Recall emits signals."""
     import json
@@ -415,6 +515,12 @@ async def _run_memory_consolidation_signal_loop(
                             "[memory_consolidation] signal dispatch failed for %s",
                             signal_id,
                         )
+                if observe_dispatch(
+                    breaker,
+                    getattr(adapter, "last_error", None),
+                    on_stop_signal=stop.set,
+                ):
+                    break
                 continue
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
@@ -447,6 +553,9 @@ async def main_async() -> None:
 
     store = EnactmentStore()
     stop = asyncio.Event()
+    # One breaker shared across every role + memory loop: a quota/auth failure
+    # or repeated model error seen by any worker halts the whole loop.
+    breaker = CircuitBreaker()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
@@ -501,6 +610,7 @@ async def main_async() -> None:
                     store,
                     stop=stop,
                     worker_id=f"{provider}-judge",
+                    breaker=breaker,
                 )
             )
             tasks.append(
@@ -510,6 +620,7 @@ async def main_async() -> None:
                     store,
                     stop=stop,
                     worker_id=f"{provider}-smoother",
+                    breaker=breaker,
                 )
             )
         if memory_recall is not None and memory_consolidation is not None:
@@ -519,6 +630,14 @@ async def main_async() -> None:
                     store,
                     stop=stop,
                     interval_seconds=remsleep_interval,
+                    startup_delay_seconds=(
+                        _remsleep_startup_delay_seconds() if run_inbox_roles else 0.0
+                    ),
+                    max_autonomic_backlog=(
+                        _remsleep_max_autonomic_backlog() if run_inbox_roles else -1
+                    ),
+                    backlog_retry_seconds=_remsleep_backlog_retry_seconds(),
+                    breaker=breaker,
                 )
             )
             tasks.append(
@@ -527,6 +646,7 @@ async def main_async() -> None:
                     store,
                     stop=stop,
                     poll_seconds=signal_poll,
+                    breaker=breaker,
                 )
             )
         await asyncio.gather(*tasks)

@@ -136,6 +136,30 @@ def autonomic_dispatch_span(
             raise
 
 
+def emit_autonomic_event(
+    *,
+    name: str,
+    notification: str,
+    attributes: Mapping[str, object | None] | None = None,
+) -> None:
+    """Emit a deterministic autonomic event as a short OTEL span.
+
+    Used for machine-decided occurrences that need no intelligent explanation —
+    a quota halt, a repeated-error halt, a triage-decision summary. The
+    `notification` is a fixed, templated human-readable string built from
+    structured fields (never model-authored), surfaced both as a span event and
+    the `practice.notification` attribute so a collector or alert can show it
+    verbatim. A no-op when OTEL export is not configured.
+    """
+    configure_otel()
+    tracer = trace.get_tracer(_TRACER_NAME)
+    attrs: dict[str, object | None] = {"practice.notification": notification}
+    if attributes:
+        attrs.update(attributes)
+    with tracer.start_as_current_span(name, attributes=_attrs(attrs)) as span:
+        span.add_event(notification, attributes=_attrs(attrs))
+
+
 def annotate_dispatch_result(
     span: Span,
     *,

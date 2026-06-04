@@ -71,17 +71,25 @@ async def dispatcher_task(
     # passing None routes events from previous server lifetimes too. Useful
     # when the autonomic server boots and inherits closed somatic enactments.
     _ = boot_cutoff
+    from practice_theory_implementation.judge_triage import triage_and_route
+
     while not stop_event.is_set():
         try:
-            j = await asyncio.to_thread(
-                store.route_closed_enactments_to_judge_inbox, None
+            # Somatic completions go through deterministic triage: only the
+            # ambiguous reach the Judge LLM; provable Friction is emitted here
+            # and clean work is recorded as a no-finding (no tokens).
+            summary = await asyncio.to_thread(
+                triage_and_route, store, mode="somatic", since=None
             )
-            s = await asyncio.to_thread(
-                store.route_friction_to_smoother_inbox, None
-            )
-            if j or s:
+            s = await asyncio.to_thread(store.route_friction_to_smoother_inbox, None)
+            if summary.ambiguous or summary.friction or s:
                 logger.info(
-                    "dispatcher routed: judge_inbox +%d, smoother_inbox +%d", j, s
+                    "dispatcher triaged[somatic]: judge_inbox +%d friction +%d "
+                    "clean %d, smoother_inbox +%d",
+                    summary.ambiguous,
+                    summary.friction,
+                    summary.clean,
+                    s,
                 )
         except Exception:
             logger.exception("dispatcher poll failed; continuing")

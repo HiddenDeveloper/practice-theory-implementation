@@ -14,6 +14,7 @@ rules_ids:
 - rule_substrate_no_id_collision
 - rule_substrate_amend_additively
 - rule_material_judgement_is_evaluable
+- rule_adapt_after_failed_invocation
 affordance_ids:
 - read_pending_friction
 - mark_friction_addressed

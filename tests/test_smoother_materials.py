@@ -52,3 +52,24 @@ def test_read_pending_friction_exact_id_omits_addressed_items(
     assert smoother.smoother_mark_addressed(friction_id)["addressed"] == friction_id
 
     assert smoother.smoother_read_pending_friction(friction_id=friction_id) == []
+
+
+def test_mark_addressed_accepts_optional_rationale(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    friction_id = store.record_friction(
+        observing_enactment_id="judge-1",
+        target_enactment_id="target-1",
+        kind="no_mutation_basis",
+        content="closure needs its basis on the accepted mark",
+    )
+    smoother.configure(trail=store, active_enactment_id_getter=lambda: "smoother-1")
+
+    result = smoother.smoother_mark_addressed(
+        friction_id, rationale="No substrate mutation was appropriate."
+    )
+
+    assert result == {
+        "addressed": friction_id,
+        "by_enactment_id": "smoother-1",
+        "rationale": "No substrate mutation was appropriate.",
+    }

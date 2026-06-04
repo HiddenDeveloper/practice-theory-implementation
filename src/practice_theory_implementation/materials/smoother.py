@@ -62,7 +62,9 @@ def smoother_read_pending_friction(
     return out
 
 
-def smoother_mark_addressed(friction_id: int) -> dict[str, Any]:
+def smoother_mark_addressed(
+    friction_id: int, rationale: str | None = None
+) -> dict[str, Any]:
     """Mark a Friction as addressed by the current Smoother enactment."""
     trail, get_active = _need()
     active_id = get_active()
@@ -71,4 +73,7 @@ def smoother_mark_addressed(friction_id: int) -> dict[str, Any]:
     ok = trail.mark_friction_addressed(friction_id, active_id)
     if not ok:
         return {"error": f"friction {friction_id!r} not found or already addressed"}
-    return {"addressed": friction_id, "by_enactment_id": active_id}
+    result: dict[str, Any] = {"addressed": friction_id, "by_enactment_id": active_id}
+    if rationale:
+        result["rationale"] = rationale
+    return result

@@ -12,6 +12,8 @@
 	keeper-up keeper-down keeper-restart keeper-logs keeper-status \
 	somatic-http-up somatic-http-down somatic-http-restart somatic-http-logs somatic-http-status \
 	autonomic-http-up autonomic-http-down autonomic-http-restart autonomic-http-logs autonomic-http-status \
+	autonomic-stop \
+	janitor-up janitor-down janitor-restart janitor-logs janitor-status \
 	all-up all-down all-restart all-status all-logs
 
 help:  ## Show this help
@@ -61,6 +63,24 @@ autonomic-http-logs:  ## Follow the autonomic HTTP server log
 	@pm2 logs apprenticeship-autonomic-http
 autonomic-http-status:  ## Show the autonomic HTTP server status
 	@pm2 describe apprenticeship-autonomic-http
+autonomic-stop:  ## Deterministic halt: stop the autonomic HTTP server AND the keeper
+	@$(MAKE) autonomic-http-down
+	@$(MAKE) keeper-down
+
+# ── Autonomic substrate janitor (quarantine snapshots) ──
+janitor-up:  ## Start the autonomic substrate janitor
+	@pm2 start ecosystem.config.js --only autonomic-substrate-janitor
+	@pm2 save
+janitor-down:  ## Stop + remove the autonomic substrate janitor
+	@pm2 delete autonomic-substrate-janitor 2>/dev/null || true
+	@pm2 save
+janitor-restart:  ## Restart (or start) the autonomic substrate janitor
+	@pm2 startOrRestart ecosystem.config.js --only autonomic-substrate-janitor --update-env
+	@pm2 save
+janitor-logs:  ## Follow the autonomic substrate janitor log
+	@pm2 logs autonomic-substrate-janitor
+janitor-status:  ## Show the autonomic substrate janitor status
+	@pm2 describe autonomic-substrate-janitor
 
 # ── All services ──
 all-up:  ## Start every service

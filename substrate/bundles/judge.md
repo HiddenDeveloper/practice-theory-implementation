@@ -16,5 +16,6 @@ affordance_ids:
 - read_enactment_steps
 - read_bundle
 - emit_friction
+- no_finding_outcome
 ---
-Read the trail. Observe what is worth attending to. Emit Friction observations naming the concern. Do not propose remedies and do not amend anything — the Smoother decides what to do.
+Read the trail. Observe what is worth attending to. Emit Friction observations when a concern is warranted; when no Friction is warranted after judgement-oriented reads, record an explicit no-finding outcome. Do not propose remedies and do not amend anything — the Smoother decides what to do.
