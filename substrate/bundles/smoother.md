@@ -24,6 +24,9 @@ affordance_ids:
 - amend_affordance
 - amend_material
 - amend_bundle
+- author_invariant
+- amend_invariant
+- tombstone_invariant
 - reload_seed_substrate
 ---
-Read pending Friction. Interpret it. Apply the smallest substrate amendment that addresses what the Friction names. Mark the Friction addressed. Reuses Practice Management's amendment affordances — autonomic counterpart, same machinery.
+Read pending Friction. Interpret it. Apply the smallest substrate amendment that addresses what the Friction names. Mark the Friction addressed. Reuses Practice Management's amendment affordances — autonomic counterpart, same machinery. When a Friction names a determinable contract the Judge keeps re-finding by hand, author a governed invariant so it is detected and resolved deterministically thereafter; amend or tombstone an invariant that proves too blunt.

@@ -109,6 +109,14 @@ CREATE TABLE IF NOT EXISTS triage_log (
     decided_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS invariant_firings (
+    invariant_id  TEXT NOT NULL,
+    enactment_id  TEXT NOT NULL,
+    friction_id   INTEGER NOT NULL,
+    fired_at      TEXT NOT NULL,
+    PRIMARY KEY (invariant_id, enactment_id)
+);
+
 CREATE TABLE IF NOT EXISTS enactment_usage (
     enactment_id           TEXT PRIMARY KEY REFERENCES enactments(id),
     provider               TEXT,
@@ -635,6 +643,28 @@ class EnactmentStore:
                 (enactment_id, bundle_id, closed_at, _now()),
             )
             return max(0, cur.rowcount)
+
+    def invariant_fired(self, invariant_id: str, enactment_id: str) -> bool:
+        """Whether this invariant has already fired on this enactment (idempotency)."""
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM invariant_firings "
+                "WHERE invariant_id = ? AND enactment_id = ?",
+                (invariant_id, enactment_id),
+            )
+            return cur.fetchone() is not None
+
+    def record_invariant_firing(
+        self, invariant_id: str, enactment_id: str, friction_id: int
+    ) -> None:
+        """Record that an invariant fired on an enactment. Idempotent; also the
+        read source for the scheduled audit pass."""
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO invariant_firings("
+                "invariant_id, enactment_id, friction_id, fired_at) VALUES (?, ?, ?, ?)",
+                (invariant_id, enactment_id, friction_id, _now()),
+            )
 
     def clear_judge_inbox(self, *, reason: str) -> int:
         """Mark every pending judge_inbox row consumed with a sentinel.

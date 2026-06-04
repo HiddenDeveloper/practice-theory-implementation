@@ -606,6 +606,67 @@ MATERIAL_SURFACES: dict[str, Material] = {
             },
         ),
         Material(
+            name="pm_create_invariant",
+            description=(
+                "Author a governed deterministic invariant: a determinable contract "
+                "over an enactment's steps that, when violated, raises and auto-resolves "
+                "its friction with no LLM. forbid_when is a declarative predicate "
+                "(any_earlier_step_result_contains / step_exists / arg_present / "
+                "arg_nonempty / all / any / not)."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "trigger": {"type": "string"},
+                    "friction_kind": {"type": "string"},
+                    "message": {"type": "string"},
+                    "forbid_when": {"type": "object"},
+                    "content": {"type": "string"},
+                    "mode": {"type": "string"},
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "trigger",
+                    "friction_kind",
+                    "message",
+                    "forbid_when",
+                    "content",
+                ],
+            },
+        ),
+        Material(
+            name="pm_amend_invariant",
+            description="Refine an existing invariant (predicate, message, trigger, kind, name).",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "trigger": {"type": "string"},
+                    "friction_kind": {"type": "string"},
+                    "message": {"type": "string"},
+                    "forbid_when": {"type": "object"},
+                    "content": {"type": "string"},
+                },
+                "required": ["id"],
+            },
+        ),
+        Material(
+            name="pm_tombstone_invariant",
+            description="Soft-retire an invariant: keep its file as history, stop the evaluator.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["id", "reason"],
+            },
+        ),
+        Material(
             name="pm_reload_seed_substrate",
             description=(
                 "Reload file-backed pools and bundles plus code-owned material "

@@ -19,6 +19,8 @@ catalog — wired by the server at startup via `configure(...)`.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +31,7 @@ from practice_theory_implementation.engagement_aliases import (
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
+    Invariant,
     Material,
     PoolElement,
     Substrate,
@@ -259,6 +262,100 @@ def pm_amend_element(
         return err
     pool_dict[id] = element
     return {"amended": {"pool": pool, "id": id}}
+
+
+# --- governed invariant author / amend / tombstone ------------------------
+
+
+def pm_create_invariant(
+    id: str,  # noqa: A002
+    name: str,
+    trigger: str,
+    friction_kind: str,
+    message: str,
+    forbid_when: Mapping[str, Any],
+    content: str,
+    mode: str = "detect",
+) -> dict[str, Any]:
+    """Author a new governed deterministic invariant (the Smoother's to keep)."""
+    from practice_theory_implementation.invariant_engine import validate_predicate
+
+    s, _ = _need_substrate()
+    if id in s.invariants:
+        return {"error": f"invariant {id!r} already exists"}
+    if mode != "detect":
+        return {"error": f"unsupported invariant mode {mode!r} (only 'detect')"}
+    if predicate_error := validate_predicate(forbid_when):
+        return {"error": f"invalid forbid_when predicate: {predicate_error}"}
+    invariant = Invariant(
+        id=id,
+        name=name,
+        trigger=trigger,
+        friction_kind=friction_kind,
+        message=message,
+        forbid_when=dict(forbid_when),
+        content=content,
+        status="active",
+        mode="detect",
+    )
+    if err := _persist(lambda: substrate_writer.write_invariant(invariant)):
+        return err
+    s.invariants[id] = invariant
+    return {"created": {"invariant": id, "trigger": trigger, "mode": mode}}
+
+
+def pm_amend_invariant(
+    id: str,  # noqa: A002
+    name: str | None = None,
+    trigger: str | None = None,
+    friction_kind: str | None = None,
+    message: str | None = None,
+    forbid_when: Mapping[str, Any] | None = None,
+    content: str | None = None,
+) -> dict[str, Any]:
+    """Refine an existing invariant (sharpen its predicate, reword, retarget)."""
+    from practice_theory_implementation.invariant_engine import validate_predicate
+
+    s, _ = _need_substrate()
+    if id not in s.invariants:
+        return {"error": f"invariant {id!r} not found"}
+    new_forbid = dict(forbid_when) if forbid_when is not None else None
+    if new_forbid is not None and (predicate_error := validate_predicate(new_forbid)):
+        return {"error": f"invalid forbid_when predicate: {predicate_error}"}
+    current = s.invariants[id]
+    invariant = replace(
+        current,
+        name=name if name is not None else current.name,
+        trigger=trigger if trigger is not None else current.trigger,
+        friction_kind=friction_kind if friction_kind is not None else current.friction_kind,
+        message=message if message is not None else current.message,
+        forbid_when=new_forbid if new_forbid is not None else current.forbid_when,
+        content=content if content is not None else current.content,
+    )
+    if err := _persist(lambda: substrate_writer.write_invariant(invariant)):
+        return err
+    s.invariants[id] = invariant
+    return {"amended": {"invariant": id}}
+
+
+def pm_tombstone_invariant(id: str, reason: str) -> dict[str, Any]:  # noqa: A002
+    """Soft-retire an invariant: keep the file (history), stop the evaluator."""
+    s, _ = _need_substrate()
+    if id not in s.invariants:
+        return {"error": f"invariant {id!r} not found"}
+    current = s.invariants[id]
+    if current.status == "tombstoned":
+        return {"error": f"invariant {id!r} is already tombstoned"}
+    invariant = replace(
+        current,
+        status="tombstoned",
+        tombstoned_at=datetime.now(UTC).isoformat(timespec="microseconds"),
+        tombstone_reason=reason,
+    )
+    if err := _persist(lambda: substrate_writer.write_invariant(invariant)):
+        return err
+    s.invariants[id] = invariant
+    return {"tombstoned": {"invariant": id, "reason": reason}}
 
 
 # --- affordance create / amend --------------------------------------------

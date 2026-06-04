@@ -36,6 +36,7 @@ from practice_theory_implementation.material_surfaces import MATERIAL_SURFACES
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
+    Invariant,
     Material,
     PoolElement,
     Substrate,
@@ -170,6 +171,52 @@ def _load_dynamic_materials(
     return result
 
 
+def _load_invariants(root: Path, errors: list[str]) -> dict[str, Invariant]:
+    """Load governed deterministic invariants from `invariants/*.md`.
+
+    Graceful: a malformed predicate or missing field is recorded in `errors` and
+    skipped, never raised. Tombstoned invariants are still loaded (their file is
+    kept); the evaluator filters them out by `status`.
+    """
+    from practice_theory_implementation.invariant_engine import validate_predicate
+
+    result: dict[str, Invariant] = {}
+    for stem, fm, body in _read_dir(root / "invariants", errors):
+        if fm.get("id") != stem:
+            errors.append(f"invariants/{stem}.md: frontmatter id {fm.get('id')!r} != filename")
+            continue
+        status = fm.get("status", "active")
+        if status not in ("active", "tombstoned"):
+            errors.append(f"invariants/{stem}.md: invalid status {status!r}")
+            continue
+        forbid_when = fm.get("forbid_when")
+        if not isinstance(forbid_when, dict):
+            errors.append(f"invariants/{stem}.md: missing/invalid forbid_when predicate")
+            continue
+        if predicate_error := validate_predicate(forbid_when):
+            errors.append(f"invariants/{stem}.md: {predicate_error}")
+            continue
+        trigger = fm.get("trigger")
+        friction_kind = fm.get("friction_kind")
+        if not isinstance(trigger, str) or not isinstance(friction_kind, str):
+            errors.append(f"invariants/{stem}.md: trigger and friction_kind must be strings")
+            continue
+        result[stem] = Invariant(
+            id=stem,
+            name=str(fm.get("name", stem)),
+            trigger=trigger,
+            friction_kind=friction_kind,
+            message=str(fm.get("message", "")),
+            forbid_when=forbid_when,
+            content=body,
+            status=status,  # type: ignore[arg-type]
+            mode=fm.get("mode", "detect"),  # type: ignore[arg-type]
+            tombstoned_at=fm.get("tombstoned_at"),
+            tombstone_reason=fm.get("tombstone_reason"),
+        )
+    return result
+
+
 def _load_bundles(root: Path, errors: list[str]) -> tuple[dict[str, Bundle], list[Bundle]]:
     catalog: dict[str, Bundle] = {}
     engagements: list[Bundle] = []
@@ -224,6 +271,7 @@ def load_substrate(
         rules=_load_pool(base, "rules", errors),
         affordances=_load_affordances(base, errors),
         materials={**code_surfaces, **dynamic_surfaces},
+        invariants=_load_invariants(base, errors),
     )
     catalog, engagements = _load_bundles(base, errors)
 

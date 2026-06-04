@@ -219,11 +219,20 @@ def triage_and_route(
     A detector/triage failure leaves the enactment un-decided for the next pass
     rather than committing a half-finished route.
     """
+    from practice_theory_implementation.invariant_engine import run_invariants
+
     candidates = store.closed_enactments_pending_triage(
         mode=mode, since=since, limit=limit
     )
     summary = TriageSummary(mode=mode, examined=len(candidates))
     for enactment in candidates:
+        # Deterministic governed invariants run first: any determinable contract
+        # violation is raised AND auto-resolved here, no LLM. Independent of the
+        # 3-way classification below.
+        try:
+            run_invariants(store, enactment)
+        except Exception:
+            logger.exception("invariant run failed for %s; continuing", enactment.id)
         try:
             result = triage_enactment(store, enactment)
         except Exception:

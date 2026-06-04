@@ -127,6 +127,9 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "pm_amend_material": practice_management.pm_amend_material,
     "pm_create_bundle": practice_management.pm_create_bundle,
     "pm_amend_bundle": practice_management.pm_amend_bundle,
+    "pm_create_invariant": practice_management.pm_create_invariant,
+    "pm_amend_invariant": practice_management.pm_amend_invariant,
+    "pm_tombstone_invariant": practice_management.pm_tombstone_invariant,
     "pm_reload_seed_substrate": practice_management.pm_reload_seed_substrate,
     "pm_check_documentation_impact": practice_management.pm_check_documentation_impact,
     # Judge — primitives

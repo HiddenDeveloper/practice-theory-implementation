@@ -13,6 +13,8 @@ from typing import Literal
 
 type JsonSchema = Mapping[str, object]
 type Mode = Literal["somatic", "autonomic"]
+type InvariantStatus = Literal["active", "tombstoned"]
+type InvariantMode = Literal["detect"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -80,13 +82,42 @@ class Bundle:
     mode: Mode = "somatic"
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Invariant:
+    """A governed deterministic guard the Smoother authors, amends, tombstones.
+
+    A determinable contract over an enactment's step history. The routing layer
+    evaluates `forbid_when` (a declarative predicate) against any closed
+    enactment that contains a step on the `trigger` material; if the predicate
+    is satisfied, the contract is violated and the friction `friction_kind` is
+    raised — and, because the violation is determinable, resolved — without any
+    LLM. Judgement only enters when the Smoother authors/refines the rule and
+    when the scheduled audit reviews how it has fired.
+
+    `status` is the substrate's first soft-retire concept: a tombstoned
+    invariant keeps its file (history) but is skipped by the evaluator.
+    """
+
+    id: str
+    name: str
+    trigger: str  # material_name whose presence in an enactment arms the check
+    friction_kind: str
+    message: str
+    forbid_when: Mapping[str, object]  # declarative predicate (see invariant_engine)
+    content: str  # body prose
+    status: InvariantStatus = "active"
+    mode: InvariantMode = "detect"
+    tombstoned_at: str | None = None
+    tombstone_reason: str | None = None
+
+
 @dataclass(slots=True)
 class Substrate:
-    """The five pools at the substrate level, shared across all bundles.
+    """The pools at the substrate level, shared across all bundles.
 
-    Mutable so runtime additions (dynamic materials, dynamic affordances) are
-    supported. Step 2 hand-populates the substrate at module load time; later
-    steps may amend it.
+    Mutable so runtime additions (dynamic materials, dynamic affordances,
+    invariants) are supported. Step 2 hand-populates the substrate at module
+    load time; later steps may amend it.
     """
 
     teleo_affective: dict[str, PoolElement] = field(default_factory=dict)
@@ -94,6 +125,7 @@ class Substrate:
     rules: dict[str, PoolElement] = field(default_factory=dict)
     affordances: dict[str, Affordance] = field(default_factory=dict)
     materials: dict[str, Material] = field(default_factory=dict)
+    invariants: dict[str, Invariant] = field(default_factory=dict)
 
 
 def validate_bundle(bundle: Bundle, substrate: Substrate) -> None:
