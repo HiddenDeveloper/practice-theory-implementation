@@ -767,6 +767,35 @@ MATERIAL_SURFACES: dict[str, Material] = {
             },
         ),
         Material(
+            name="smoother_read_friction_kinds",
+            description=(
+                "Return the current Friction-kind vocabulary with counts (most "
+                "common first). Consult before renaming so a provisional kind can "
+                "be condensed toward an existing kind instead of minting another."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "default": 200}},
+            },
+        ),
+        Material(
+            name="smoother_rename_friction",
+            description=(
+                "Condense a Friction's name: rename the Judge's provisional kind "
+                "toward the canonical vocabulary (optionally re-wording content). "
+                "Recorded as a step, so the old→new is preserved on the trail."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "friction_id": {"type": "integer"},
+                    "new_kind": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["friction_id", "new_kind"],
+            },
+        ),
+        Material(
             name="smoother_mark_addressed",
             description=(
                 "Mark a Friction observation as addressed by this enactment. "

@@ -62,6 +62,29 @@ def smoother_read_pending_friction(
     return out
 
 
+def smoother_read_friction_kinds(limit: int = 200) -> list[dict[str, Any]]:
+    """Return the current Friction-kind vocabulary with counts (most common
+    first), so a rename can condense toward an existing kind."""
+    trail, _ = _need()
+    return trail.friction_kinds(limit=limit)
+
+
+def smoother_rename_friction(
+    friction_id: int, new_kind: str, content: str | None = None
+) -> dict[str, Any]:
+    """Condense a Friction's name: rename the Judge's provisional kind toward the
+    canonical vocabulary (optionally re-wording its content). Recorded as a step,
+    so the old→new is preserved on the trail."""
+    trail, get_active = _need()
+    active_id = get_active()
+    if active_id is None:
+        return {"error": "no active enactment; Smoother must be enacted to rename"}
+    old_kind = trail.rename_friction(friction_id, new_kind, content=content)
+    if old_kind is None:
+        return {"error": f"friction {friction_id!r} not found"}
+    return {"renamed": friction_id, "from": old_kind, "to": new_kind}
+
+
 def smoother_mark_addressed(
     friction_id: int, rationale: str | None = None
 ) -> dict[str, Any]:

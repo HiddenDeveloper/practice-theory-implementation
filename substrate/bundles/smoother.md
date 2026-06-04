@@ -17,6 +17,8 @@ rules_ids:
 - rule_adapt_after_failed_invocation
 affordance_ids:
 - read_pending_friction
+- read_friction_kinds
+- rename_friction
 - mark_friction_addressed
 - read_pool
 - amend_pool_element

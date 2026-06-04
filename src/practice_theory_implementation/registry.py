@@ -141,6 +141,8 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     # in the Smoother bundle reuse PM materials registered above.
     "smoother_read_pending_friction": smoother.smoother_read_pending_friction,
     "smoother_mark_addressed": smoother.smoother_mark_addressed,
+    "smoother_read_friction_kinds": smoother.smoother_read_friction_kinds,
+    "smoother_rename_friction": smoother.smoother_rename_friction,
     # RemSleep / memory recall and consolidation.
     "remsleep_read_checkpoint": remsleep.remsleep_read_checkpoint,
     "remsleep_recall_unreviewed_episodes": remsleep.remsleep_recall_unreviewed_episodes,

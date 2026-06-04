@@ -485,6 +485,46 @@ class EnactmentStore:
             )
             return cur.rowcount > 0
 
+    def rename_friction(
+        self, friction_id: int, new_kind: str, *, content: str | None = None
+    ) -> str | None:
+        """Rename a Friction's kind (the Smoother condensing the Judge's
+        provisional name), optionally re-wording its content. Returns the old
+        kind, or None if the Friction does not exist. The rename is recorded as a
+        Smoother step by the invoke layer, so the old→new history lives on the
+        trail."""
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT kind FROM friction_observations WHERE id = ?", (friction_id,)
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            old_kind = str(row[0])
+            if content is not None:
+                cur.execute(
+                    "UPDATE friction_observations SET kind = ?, content = ? WHERE id = ?",
+                    (new_kind, content, friction_id),
+                )
+            else:
+                cur.execute(
+                    "UPDATE friction_observations SET kind = ? WHERE id = ?",
+                    (new_kind, friction_id),
+                )
+            return old_kind
+
+    def friction_kinds(self, *, limit: int = 200) -> list[dict[str, object]]:
+        """The current Friction-kind vocabulary with counts, most common first —
+        so the Smoother can condense a provisional name toward an existing kind
+        instead of minting yet another."""
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT kind, COUNT(*) AS n FROM friction_observations "
+                "GROUP BY kind ORDER BY n DESC, kind LIMIT ?",
+                (limit,),
+            )
+            return [{"kind": r["kind"], "count": int(r["n"])} for r in cur.fetchall()]
+
     # --- per-enactment usage telemetry --------------------------------------
 
     def record_usage(
