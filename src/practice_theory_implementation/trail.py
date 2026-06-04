@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS invariant_firings (
     enactment_id  TEXT NOT NULL,
     friction_id   INTEGER NOT NULL,
     fired_at      TEXT NOT NULL,
+    audited_at    TEXT,
+    audited_by_enactment_id TEXT,
     PRIMARY KEY (invariant_id, enactment_id)
 );
 
@@ -281,6 +283,15 @@ class EnactmentStore:
                 cur.execute(
                     "ALTER TABLE enactments "
                     "ADD COLUMN mode TEXT NOT NULL DEFAULT 'somatic'"
+                )
+            fcols = {
+                row["name"] for row in cur.execute("PRAGMA table_info(invariant_firings)")
+            }
+            if fcols and "audited_at" not in fcols:
+                cur.execute("ALTER TABLE invariant_firings ADD COLUMN audited_at TEXT")
+                cur.execute(
+                    "ALTER TABLE invariant_firings "
+                    "ADD COLUMN audited_by_enactment_id TEXT"
                 )
 
     def close(self) -> None:
@@ -664,6 +675,41 @@ class EnactmentStore:
                 "INSERT OR IGNORE INTO invariant_firings("
                 "invariant_id, enactment_id, friction_id, fired_at) VALUES (?, ?, ?, ?)",
                 (invariant_id, enactment_id, friction_id, _now()),
+            )
+
+    def unaudited_invariant_firings(self, *, limit: int = 20) -> list[dict[str, object]]:
+        """Firings not yet reviewed by the audit pass, joined to their friction.
+
+        The read source for the idle-triggered audit: each row carries the rule
+        id, the friction kind/content it raised, and the target enactment, so the
+        audit can judge whether the rule is still firing correctly.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT f.invariant_id, f.enactment_id, f.friction_id, f.fired_at, "
+                "fr.kind AS friction_kind, fr.content AS friction_content "
+                "FROM invariant_firings f "
+                "LEFT JOIN friction_observations fr ON fr.id = f.friction_id "
+                "WHERE f.audited_at IS NULL ORDER BY f.fired_at LIMIT ?",
+                (limit,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def unaudited_invariant_firing_count(self) -> int:
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM invariant_firings WHERE audited_at IS NULL"
+            )
+            return int(cur.fetchone()[0])
+
+    def mark_invariant_firing_audited(
+        self, invariant_id: str, enactment_id: str, *, audited_by_enactment_id: str
+    ) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                "UPDATE invariant_firings SET audited_at = ?, audited_by_enactment_id = ? "
+                "WHERE invariant_id = ? AND enactment_id = ?",
+                (_now(), audited_by_enactment_id, invariant_id, enactment_id),
             )
 
     def clear_judge_inbox(self, *, reason: str) -> int:

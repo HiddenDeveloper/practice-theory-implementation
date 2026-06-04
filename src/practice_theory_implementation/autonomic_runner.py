@@ -528,6 +528,151 @@ async def _run_memory_consolidation_signal_loop(
         await adapter.close()
 
 
+def _invariant_audit_poll_seconds() -> float:
+    return _env_float("PRACTICE_INVARIANT_AUDIT_POLL_SECONDS", default=30.0, minimum=5.0)
+
+
+def _invariant_audit_cooldown_seconds() -> float:
+    return _env_float(
+        "PRACTICE_INVARIANT_AUDIT_COOLDOWN_SECONDS", default=300.0, minimum=0.0
+    )
+
+
+def _invariant_audit_brief(firings: list[dict[str, object]]) -> str:
+    """Build the audit dispatch from a batch of unaudited firings + their rules."""
+    from practice_theory_implementation.substrate_loader import loaded
+
+    invariants = loaded().substrate.invariants
+    lines = []
+    for f in firings:
+        inv = invariants.get(str(f["invariant_id"]))
+        rule = (
+            f"forbid_when={inv.forbid_when!r}; status={inv.status}"
+            if inv is not None
+            else "(rule not found / tombstoned)"
+        )
+        lines.append(
+            f"- invariant `{f['invariant_id']}` fired on enactment "
+            f"`{f['enactment_id']}`, raising friction `{f['friction_kind']}` "
+            f"(id {f['friction_id']}). Rule: {rule}"
+        )
+    body = "\n".join(lines)
+    return (
+        "# Invariant audit\n\n"
+        "The loop is idle. Review whether these governed deterministic invariants "
+        "are still firing correctly. Each one already detected AND auto-resolved its "
+        "friction with no LLM; your task is oversight of the rules themselves, not of "
+        "the underlying enactments.\n\n"
+        "For each firing, judge whether the rule is sound, or whether it is a false "
+        "positive, stale, or too blunt. If a rule looks wrong, emit_friction naming "
+        "the invariant_id in observation_data with the reason, so the Smoother can "
+        "amend_invariant or tombstone_invariant it. If the rules are firing correctly, "
+        "record a no-finding. Do not re-judge the underlying enactments.\n\n"
+        f"Firings under review:\n{body}\n"
+    )
+
+
+async def _run_invariant_audit_loop(
+    adapter: AutonomicAdapter,
+    store: EnactmentStore,
+    *,
+    stop: asyncio.Event,
+    poll_seconds: float,
+    cooldown_seconds: float,
+    batch_limit: int = 20,
+    breaker: CircuitBreaker | None = None,
+) -> None:
+    """Idle-triggered audit of the governed invariants (judgement over the rules).
+
+    Runs only when both inboxes are empty (the loop has cleared its reactive
+    work) AND there are unaudited firings — so the audit never competes with
+    real-time Judge/Smoother dispatches, and there is always something to review.
+    A cooldown batches firings instead of auditing one at a time. The single LLM
+    in the determinable path, by design.
+    """
+    import time as _time
+    from datetime import UTC, datetime
+
+    await adapter.open()
+    last_audit = 0.0
+    try:
+        while not stop.is_set():
+            backlog = _autonomic_inbox_backlog(store)
+            cooling = (_time.monotonic() - last_audit) < cooldown_seconds
+            firings = (
+                store.unaudited_invariant_firings(limit=batch_limit)
+                if backlog == 0 and not cooling
+                else []
+            )
+            if not firings:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
+                continue
+            logger.info(
+                "[invariant_audit] idle (inboxes empty); reviewing %d firing(s)",
+                len(firings),
+            )
+            dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
+            work = WorkItem(
+                primary_id=dispatch_started,
+                role="invariant_audit",
+                dispatch_message=_invariant_audit_brief(firings),
+            )
+            t0 = _time.monotonic()
+            with autonomic_dispatch_span(
+                role=adapter.config.role,
+                bundle_id=adapter.config.bundle_id,
+                primary_id=work.primary_id,
+                worker_id="invariant-audit",
+                metadata={"firings": len(firings)},
+            ) as span:
+                try:
+                    await adapter.dispatch(work)
+                    consumer_id = _resolve_consumer_id(
+                        store, adapter.config.bundle_id, dispatch_started
+                    )
+                    dispatch_ms = int((_time.monotonic() - t0) * 1000)
+                    if consumer_id:
+                        # Only mark reviewed once a real audit enactment landed.
+                        for f in firings:
+                            store.mark_invariant_firing_audited(
+                                str(f["invariant_id"]),
+                                str(f["enactment_id"]),
+                                audited_by_enactment_id=consumer_id,
+                            )
+                        with contextlib.suppress(Exception):
+                            _record_usage_and_close_consumer(
+                                store, adapter, consumer_id, dispatch_ms=dispatch_ms
+                            )
+                        annotate_dispatch_result(
+                            span,
+                            status="ok",
+                            consumer_id=consumer_id,
+                            usage=getattr(adapter, "last_usage", None),
+                            dispatch_ms=dispatch_ms,
+                        )
+                    else:
+                        annotate_dispatch_result(
+                            span,
+                            status="no_consumer",
+                            usage=getattr(adapter, "last_usage", None),
+                            dispatch_ms=dispatch_ms,
+                            error="no consumer id resolved",
+                        )
+                except Exception as exc:
+                    annotate_dispatch_result(span, status="error", error=str(exc))
+                    logger.exception("[invariant_audit] dispatch failed")
+            last_audit = _time.monotonic()
+            if observe_dispatch(
+                breaker, getattr(adapter, "last_error", None), on_stop_signal=stop.set
+            ):
+                break
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
+    finally:
+        await adapter.close()
+
+
 async def _watch_sentinel(stop: asyncio.Event) -> None:
     while not stop.is_set():
         if await asyncio.to_thread(QUIT_SENTINEL.exists):
@@ -562,9 +707,13 @@ async def main_async() -> None:
 
     judge: AutonomicAdapter | None = None
     smoother: AutonomicAdapter | None = None
+    invariant_auditor: AutonomicAdapter | None = None
     if run_inbox_roles:
         judge = _build_adapter(provider, "judge")
         smoother = _build_adapter(provider, "smoother")
+        # The audit reviews the governed invariants — judgement over the rules.
+        # It reuses the Judge bundle but runs only when the loop is idle.
+        invariant_auditor = _build_adapter(provider, "judge")
 
     memory_recall: AutonomicAdapter | None = None
     memory_consolidation: AutonomicAdapter | None = None
@@ -623,6 +772,17 @@ async def main_async() -> None:
                     breaker=breaker,
                 )
             )
+            if invariant_auditor is not None:
+                tasks.append(
+                    _run_invariant_audit_loop(
+                        invariant_auditor,
+                        store,
+                        stop=stop,
+                        poll_seconds=_invariant_audit_poll_seconds(),
+                        cooldown_seconds=_invariant_audit_cooldown_seconds(),
+                        breaker=breaker,
+                    )
+                )
         if memory_recall is not None and memory_consolidation is not None:
             tasks.append(
                 _run_memory_recall_loop(
