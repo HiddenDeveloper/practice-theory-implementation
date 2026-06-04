@@ -4,4 +4,4 @@ name: Read a bundle's structure
 materials:
 - judge_read_bundle
 ---
-Return the bundle's full structure — its mode and the pool ids it selects across the five elements — so the enactment can be compared against what the bundle made available. Invoke this affordance with the reached material `judge_read_bundle`; names such as `catalog` are stale aliases and are not valid material names.
+Return a bundle's structure as data: its mode and the pool ids it selects. This exposes ids, not the prose of the selected rules, understanding, teleo-affective elements, affordances, or materials. When a Judge Friction quotes or depends on substrate text, this read is not by itself a visible text basis; pair the observation with a reachable prose read when available, or include the relied-on substrate id plus a short excerpt or exact phrase in observation_data.

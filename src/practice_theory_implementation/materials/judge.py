@@ -59,9 +59,7 @@ def judge_list_recent_enactments(
 ) -> list[dict[str, Any]]:
     """List recent enactments, most-recent first. Optionally filter by bundle id."""
     trail, _, _, _ = _need()
-    rows = trail.recent_enactments(limit=limit)
-    if bundle_id is not None:
-        rows = [r for r in rows if r.practice_id == bundle_id]
+    rows = trail.recent_enactments(limit=limit, practice_id=bundle_id)
     return [
         {
             "id": r.id,

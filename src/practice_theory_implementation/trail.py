@@ -340,13 +340,23 @@ class EnactmentStore:
             row_id = cur.lastrowid
         return row_id or 0
 
-    def recent_enactments(self, *, limit: int = 10) -> list[EnactmentRow]:
+    def recent_enactments(
+        self, *, limit: int = 10, practice_id: str | None = None
+    ) -> list[EnactmentRow]:
         with self._cursor() as cur:
-            cur.execute(
-                "SELECT id, practice_id, parent_enactment_id, opened_at, closed_at "
-                "FROM enactments ORDER BY opened_at DESC LIMIT ?",
-                (limit,),
-            )
+            if practice_id is None:
+                cur.execute(
+                    "SELECT id, practice_id, parent_enactment_id, opened_at, closed_at "
+                    "FROM enactments ORDER BY opened_at DESC LIMIT ?",
+                    (limit,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, practice_id, parent_enactment_id, opened_at, closed_at "
+                    "FROM enactments WHERE practice_id = ? "
+                    "ORDER BY opened_at DESC LIMIT ?",
+                    (practice_id, limit),
+                )
             return [EnactmentRow(**dict(r)) for r in cur.fetchall()]
 
     def steps_for(self, enactment_id: str) -> list[StepRow]:

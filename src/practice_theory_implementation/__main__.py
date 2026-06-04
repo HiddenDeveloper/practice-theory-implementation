@@ -639,7 +639,7 @@ async def _scripted_smoother_handler(work: WorkItem) -> str | None:
                 {
                     "affordance_id": "read_pending_friction",
                     "material_name": "smoother_read_pending_friction",
-                    "arguments": {},
+                    "arguments": {"friction_id": friction_id},
                 },
             )
             pending_raw = _content_to_value(r.content)

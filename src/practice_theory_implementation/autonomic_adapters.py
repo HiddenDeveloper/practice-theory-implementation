@@ -833,8 +833,11 @@ class RolePolicy:
                 dispatch_message=(
                     f"Address Friction `{row.friction_id}` (kind=`{row.kind}`, "
                     f"target enactment `{row.target_enactment_id}`). "
-                    f"Use read_pending_friction to find it and read the bundle it "
-                    f"names if you need context, then enact the Smoother practice: "
+                    f"Invoke read_pending_friction with friction_id="
+                    f"`{row.friction_id}` so the exact Friction content and "
+                    f"observation_data are visible before amending or marking "
+                    f"addressed. Read the bundle it names if you need context, "
+                    f"then enact the Smoother practice: "
                     f"apply the amendment with the appropriate amend_* affordance "
                     f"and mark_friction_addressed when done. Address only this one "
                     f"Friction in this turn, then stop."

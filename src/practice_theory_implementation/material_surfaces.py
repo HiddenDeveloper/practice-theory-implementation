@@ -607,13 +607,12 @@ MATERIAL_SURFACES: dict[str, Material] = {
             name="judge_list_recent_enactments",
             description=(
                 "Return a discovery window of recent enactments from the global trail, "
-                "ordered by opened_at most-recent-first. `limit` bounds that global "
-                "opened_at window before the optional `bundle_id` filter is applied; "
-                "dispatch/inbox recency is tracked by closed_at, so a known dispatched "
-                "enactment may still resolve through `read_enactment_steps` even if it "
-                "is absent from this listing. Treat that absence as a trail "
-                "discoverability/index signal, not as proof the enactment or its steps "
-                "do not exist."
+                "ordered by opened_at most-recent-first. When `bundle_id` is provided, "
+                "the bundle filter is applied before `limit`, so the result is the "
+                "recent window for that bundle rather than a global window narrowed "
+                "afterward. Dispatch/inbox recency is tracked by closed_at, so a known "
+                "dispatched enactment may still resolve through `read_enactment_steps` "
+                "even if it is outside this opened_at listing."
             ),
             input_schema={
                 "type": "object",
