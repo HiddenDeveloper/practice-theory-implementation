@@ -14,6 +14,7 @@
 	autonomic-http-up autonomic-http-down autonomic-http-restart autonomic-http-logs autonomic-http-status \
 	autonomic-stop \
 	janitor-up janitor-down janitor-restart janitor-logs janitor-status \
+	dashboard-up dashboard-down dashboard-restart dashboard-logs dashboard-status \
 	all-up all-down all-restart all-status all-logs
 
 help:  ## Show this help
@@ -82,6 +83,21 @@ janitor-logs:  ## Follow the autonomic substrate janitor log
 janitor-status:  ## Show the autonomic substrate janitor status
 	@pm2 describe autonomic-substrate-janitor
 
+# ── Status dashboard (:7182 self-refreshing HTML view) ──
+dashboard-up:  ## Start the status dashboard HTTP server (:7182)
+	@pm2 start ecosystem.config.js --only status-dashboard
+	@pm2 save
+dashboard-down:  ## Stop + remove the status dashboard
+	@pm2 delete status-dashboard 2>/dev/null || true
+	@pm2 save
+dashboard-restart:  ## Restart (or start) the status dashboard
+	@pm2 startOrRestart ecosystem.config.js --only status-dashboard --update-env
+	@pm2 save
+dashboard-logs:  ## Follow the status dashboard log
+	@pm2 logs status-dashboard
+dashboard-status:  ## Show the status dashboard status
+	@pm2 describe status-dashboard
+
 # ── All services ──
 all-up:  ## Start every service
 	@pm2 start ecosystem.config.js
@@ -96,6 +112,7 @@ all-status:  ## Show pm2 status + HTTP port health
 	@pm2 status
 	@printf "  somatic   :7180  "; lsof -iTCP:7180 -sTCP:LISTEN >/dev/null 2>&1 && echo "listening" || echo "down"
 	@printf "  autonomic :7181  "; lsof -iTCP:7181 -sTCP:LISTEN >/dev/null 2>&1 && echo "listening" || echo "down"
+	@printf "  dashboard :7182  "; lsof -iTCP:7182 -sTCP:LISTEN >/dev/null 2>&1 && echo "listening" || echo "down"
 all-logs:  ## Follow every service log
 	@pm2 logs
 

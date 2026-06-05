@@ -54,5 +54,16 @@ module.exports = {
       out_file: "./data/substrate_janitor.log",
       error_file: "./data/substrate_janitor.log",
     },
+    {
+      // Self-refreshing HTTP status dashboard (:7182): Judge/Smoother inbox
+      // counts, open enactments with age, unaddressed Frictions. Reads the
+      // trail read-only on each request. Same view as the
+      // render_status_dashboard affordance, served live.
+      ...common,
+      name: "status-dashboard",
+      script: "./scripts/status_dashboard_server.sh",
+      out_file: "./data/status_dashboard.log",
+      error_file: "./data/status_dashboard.log",
+    },
   ],
 };
