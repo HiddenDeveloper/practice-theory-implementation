@@ -48,6 +48,7 @@ def test_shell_implements_the_apps_handshake() -> None:
     shell = viz.render_viz_shell_html()
     for token in (
         "ui/initialize",
+        "appInfo",  # the host SDK validates appInfo (not clientInfo)
         "ui/notifications/initialized",
         "ui/notifications/tool-result",
         "tools/call",
@@ -55,6 +56,7 @@ def test_shell_implements_the_apps_handshake() -> None:
         "2025-06-18",
     ):
         assert token in shell, f"shell missing {token!r}"
+    assert "clientInfo" not in shell  # the spec doc's field name is wrong here
 
 
 def test_shell_resource_constants() -> None:

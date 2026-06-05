@@ -170,7 +170,7 @@ _SHELL_HTML = """<!doctype html>
 
   request("ui/initialize", {
     appCapabilities: {}, protocolVersion: PROTOCOL,
-    clientInfo: { name: "practice-viz-shell", version: "1.0.0" }
+    appInfo: { name: "practice-viz-shell", version: "1.0.0" }
   }).then(function () {
     notify("ui/notifications/initialized", {});
     var l = document.getElementById("loading");
