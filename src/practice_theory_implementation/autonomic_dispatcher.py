@@ -103,7 +103,23 @@ def route_now(store: EnactmentStore) -> tuple[int, int]:
 
     Bypasses the asyncio task and the boot-cutoff filter; routes everything
     in the source tables idempotently.
+
+    Exercises the *production* dispatch semantics, not the legacy bulk route:
+    closed enactments go through deterministic `triage_and_route` so clean work
+    is cleared as a no-finding (no Judge dispatch) and only the ambiguous reach
+    the judge_inbox. Both the reactive (somatic) and reflective (autonomic)
+    triage passes run — the somatic dispatcher and the autonomic runner each
+    drive one in production; the verify drives both in one process (its first
+    pass produces somatic completions, its strange-loop pass autonomic ones).
+    Friction (deterministic-triage or LLM-emitted) is then routed to the
+    Smoother inbox, mirroring the somatic dispatcher's friction route.
+
+    Returns (judge_inbox additions, smoother_inbox additions): judge additions
+    are the ambiguous enactments routed across both modes.
     """
-    j = store.route_closed_enactments_to_judge_inbox(since=None)
+    from practice_theory_implementation.judge_triage import triage_and_route
+
+    somatic = triage_and_route(store, mode="somatic", since=None)
+    autonomic = triage_and_route(store, mode="autonomic", since=None)
     s = store.route_friction_to_smoother_inbox(since=None)
-    return j, s
+    return somatic.ambiguous + autonomic.ambiguous, s
