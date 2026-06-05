@@ -53,6 +53,83 @@ def test_read_system_observability_reports_counts_timing_and_usage(
     assert result["trail"]["recent_usage"][0]["dispatch_ms"] == 1234
 
 
+def _record_recall(
+    store: EnactmentStore, *, step_ms: int, dispatch_ms: int
+) -> str:
+    eid = store.open_enactment("memory_recall", mode="autonomic")
+    store.record_step(
+        enactment_id=eid,
+        affordance_id="recall",
+        material_name="recall_contextual_episodes",
+        arguments={},
+        result={"ok": True},
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:01+00:00",
+        duration_ms=step_ms,
+    )
+    store.close_enactment(eid)
+    store.record_usage(
+        eid,
+        UsageRecord(
+            provider="codex",
+            model="gpt-5.5",
+            input_tokens=100,
+            output_tokens=5,
+            cache_read_tokens=50,
+            num_turns=1,
+        ),
+        dispatch_ms=dispatch_ms,
+    )
+    return eid
+
+
+def test_high_dispatch_latency_is_context_not_an_issue(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A 200s LLM dispatch with sub-second in-process work is normal Codex time,
+    # not a system fault: no issue is raised, and both metrics are reported.
+    store = _store(tmp_path, monkeypatch)
+    try:
+        _record_recall(store, step_ms=120, dispatch_ms=200_000)
+    finally:
+        store.close()
+
+    result = operational_observability.read_system_observability(limit=3)
+
+    issues = result["trail"]["issues"]
+    assert not any(
+        i["kind"] in ("high_average_dispatch_latency", "high_in_process_latency")
+        for i in issues
+    )
+    row = next(
+        r
+        for r in result["trail"]["usage_by_practice"]
+        if r["practice_id"] == "memory_recall"
+    )
+    assert row["avg_dispatch_ms"] == 200_000
+    assert row["avg_in_process_ms"] == 120
+    assert "latency_semantics" in result
+
+
+def test_high_in_process_latency_is_flagged(tmp_path: Path, monkeypatch) -> None:
+    # Genuinely slow work inside our own materials (degraded trail/Qdrant/Neo4j)
+    # is the controllable latency, and the only thing that crosses the threshold.
+    store = _store(tmp_path, monkeypatch)
+    try:
+        _record_recall(store, step_ms=15_000, dispatch_ms=16_000)
+    finally:
+        store.close()
+
+    result = operational_observability.read_system_observability(limit=3)
+
+    hits = [
+        i for i in result["trail"]["issues"] if i["kind"] == "high_in_process_latency"
+    ]
+    assert len(hits) == 1
+    assert hits[0]["practice_id"] == "memory_recall"
+    assert hits[0]["avg_in_process_ms"] == 15_000
+
+
 def test_read_autonomic_maintenance_context_reports_smoother_purpose(
     tmp_path: Path, monkeypatch
 ) -> None:

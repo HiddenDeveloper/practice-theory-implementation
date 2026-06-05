@@ -8,6 +8,15 @@ from typing import Any
 from practice_theory_implementation.observability import otel_status
 from practice_theory_implementation.trail import EnactmentStore
 
+# A practice's *in-process* latency is the time spent inside our own materials
+# (trail reads, Qdrant/Neo4j queries) — the only latency we control. The full
+# dispatch wall-clock (`dispatch_ms`) is dominated by the provider LLM running
+# the enactment: a single-turn Codex role routinely runs 60-130s of model time
+# while its in-process work totals well under a second. So health is gauged on
+# the in-process component; dispatch latency is reported for context only, never
+# raised as a system fault.
+IN_PROCESS_LATENCY_ALERT_MS = 10_000
+
 
 def _row_dict(row: Any) -> dict[str, Any]:
     return dict(row)
@@ -82,6 +91,12 @@ def read_system_observability(limit: int = 10) -> dict[str, Any]:
             )
             recent_usage = [_row_dict(row) for row in cur.fetchall()]
 
+            # avg_dispatch_ms is end-to-end LLM wall-clock; avg_in_process_ms is
+            # the time spent inside our own materials (SUM of step durations per
+            # enactment, averaged). The split lets a reader tell provider latency
+            # from latency we control. The subquery sums step durations per
+            # enactment first, so the per-practice average is over enactments,
+            # not over individual steps.
             cur.execute(
                 """
                 SELECT e.practice_id, COUNT(*) AS runs,
@@ -90,8 +105,15 @@ def read_system_observability(limit: int = 10) -> dict[str, Any]:
                        SUM(u.output_tokens) AS output_tokens,
                        SUM(u.cache_read_tokens) AS cache_read_tokens,
                        ROUND(AVG(u.dispatch_ms), 1) AS avg_dispatch_ms,
-                       MAX(u.dispatch_ms) AS max_dispatch_ms
-                FROM enactment_usage u JOIN enactments e ON e.id = u.enactment_id
+                       MAX(u.dispatch_ms) AS max_dispatch_ms,
+                       ROUND(AVG(st.in_process_ms), 1) AS avg_in_process_ms,
+                       MAX(st.in_process_ms) AS max_in_process_ms
+                FROM enactment_usage u
+                JOIN enactments e ON e.id = u.enactment_id
+                LEFT JOIN (
+                    SELECT enactment_id, SUM(duration_ms) AS in_process_ms
+                    FROM steps GROUP BY enactment_id
+                ) st ON st.enactment_id = u.enactment_id
                 GROUP BY e.practice_id
                 ORDER BY last_recorded DESC
                 """
@@ -111,16 +133,26 @@ def read_system_observability(limit: int = 10) -> dict[str, Any]:
                     "still_happening": True,
                 }
             )
+    # Health is gauged on in-process latency (what we control), not on dispatch
+    # wall-clock. A high dispatch_ms is almost always provider LLM time — a slow
+    # Codex role, not a system fault — so it is reported as context, never as an
+    # issue. Only genuinely slow in-process work (degraded trail/Qdrant/Neo4j)
+    # crosses the threshold.
     for row in usage_by_practice:
-        avg = row.get("avg_dispatch_ms")
-        if isinstance(avg, int | float) and avg > 120_000:
+        in_proc = row.get("avg_in_process_ms")
+        if isinstance(in_proc, int | float) and in_proc > IN_PROCESS_LATENCY_ALERT_MS:
             issues.append(
                 {
-                    "kind": "high_average_dispatch_latency",
+                    "kind": "high_in_process_latency",
                     "practice_id": row.get("practice_id"),
-                    "avg_dispatch_ms": avg,
+                    "avg_in_process_ms": in_proc,
+                    "avg_dispatch_ms": row.get("avg_dispatch_ms"),
                     "last_seen_at": row.get("last_recorded"),
                     "still_happening": True,
+                    "note": (
+                        "Latency inside our own materials (trail/Qdrant/Neo4j), "
+                        "not the provider LLM — the controllable component."
+                    ),
                 }
             )
 
@@ -133,6 +165,15 @@ def read_system_observability(limit: int = 10) -> dict[str, Any]:
             "recent_usage": recent_usage,
             "usage_by_practice": usage_by_practice,
         },
+        "latency_semantics": (
+            "avg_dispatch_ms is end-to-end LLM dispatch wall-clock — provider-"
+            "bound, dominated by model inference, and NOT a health signal on its "
+            "own (a slow Codex role routinely runs 60-130s per dispatch even at "
+            "one turn). avg_in_process_ms is the time spent inside our materials "
+            "(trail reads, Qdrant/Neo4j) — the controllable latency, and the only "
+            f"basis for the high_in_process_latency issue (threshold "
+            f"{IN_PROCESS_LATENCY_ALERT_MS} ms)."
+        ),
         "interpretation": (
             "OTEL carries operational spans when export is configured; the trail "
             "remains the durable evidence store for enactments, Friction, and usage."
