@@ -29,6 +29,7 @@ from practice_theory_implementation.materials import (
     reflection_mock,
     remsleep,
     smoother,
+    status_dashboard,
 )
 from practice_theory_implementation.types import Substrate
 
@@ -84,6 +85,7 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "update_canonical_field": engagement_context.update_canonical_field,
     "ensure_self_rooted_spine": engagement_context.ensure_self_rooted_spine,
     "read_system_observability": operational_observability.read_system_observability,
+    "render_status_dashboard": status_dashboard.render_status_dashboard,
     "read_autonomic_maintenance_context": (
         operational_observability.read_autonomic_maintenance_context
     ),

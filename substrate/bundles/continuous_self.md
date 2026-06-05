@@ -24,6 +24,7 @@ affordance_ids:
 - about_self
 - about_shared_context
 - read_system_observability
+- render_status_dashboard
 - read_autonomic_maintenance_context
 - read_non_episodic_memory
 - write_non_episodic_memory

@@ -153,6 +153,24 @@ MATERIAL_SURFACES: dict[str, Material] = {
             },
         ),
         Material(
+            name="render_status_dashboard",
+            description=(
+                "Render the autonomic-loop status (Judge inbox, Smoother inbox, "
+                "open enactments with age, unaddressed Frictions) to a self-"
+                "contained HTML file; return the path, live URL, and counts."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "refresh_seconds": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 600,
+                    }
+                },
+            },
+        ),
+        Material(
             name="read_autonomic_maintenance_context",
             description=(
                 "Read recent Smoother enactments with the Friction each addressed, "
