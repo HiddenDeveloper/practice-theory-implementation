@@ -717,6 +717,61 @@ class EnactmentStore:
                 (invariant_id, enactment_id, friction_id, _now()),
             )
 
+    def record_invariant_resolution(
+        self,
+        *,
+        invariant_id: str,
+        enactment_id: str,
+        observer_id: str,
+        kind: str,
+        content: str,
+        observation_data: object | None = None,
+    ) -> int:
+        """Atomically raise + auto-resolve + record one invariant firing.
+
+        A deterministic invariant detects *and* resolves in the same breath: it
+        records the Friction, marks it addressed, and records the firing. Those
+        three writes are committed as a single transaction here so a crash can
+        never leave a half-resolved firing — either all three land or none do.
+
+        This is what makes the per-(invariant, enactment) idempotency guarded by
+        `invariant_fired` actually hold under unattended, crash-prone running.
+        The firing row is the guard, but it is written last; without one
+        transaction, a crash after the Friction insert but before the firing
+        would re-fire on retry and duplicate the Friction — and a crash before
+        the addressed mark would leave that duplicate *unaddressed*, leaking it
+        to the Smoother, which is exactly the LLM spend the invariant exists to
+        avoid. Returns the new friction_id.
+        """
+        data_json = (
+            json.dumps(observation_data) if observation_data is not None else None
+        )
+        now = _now()
+        with self._cursor() as cur:
+            cur.execute("BEGIN IMMEDIATE")
+            try:
+                cur.execute(
+                    "INSERT INTO friction_observations("
+                    "observing_enactment_id, target_enactment_id, kind, content,"
+                    " observation_data_json, observed_at, addressed_at,"
+                    " addressed_by_enactment_id"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (observer_id, enactment_id, kind, content, data_json, now, now,
+                     observer_id),
+                )
+                friction_id = cur.lastrowid or 0
+                cur.execute(
+                    "INSERT OR IGNORE INTO invariant_firings("
+                    "invariant_id, enactment_id, friction_id, fired_at"
+                    ") VALUES (?, ?, ?, ?)",
+                    (invariant_id, enactment_id, friction_id, now),
+                )
+                cur.execute("COMMIT")
+            except Exception:
+                cur.execute("ROLLBACK")
+                raise
+        return friction_id
+
     def unaudited_invariant_firings(self, *, limit: int = 20) -> list[dict[str, object]]:
         """Firings not yet reviewed by the audit pass, joined to their friction.
 

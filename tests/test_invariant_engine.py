@@ -8,7 +8,10 @@ that cost a Judge dispatch (Friction 137 on enactment 9bc25487).
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from practice_theory_implementation import invariant_engine as ie
 from practice_theory_implementation.trail import EnactmentStore, StepRow
@@ -183,3 +186,61 @@ def test_tombstoned_rule_skipped(tmp_path: Path) -> None:
 
     dead = replace(RULE, status="tombstoned")
     assert ie.run_invariants(store, enactment, invariants=[dead]) == []
+
+
+# --- atomicity: friction + addressed + firing commit as one transaction ----
+
+
+class _FailOnFiringCursor:
+    """Passes every statement through to a real cursor except the
+    invariant_firings INSERT, which raises — a stand-in for a crash after the
+    Friction insert but before the firing is committed."""
+
+    def __init__(self, real: sqlite3.Cursor) -> None:
+        self._real = real
+
+    def execute(self, sql: str, *args: object, **kwargs: object) -> object:
+        if "invariant_firings" in sql:
+            raise sqlite3.OperationalError("simulated crash before firing commit")
+        return self._real.execute(sql, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._real, name)
+
+
+class _FailOnFiringConn:
+    def __init__(self, real: sqlite3.Connection) -> None:
+        self._real = real
+
+    def cursor(self) -> _FailOnFiringCursor:
+        return _FailOnFiringCursor(self._real.cursor())
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._real, name)
+
+
+def test_resolution_rolls_back_when_firing_write_fails(tmp_path: Path) -> None:
+    store = EnactmentStore(tmp_path / "trail.db")
+    eid = store.open_enactment("smoother", mode="autonomic")
+    store.close_enactment(eid)
+
+    real_conn = store._conn
+    store._conn = _FailOnFiringConn(real_conn)  # type: ignore[assignment]
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            store.record_invariant_resolution(
+                invariant_id=RULE.id,
+                enactment_id=eid,
+                observer_id=f"system:invariant:{RULE.id}",
+                kind=RULE.friction_kind,
+                content=RULE.message,
+            )
+    finally:
+        store._conn = real_conn  # restore so the read-side assertions work
+
+    # The Friction insert must have rolled back with the failed firing: no
+    # half-resolved state, so a retry re-fires cleanly instead of leaving a
+    # duplicate (and never an unaddressed Friction leaking to the Smoother).
+    assert store.all_friction() == []
+    assert store.invariant_fired(RULE.id, eid) is False
+    assert store.pending_smoother_inbox_count() == 0

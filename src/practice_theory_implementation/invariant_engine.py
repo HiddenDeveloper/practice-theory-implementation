@@ -202,9 +202,14 @@ def run_invariants(
         if not violated:
             continue
         observer = f"{INVARIANT_OBSERVER_PREFIX}{inv.id}"
-        friction_id = store.record_friction(
-            observing_enactment_id=observer,
-            target_enactment_id=enactment.id,
+        # Detect + auto-resolve + record the firing, atomically: the rule closes
+        # the Friction in the same breath it raises it, and a crash cannot leave
+        # that half-done (which would re-fire and duplicate on retry). See
+        # `record_invariant_resolution`.
+        friction_id = store.record_invariant_resolution(
+            invariant_id=inv.id,
+            enactment_id=enactment.id,
+            observer_id=observer,
             kind=inv.friction_kind,
             content=inv.message,
             observation_data={
@@ -214,9 +219,6 @@ def run_invariants(
                 "auto_resolved": True,
             },
         )
-        # Detect + auto-resolve: close it in the same breath, by the rule itself.
-        store.mark_friction_addressed(friction_id, observer)
-        store.record_invariant_firing(inv.id, enactment.id, friction_id)
         _emit_firing(inv.id, enactment.id, friction_id, inv.friction_kind)
         firings.append(Firing(inv.id, enactment.id, friction_id))
     return firings
