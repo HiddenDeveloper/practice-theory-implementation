@@ -30,4 +30,10 @@ export PRACTICE_AUTONOMIC_MCP_URL="${PRACTICE_AUTONOMIC_MCP_URL-http://127.0.0.1
 # Autonomous keeper applies for real — capture-only preview must be off.
 unset PRACTICE_REMSLEEP_PREVIEW || true
 
+# Emit autonomic OTEL spans (dispatch outcome + error_kind, invariant firings,
+# triage/quota events) to stdout, captured in data/remsleep_service.log. No
+# OTLP collector configured; the console exporter is the local read surface.
+# Spans are sparse (per dispatch / per scheduled triage), not per-poll.
+export PRACTICE_OTEL_CONSOLE="${PRACTICE_OTEL_CONSOLE:-1}"
+
 exec uv run python -m practice_theory_implementation.autonomic_runner
