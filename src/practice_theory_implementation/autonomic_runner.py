@@ -309,8 +309,19 @@ async def _run_reflective_judge_loop(
                     summary.friction,
                     summary.clean,
                 )
+            # Deterministic friction-lifecycle reconciliation: re-route Frictions
+            # a Smoother consumed but left unaddressed (up to a cap, then
+            # tombstone), so none is stranded between "dispatch ran" and
+            # "Friction addressed". No LLM.
+            from practice_theory_implementation.friction_reconcile import (
+                reconcile_smoother_frictions,
+            )
+
+            recon = await asyncio.to_thread(reconcile_smoother_frictions, store)
+            if recon.examined:
+                logger.info("[reflective] %s", recon.notification)
         except Exception:
-            logger.exception("[reflective] triage failed; continuing")
+            logger.exception("[reflective] triage/reconcile failed; continuing")
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
 

@@ -97,7 +97,8 @@ CREATE TABLE IF NOT EXISTS smoother_inbox (
     claimed_by                TEXT,
     claim_expires_at          TEXT,
     consumed_at               TEXT,
-    consumed_by_enactment_id  TEXT
+    consumed_by_enactment_id  TEXT,
+    attempts                  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS smoother_inbox_pending
     ON smoother_inbox(consumed_at, claim_expires_at, routed_at);
@@ -182,6 +183,7 @@ class SmootherInboxRow:
     claim_expires_at: str | None
     consumed_at: str | None
     consumed_by_enactment_id: str | None
+    attempts: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +294,17 @@ class EnactmentStore:
                 cur.execute(
                     "ALTER TABLE invariant_firings "
                     "ADD COLUMN audited_by_enactment_id TEXT"
+                )
+            scols = {
+                row["name"] for row in cur.execute("PRAGMA table_info(smoother_inbox)")
+            }
+            if scols and "attempts" not in scols:
+                # Re-route counter for friction lifecycle reconciliation: a
+                # consumed-but-unaddressed Friction is re-dispatched up to a cap,
+                # then tombstoned. See friction_reconcile.
+                cur.execute(
+                    "ALTER TABLE smoother_inbox "
+                    "ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
                 )
 
     def close(self) -> None:
@@ -923,6 +936,58 @@ class EnactmentStore:
                 "SELECT COUNT(*) FROM smoother_inbox WHERE consumed_at IS NULL"
             )
             return int(cur.fetchone()[0])
+
+    # --- friction lifecycle reconciliation ---------------------------------
+
+    def smoother_frictions_to_reconcile(
+        self, *, limit: int = 200
+    ) -> list[tuple[int, int]]:
+        """Frictions a Smoother consumed but left unaddressed, ready to retry.
+
+        A Smoother dispatch consumes its inbox row on *the dispatch having run*,
+        not on the Friction being addressed. So a pass that read the Friction and
+        then closed without amending, marking it addressed, or recording a decline
+        strands it: consumed (never re-claimed) yet unaddressed (never resolved).
+        This finds those — only where the consuming enactment has closed, so an
+        in-flight dispatch is never disturbed — for re-routing. Returns
+        (friction_id, attempts) ordered oldest-first.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT si.friction_id, si.attempts "
+                "FROM smoother_inbox si "
+                "JOIN friction_observations fo ON fo.id = si.friction_id "
+                "JOIN enactments ce ON ce.id = si.consumed_by_enactment_id "
+                "WHERE si.consumed_at IS NOT NULL "
+                "AND fo.addressed_at IS NULL "
+                "AND ce.closed_at IS NOT NULL "
+                "ORDER BY si.routed_at LIMIT ?",
+                (limit,),
+            )
+            return [(int(r["friction_id"]), int(r["attempts"])) for r in cur.fetchall()]
+
+    def reroute_smoother_friction(self, friction_id: int) -> int:
+        """Re-open a consumed smoother_inbox row for another dispatch.
+
+        Clears the consume + claim fields so `next_smoother_work` re-claims it,
+        bumps the attempt counter, and re-stamps `routed_at`. Returns the new
+        attempt count. Idempotent in effect — a row already pending is simply
+        re-stamped.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "UPDATE smoother_inbox SET consumed_at = NULL, "
+                "consumed_by_enactment_id = NULL, claimed_at = NULL, "
+                "claimed_by = NULL, claim_expires_at = NULL, "
+                "attempts = attempts + 1, routed_at = ? WHERE friction_id = ?",
+                (_now(), friction_id),
+            )
+            cur.execute(
+                "SELECT attempts FROM smoother_inbox WHERE friction_id = ?",
+                (friction_id,),
+            )
+            row = cur.fetchone()
+            return int(row["attempts"]) if row else 0
 
 
 @contextmanager
