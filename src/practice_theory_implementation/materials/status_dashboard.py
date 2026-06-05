@@ -19,10 +19,37 @@ from practice_theory_implementation.materials.operational_observability import (
 )
 from practice_theory_implementation.trail import EnactmentStore
 
-# An open enactment older than this is almost certainly stranded: no dispatch
-# runs anywhere near this long, so it reads as a leak, not live work.
-STALE_OPEN_ENACTMENT_SECONDS = 15 * 60
-WARN_OPEN_ENACTMENT_SECONDS = 5 * 60
+# Age thresholds for open-enactment severity, by mode — (warn, stale) seconds.
+# Autonomic enactments are single dispatches that should close in minutes, so a
+# few minutes open already reads as a leak. Somatic enactments are session-scoped
+# engagement enactments that stay open for the life of a connected session (an
+# Inspector or Claude Code session may legitimately run for hours), so they only
+# read as leaked once they far outlast any plausible session.
+_AGE_THRESHOLDS: dict[str, tuple[int, int]] = {
+    "autonomic": (5 * 60, 15 * 60),
+    "somatic": (4 * 3600, 12 * 3600),
+}
+_DEFAULT_THRESHOLDS = _AGE_THRESHOLDS["autonomic"]
+
+
+def _age_severity(age_seconds: float, mode: str) -> str:
+    warn_s, stale_s = _AGE_THRESHOLDS.get(mode, _DEFAULT_THRESHOLDS)
+    if age_seconds >= stale_s:
+        return "stale"
+    if age_seconds >= warn_s:
+        return "warn"
+    return "ok"
+
+
+def _worst_severity(rows: list[dict[str, Any]]) -> str:
+    """Card severity = the worst open-enactment row: green when all are healthy
+    (open but young), amber/red only when a row actually warns/leaks."""
+    severities = {r["severity"] for r in rows}
+    if "stale" in severities:
+        return "stale"
+    if "warn" in severities:
+        return "warn"
+    return "ok"
 
 
 def _humanize_age(seconds: float) -> str:
@@ -59,13 +86,7 @@ def gather_dashboard_status() -> dict[str, Any]:
             age = (now - datetime.fromisoformat(row["opened_at"])).total_seconds()
         except (ValueError, TypeError):
             age = 0.0
-        severity = (
-            "stale"
-            if age >= STALE_OPEN_ENACTMENT_SECONDS
-            else "warn"
-            if age >= WARN_OPEN_ENACTMENT_SECONDS
-            else "ok"
-        )
+        severity = _age_severity(age, row["mode"])
         open_enactments.append(
             {
                 "id": row["id"],
@@ -195,9 +216,7 @@ def _dashboard_body(status: dict[str, Any], *, refresh_note: str) -> str:
             _metric_card(
                 "Open enactments",
                 oe,
-                "ok"
-                if oe == 0
-                else ("stale" if any(r["severity"] == "stale" for r in rows) else "warn"),
+                _worst_severity(rows),
                 "in flight / leaked",
             ),
             _metric_card("Unaddressed frictions", fr, _metric_severity(fr), "open"),

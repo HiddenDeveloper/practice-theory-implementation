@@ -119,6 +119,51 @@ def test_render_status_dashboard_writes_file(tmp_path: Path, monkeypatch) -> Non
     assert result["live_url"].startswith("http://127.0.0.1:")
 
 
+def test_age_severity_is_mode_aware() -> None:
+    # Autonomic = single dispatch, minutes-scale; somatic = session-scoped, hours.
+    assert sd._age_severity(0, "autonomic") == "ok"
+    assert sd._age_severity(6 * 60, "autonomic") == "warn"
+    assert sd._age_severity(16 * 60, "autonomic") == "stale"
+    # A 31-minute somatic session is healthy, NOT stale (the Inspector case).
+    assert sd._age_severity(31 * 60, "somatic") == "ok"
+    assert sd._age_severity(5 * 3600, "somatic") == "warn"
+    assert sd._age_severity(13 * 3600, "somatic") == "stale"
+    # Unknown mode falls back to the stricter autonomic thresholds.
+    assert sd._age_severity(20 * 60, "mystery") == "stale"
+
+
+def test_worst_severity_is_green_when_all_rows_healthy() -> None:
+    assert sd._worst_severity([]) == "ok"
+    assert sd._worst_severity([{"severity": "ok"}, {"severity": "ok"}]) == "ok"
+    assert sd._worst_severity([{"severity": "ok"}, {"severity": "warn"}]) == "warn"
+    assert sd._worst_severity([{"severity": "warn"}, {"severity": "stale"}]) == "stale"
+
+
+def test_long_somatic_session_is_not_flagged_stale(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    path = tmp_path / "trail.db"
+    monkeypatch.setenv("PRACTICE_TRAIL_PATH", str(path))
+    store = EnactmentStore(path)
+
+    def _open_aged(bundle: str, mode: str, secs: int) -> str:
+        eid = store.open_enactment(bundle, mode=mode)
+        ts = (datetime.now(UTC) - timedelta(seconds=secs)).isoformat()
+        with store._cursor() as cur:
+            cur.execute("UPDATE enactments SET opened_at=? WHERE id=?", (ts, eid))
+        return eid
+
+    somatic_31m = _open_aged("continuous_self", "somatic", 31 * 60)
+    autonomic_20m = _open_aged("judge", "autonomic", 20 * 60)
+    store.close()
+
+    by_id = {r["id"]: r["severity"] for r in sd.gather_dashboard_status()["open_enactments"]}
+    assert by_id[somatic_31m] == "ok"  # a live session, not a leak
+    assert by_id[autonomic_20m] == "stale"  # a stranded dispatch
+
+
 def test_affordance_is_registered() -> None:
     fn = registry.resolve("render_status_dashboard")
     assert callable(fn)
