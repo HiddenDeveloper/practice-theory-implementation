@@ -109,3 +109,40 @@ def test_triage_enactment_precedence_friction_over_ambiguous(tmp_path: Path) -> 
     assert enactment.id == eid
     result = jt.triage_enactment(store, enactment)
     assert result.outcome is jt.Outcome.FRICTION
+
+
+def test_failed_dispatch_enactment_clears_clean_not_to_judge(tmp_path: Path) -> None:
+    # A closed enactment carrying the system dispatch-failure marker is cleared
+    # deterministically (CLEAN) — an environmental failure is not Judge work —
+    # even though it also recorded a partial error step before dying.
+    from practice_theory_implementation.harness_errors import DISPATCH_FAILED_MATERIAL
+
+    store = EnactmentStore(tmp_path / "trail.db")
+    eid = store.open_enactment("judge", mode="autonomic")
+    store.record_step(
+        enactment_id=eid,
+        affordance_id="read",
+        material_name="judge_read_enactment_steps",
+        arguments={},
+        result={"error": "partial work before the dispatch died"},
+        started_at="2026-06-04T00:00:00+00:00",
+        completed_at="2026-06-04T00:00:01+00:00",
+        duration_ms=5,
+    )
+    store.record_step(
+        enactment_id=eid,
+        affordance_id="system:dispatch",
+        material_name=DISPATCH_FAILED_MATERIAL,
+        arguments={},
+        result={"dispatch_failed": True, "error_kind": "quota_exhausted"},
+        started_at="2026-06-04T00:00:02+00:00",
+        completed_at="2026-06-04T00:00:02+00:00",
+        duration_ms=1,
+    )
+    store.close_enactment(eid)
+    enactment = store.recent_enactments(limit=1)[0]
+
+    result = jt.triage_enactment(store, enactment)
+
+    assert result.outcome is jt.Outcome.CLEAN
+    assert "dispatch failed" in (result.reason or "")

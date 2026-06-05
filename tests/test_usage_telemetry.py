@@ -22,6 +22,11 @@ from practice_theory_implementation.autonomic_adapters import (
     _usage_from_sdk_result,
     drain,
 )
+from practice_theory_implementation.harness_errors import (
+    DISPATCH_FAILED_MATERIAL,
+    ErrorKind,
+    ModelError,
+)
 from practice_theory_implementation.trail import EnactmentStore, UsageRecord
 
 
@@ -312,6 +317,55 @@ def test_loop_records_usage_keyed_by_consumer_enactment(tmp_path: Path) -> None:
     assert row.cost_usd == 0.5
     assert row.dispatch_ms is not None and row.dispatch_ms >= 0
     assert store.usage_for(som) is None  # the examined enactment has no usage row
+    store.close()
+
+
+class _FailAfterOpenAdapter(_UsageAdapter):
+    """Opens a consumer enactment, records a step, then the dispatch dies — the
+    shape of a codex subprocess that crashes or hits its quota mid-dispatch."""
+
+    async def dispatch(self, work: WorkItem) -> str | None:
+        eid = self._store.open_enactment("judge", mode="autonomic")
+        _record_dummy_step(self._store, eid)
+        self.last_eid = eid
+        self.last_error = ModelError(
+            kind=ErrorKind.QUOTA_EXHAUSTED,
+            message="out of codex messages",
+            provider="codex",
+        )
+        raise RuntimeError("subprocess died mid-dispatch")
+
+
+def test_failed_dispatch_closes_orphan_and_records_failure(tmp_path: Path) -> None:
+    store = EnactmentStore(tmp_path / "trail.db")
+    som = store.open_enactment("correspondent", mode="somatic")
+    _record_dummy_step(store, som)
+    store.close_enactment(som)
+    assert store.route_closed_enactments_to_judge_inbox() == 1
+
+    adapter = _FailAfterOpenAdapter(
+        AdapterConfig(role="judge", bundle_id="judge", brief=""),
+        store,
+        UsageRecord(provider="codex", input_tokens=0),
+    )
+    n = asyncio.run(
+        drain(adapter, RolePolicy(role="judge"), store, worker_id="t", max_items=1)
+    )
+    assert n == 0  # the dispatch failed, nothing processed
+
+    # The orphaned consumer enactment is closed, not leaked open.
+    assert adapter.last_eid is not None
+    rows = [r for r in store.recent_enactments(limit=10) if r.id == adapter.last_eid]
+    assert rows and rows[0].closed_at is not None
+
+    # The failure is recorded durably on the trail with its classified detail.
+    steps = store.steps_for(adapter.last_eid)
+    failure = [s for s in steps if s.material_name == DISPATCH_FAILED_MATERIAL]
+    assert len(failure) == 1
+    assert "quota_exhausted" in failure[0].result_summary
+
+    # The inbox row stays unconsumed so the work retries as a fresh enactment.
+    assert store.pending_judge_inbox_count() == 1
     store.close()
 
 

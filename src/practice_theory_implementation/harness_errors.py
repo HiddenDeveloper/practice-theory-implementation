@@ -41,6 +41,13 @@ STOP_CMD_ENV = "PRACTICE_AUTONOMIC_STOP_CMD"
 DEFAULT_STOP_CMD = "make autonomic-stop"
 DEFAULT_ERROR_THRESHOLD = 2
 
+# Material name of the system-recorded step that marks a dispatch which failed
+# after its subprocess had opened a consumer enactment. The runner writes it
+# (carrying the classified error kind + message) and closes the enactment;
+# triage recognises it to clear the enactment deterministically rather than
+# routing an environmental failure to the Judge.
+DISPATCH_FAILED_MATERIAL = "system_dispatch_failed"
+
 
 class ErrorKind(StrEnum):
     """Why a model dispatch failed, classified harness-agnostically."""

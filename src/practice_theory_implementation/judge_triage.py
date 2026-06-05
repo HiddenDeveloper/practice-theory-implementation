@@ -29,6 +29,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from practice_theory_implementation.harness_errors import DISPATCH_FAILED_MATERIAL
 from practice_theory_implementation.trail import EnactmentRow, EnactmentStore, StepRow
 
 logger = logging.getLogger(__name__)
@@ -105,8 +106,16 @@ def _step_has_error(step: StepRow) -> bool:
     return '"error"' in summary or "'error'" in summary
 
 
+def _is_dispatch_failure(view: EnactmentView) -> bool:
+    return any(s.material_name == DISPATCH_FAILED_MATERIAL for s in view.steps)
+
+
 def _detect_recorded_step_error(view: EnactmentView) -> TriageResult | None:
     """A step recorded an error result → needs the Judge to name the friction."""
+    # A failed-dispatch enactment is environmental, cleared deterministically by
+    # _detect_dispatch_failure; do not raise its partial error steps to the Judge.
+    if _is_dispatch_failure(view):
+        return None
     errored = [s for s in view.steps if _step_has_error(s)]
     if not errored:
         return None
@@ -117,6 +126,20 @@ def _detect_recorded_step_error(view: EnactmentView) -> TriageResult | None:
             f"{len(errored)} step(s) recorded an error result "
             f"(e.g. {errored[0].affordance_id}/{errored[0].material_name})"
         ),
+    )
+
+
+def _detect_dispatch_failure(view: EnactmentView) -> TriageResult | None:
+    """A dispatch that died after opening its enactment is closed with a system
+    failure marker. Clear it deterministically — the failure is environmental
+    (a dead subprocess: crash or quota), already recorded on the trail and in
+    OTEL, with no practitioner conduct to judge. Without this, a quota outage
+    that fails many dispatches would manufacture a burst of Judge work."""
+    if not _is_dispatch_failure(view):
+        return None
+    return TriageResult(
+        outcome=Outcome.CLEAN,
+        reason="autonomic dispatch failed (environmental); recorded deterministically",
     )
 
 
@@ -144,6 +167,7 @@ def _detect_clean_success(view: EnactmentView) -> TriageResult | None:
 # catch-all and must stay last.
 _DETECTORS: list[Detector] = [
     _detect_unresolved_bundle,
+    _detect_dispatch_failure,
     _detect_recorded_step_error,
     _detect_zero_steps,
     _detect_clean_success,

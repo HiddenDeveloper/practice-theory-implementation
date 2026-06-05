@@ -168,6 +168,7 @@ def annotate_dispatch_result(
     usage: UsageRecord | None = None,
     dispatch_ms: int | None = None,
     error: str | None = None,
+    error_kind: str | None = None,
 ) -> None:
     """Attach outcome attributes to a dispatch span."""
     attrs: dict[str, object | None] = {
@@ -192,6 +193,8 @@ def annotate_dispatch_result(
         span.set_attribute(key, value)
     if error:
         span.set_attribute("practice.dispatch.error", error)
+        if error_kind:
+            span.set_attribute("practice.dispatch.error_kind", error_kind)
         span.set_status(Status(StatusCode.ERROR, error))
     elif status == "ok":
         span.set_status(Status(StatusCode.OK))

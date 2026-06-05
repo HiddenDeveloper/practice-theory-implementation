@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from practice_theory_implementation.harness_errors import (
+    DISPATCH_FAILED_MATERIAL,
     CircuitBreaker,
     ModelError,
     classify_dispatch_error,
@@ -943,6 +944,8 @@ async def drain(
     not idle-poll — it exits as soon as the inbox is empty.
     """
     import time as _time
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
 
     await adapter.open()
     processed = 0
@@ -951,6 +954,7 @@ async def drain(
             work = policy.next_work(store, worker_id=worker_id)
             if work is None:
                 break
+            dispatch_started = _datetime.now(_UTC).isoformat(timespec="microseconds")
             _t0 = _time.monotonic()
             with autonomic_dispatch_span(
                 role=adapter.config.role,
@@ -962,11 +966,26 @@ async def drain(
                 try:
                     consumer_id = await adapter.dispatch(work)
                 except Exception as exc:
-                    annotate_dispatch_result(span, status="error", error=str(exc))
+                    dispatch_ms = int((_time.monotonic() - _t0) * 1000)
+                    model_error = getattr(adapter, "last_error", None)
+                    annotate_dispatch_result(
+                        span,
+                        status="error",
+                        error=str(exc),
+                        error_kind=model_error.kind.value if model_error else None,
+                        dispatch_ms=dispatch_ms,
+                    )
                     logger.exception(
                         "[%s] dispatch failed for %s",
                         adapter.config.role,
                         work.primary_id,
+                    )
+                    _close_orphaned_consumer(
+                        store,
+                        adapter,
+                        exc=exc,
+                        dispatch_started=dispatch_started,
+                        dispatch_ms=dispatch_ms,
                     )
                     continue
                 dispatch_ms = int((_time.monotonic() - _t0) * 1000)
@@ -1033,6 +1052,78 @@ def _record_usage_and_close_consumer(
         store.record_usage(consumer_id, usage, dispatch_ms=dispatch_ms)
 
 
+def _record_dispatch_failure_and_close(
+    store: EnactmentStore,
+    consumer_id: str,
+    *,
+    exc: BaseException,
+    model_error: ModelError | None,
+    dispatch_ms: int,
+) -> None:
+    """Record a failed dispatch on its orphaned enactment, then close it.
+
+    Same lifecycle boundary as the success path (process exit), for the failure
+    case. The subprocess opened this enactment and may have recorded steps before
+    it died (a crash, or a quota hit mid-dispatch); left untouched it leaks as
+    perpetually-open. We append one deterministic failure step carrying the
+    classified error kind + message — so the *durable* trail holds the detail,
+    not only an optional OTEL collector — and close it. Triage recognises the
+    marker (`DISPATCH_FAILED_MATERIAL`) and clears the enactment without a Judge
+    dispatch: an environmental failure is not practitioner conduct to judge.
+    """
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).isoformat(timespec="microseconds")
+    kind = model_error.kind.value if model_error is not None else "unknown"
+    message = (model_error.message if model_error is not None else None) or str(exc)
+    provider = model_error.provider if model_error is not None else None
+    store.record_step(
+        enactment_id=consumer_id,
+        affordance_id="system:dispatch",
+        material_name=DISPATCH_FAILED_MATERIAL,
+        arguments={},
+        result={
+            "dispatch_failed": True,
+            "error_kind": kind,
+            "error_message": message,
+            "provider": provider,
+        },
+        started_at=now,
+        completed_at=now,
+        duration_ms=max(0, dispatch_ms),
+    )
+    store.close_enactment(consumer_id)
+
+
+def _close_orphaned_consumer(
+    store: EnactmentStore,
+    adapter: AutonomicAdapter,
+    *,
+    exc: BaseException,
+    dispatch_started: str,
+    dispatch_ms: int,
+) -> None:
+    """Best-effort: find the enactment a failed dispatch orphaned and finalize it.
+
+    Resolution is the same single-tenant heuristic the success path uses — the
+    role's most recent enactment opened after the dispatch started. None means
+    the subprocess died before opening one (nothing to close). Never raises: a
+    finalize failure must not break the loop.
+    """
+    with contextlib.suppress(Exception):
+        orphan = _resolve_consumer_id(
+            store, adapter.config.bundle_id, dispatch_started
+        )
+        if orphan:
+            _record_dispatch_failure_and_close(
+                store,
+                orphan,
+                exc=exc,
+                model_error=getattr(adapter, "last_error", None),
+                dispatch_ms=dispatch_ms,
+            )
+
+
 async def run_role_loop(
     adapter: AutonomicAdapter,
     policy: RolePolicy,
@@ -1080,11 +1171,26 @@ async def run_role_loop(
                 try:
                     consumer_id = await adapter.dispatch(work)
                 except Exception as exc:
-                    annotate_dispatch_result(span, status="error", error=str(exc))
+                    dispatch_ms = int((_time.monotonic() - _t0) * 1000)
+                    model_error = getattr(adapter, "last_error", None)
+                    annotate_dispatch_result(
+                        span,
+                        status="error",
+                        error=str(exc),
+                        error_kind=model_error.kind.value if model_error else None,
+                        dispatch_ms=dispatch_ms,
+                    )
                     logger.exception(
                         "[%s] dispatch failed for %s",
                         adapter.config.role,
                         work.primary_id,
+                    )
+                    _close_orphaned_consumer(
+                        store,
+                        adapter,
+                        exc=exc,
+                        dispatch_started=dispatch_started,
+                        dispatch_ms=dispatch_ms,
                     )
                     continue
                 if consumer_id is None and on_consume is not None:
