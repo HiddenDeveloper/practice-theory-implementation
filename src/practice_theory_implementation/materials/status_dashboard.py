@@ -132,8 +132,56 @@ def render_status_dashboard(
     }
 
 
-def render_dashboard_html(status: dict[str, Any], *, refresh_seconds: int = 10) -> str:
-    """Render the snapshot as a self-contained HTML page (inline CSS, meta-refresh)."""
+# Inline CSS shared by the full-page renderer and the embeddable fragment. Kept
+# as a plain string (single braces) so it can be dropped into an f-string via a
+# variable without brace-escaping.
+_DASHBOARD_CSS = """
+  :root {
+    --bg:#0d1117; --panel:#161b22; --line:#21262d; --text:#e6edf3;
+    --muted:#7d8590; --ok:#2ea043; --warn:#d29922; --stale:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .wrap { max-width:920px; margin:0 auto; padding:32px 20px; }
+  header { display:flex; align-items:baseline; justify-content:space-between;
+    border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:24px; }
+  h1 { font-size:19px; margin:0; letter-spacing:.3px; }
+  .meta { color:var(--muted); font-size:12px; }
+  .dot { display:inline-block; width:7px; height:7px; border-radius:50%;
+    background:var(--ok); margin-right:6px; vertical-align:middle;
+    animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px; }
+  .card { background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:18px 16px; border-top:3px solid var(--line); }
+  .card .value { font-size:40px; font-weight:600; line-height:1; }
+  .card .label { color:var(--text); font-size:13px; margin-top:8px; }
+  .card .sub { color:var(--muted); font-size:11px; margin-top:2px; }
+  .card.ok { border-top-color:var(--ok); }
+  .card.warn { border-top-color:var(--warn); }
+  .card.warn .value { color:var(--warn); }
+  .card.stale { border-top-color:var(--stale); }
+  .card.stale .value { color:var(--stale); }
+  h2 { font-size:13px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:1px; margin:0 0 10px; }
+  table { width:100%; border-collapse:collapse; background:var(--panel);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th,td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tr:last-child td { border-bottom:none; }
+  td.mono { color:var(--muted); }
+  td.age { text-align:right; }
+  tr.warn td.age { color:var(--warn); }
+  tr.stale td.age { color:var(--stale); font-weight:600; }
+  .empty { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:22px; text-align:center; color:var(--ok); }
+  @media (max-width:640px) { .cards { grid-template-columns:repeat(2,1fr); } }
+"""
+
+
+def _dashboard_body(status: dict[str, Any], *, refresh_note: str) -> str:
+    """The styled `.wrap` content (header + cards + table), shared by both renders."""
     j = status["judge_inbox"]
     sm = status["smoother_inbox"]
     oe = status["open_enactment_count"]
@@ -149,11 +197,7 @@ def render_dashboard_html(status: dict[str, Any], *, refresh_seconds: int = 10) 
                 oe,
                 "ok"
                 if oe == 0
-                else (
-                    "stale"
-                    if any(r["severity"] == "stale" for r in rows)
-                    else "warn"
-                ),
+                else ("stale" if any(r["severity"] == "stale" for r in rows) else "warn"),
                 "in flight / leaked",
             ),
             _metric_card("Unaddressed frictions", fr, _metric_severity(fr), "open"),
@@ -178,67 +222,31 @@ def render_dashboard_html(status: dict[str, Any], *, refresh_seconds: int = 10) 
         table = '<div class="empty">No open enactments — clean.</div>'
 
     generated = _html.escape(status["generated_at"])
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="{int(refresh_seconds)}">
-<title>Autonomic loop status</title>
-<style>
-  :root {{
-    --bg:#0d1117; --panel:#161b22; --line:#21262d; --text:#e6edf3;
-    --muted:#7d8590; --ok:#2ea043; --warn:#d29922; --stale:#f85149;
-  }}
-  * {{ box-sizing:border-box; }}
-  body {{ margin:0; background:var(--bg); color:var(--text);
-    font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }}
-  .wrap {{ max-width:920px; margin:0 auto; padding:32px 20px; }}
-  header {{ display:flex; align-items:baseline; justify-content:space-between;
-    border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:24px; }}
-  h1 {{ font-size:19px; margin:0; letter-spacing:.3px; }}
-  .meta {{ color:var(--muted); font-size:12px; }}
-  .dot {{ display:inline-block; width:7px; height:7px; border-radius:50%;
-    background:var(--ok); margin-right:6px; vertical-align:middle;
-    animation:pulse 2s infinite; }}
-  @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.35}} }}
-  .cards {{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px; }}
-  .card {{ background:var(--panel); border:1px solid var(--line);
-    border-radius:10px; padding:18px 16px; border-top:3px solid var(--line); }}
-  .card .value {{ font-size:40px; font-weight:600; line-height:1; }}
-  .card .label {{ color:var(--text); font-size:13px; margin-top:8px; }}
-  .card .sub {{ color:var(--muted); font-size:11px; margin-top:2px; }}
-  .card.ok {{ border-top-color:var(--ok); }}
-  .card.warn {{ border-top-color:var(--warn); }}
-  .card.warn .value {{ color:var(--warn); }}
-  .card.stale {{ border-top-color:var(--stale); }}
-  .card.stale .value {{ color:var(--stale); }}
-  h2 {{ font-size:13px; color:var(--muted); text-transform:uppercase;
-    letter-spacing:1px; margin:0 0 10px; }}
-  table {{ width:100%; border-collapse:collapse; background:var(--panel);
-    border:1px solid var(--line); border-radius:10px; overflow:hidden; }}
-  th,td {{ text-align:left; padding:9px 14px; border-bottom:1px solid var(--line); }}
-  th {{ color:var(--muted); font-weight:500; font-size:12px; }}
-  tr:last-child td {{ border-bottom:none; }}
-  td.mono {{ color:var(--muted); }}
-  td.age {{ text-align:right; }}
-  tr.warn td.age {{ color:var(--warn); }}
-  tr.stale td.age {{ color:var(--stale); font-weight:600; }}
-  .empty {{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding:22px; text-align:center; color:var(--ok); }}
-  @media (max-width:640px) {{ .cards {{ grid-template-columns:repeat(2,1fr); }} }}
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <h1>Autonomic loop status</h1>
-      <div class="meta"><span class="dot"></span>updated {generated}
-        &middot; auto-refresh {int(refresh_seconds)}s</div>
-    </header>
-    <div class="cards">{cards}</div>
-    <h2>Open enactments{f" ({len(rows)})" if rows else ""}</h2>
-    {table}
-  </div>
-</body>
-</html>"""
+    count_note = f" ({len(rows)})" if rows else ""
+    return (
+        f'<div class="wrap"><header><h1>Autonomic loop status</h1>'
+        f'<div class="meta"><span class="dot"></span>updated {generated} '
+        f"&middot; {_html.escape(refresh_note)}</div></header>"
+        f'<div class="cards">{cards}</div>'
+        f"<h2>Open enactments{count_note}</h2>{table}</div>"
+    )
+
+
+def render_dashboard_fragment(status: dict[str, Any]) -> str:
+    """Embeddable fragment (inline `<style>` + content), no document wrapper and
+    no meta-refresh — for hosting inside the MCP Apps shell, which owns the
+    refresh lifecycle. See `visualizations`."""
+    return f"<style>{_DASHBOARD_CSS}</style>\n{_dashboard_body(status, refresh_note='live')}"
+
+
+def render_dashboard_html(status: dict[str, Any], *, refresh_seconds: int = 10) -> str:
+    """Render the snapshot as a self-contained HTML page (inline CSS, meta-refresh)."""
+    body = _dashboard_body(status, refresh_note=f"auto-refresh {int(refresh_seconds)}s")
+    return (
+        '<!doctype html>\n<html lang="en">\n<head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f'<meta http-equiv="refresh" content="{int(refresh_seconds)}">\n'
+        "<title>Autonomic loop status</title>\n"
+        f"<style>{_DASHBOARD_CSS}</style>\n</head>\n<body>\n{body}\n</body>\n</html>"
+    )

@@ -646,6 +646,36 @@ if _MODE == "somatic":
             "composition": compose_composition(e),
         }
 
+    # MCP Apps surface (somatic-only, human-facing). One fixed tool dispatches to
+    # the visualization registry; its static `_meta.ui.resourceUri` binds the
+    # generic shell resource, which the host renders in a sandboxed iframe and
+    # into which the tool result is pushed. Adding a visualization is a registry
+    # entry — no new tool. See `visualizations`.
+    from practice_theory_implementation import visualizations as _viz
+
+    @mcp_app.resource(
+        _viz.VIZ_RESOURCE_URI,
+        mime_type=_viz.VIZ_MIME_TYPE,
+        meta={"ui": {"prefersBorder": True}},
+    )
+    def viz_shell() -> str:
+        """Generic MCP Apps shell that hosts a named visualization (somatic only)."""
+        return _viz.render_viz_shell_html()
+
+    @mcp_app.tool(meta={"ui": {"resourceUri": _viz.VIZ_RESOURCE_URI}})
+    def show_visualization(
+        name: str = "status", args: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Render a named visualization as an interactive MCP App.
+
+        `name` selects from the visualization registry (`status` is the autonomic
+        loop dashboard); `args` is passed to that visualization. Returns
+        `{name, html}`; the host renders the shell and pushes this result into it.
+        The same registry also backs the `render_status_dashboard` affordance and
+        the standalone :7182 dashboard server, so all three share one source.
+        """
+        return _viz.render_visualization(name, args)
+
 
 @mcp_app.tool()
 def discover_affordances(
