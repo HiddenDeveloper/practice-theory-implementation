@@ -11,8 +11,13 @@ rules_ids:
 - rule_stage_before_issue
 - rule_invite_stance_before_issue
 - rule_no_silent_attendee_changes
+- rule_calendar_writes_need_explicit_authorization
 affordance_ids:
 - read_calendar
+- create_calendar_event
+- update_calendar_event
+- delete_calendar_event
+- respond_calendar_invitation
 - propose_reschedule
 - invite_stance
 - issue_reschedule

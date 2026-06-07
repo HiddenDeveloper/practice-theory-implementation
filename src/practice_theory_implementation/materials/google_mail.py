@@ -32,7 +32,7 @@ TOKEN_CACHE_DIR = Path(
     os.environ.get("PRACTICE_GMAIL_TOKEN_CACHE_DIR")
     or Path.home() / ".practice-projection" / "google-tokens"
 )
-OAUTH_LOCAL_PORT = 8000
+OAUTH_LOCAL_PORT = int(os.environ.get("PRACTICE_GOOGLE_OAUTH_PORT", "8000"))
 _HTTP_TIMEOUT = 60.0
 
 
@@ -204,10 +204,12 @@ def gmail_test_send_draft(draft_id: str) -> dict[str, Any]:
     return _safe_gmail_call("test", _gmail_send_draft, draft_id=draft_id)
 
 
-def run_gmail_oauth(account: str = "user", login_hint: str | None = None) -> dict[str, Any]:
+def run_gmail_oauth(
+    account: str = "user", login_hint: str | None = None, prompt_consent: bool = False
+) -> dict[str, Any]:
     """Run the Gmail OAuth dance and cache credentials for one account label."""
     label = _account_label(account)
-    creds = _get_credentials(label, login_hint=login_hint)
+    creds = _get_credentials(label, login_hint=login_hint, prompt_consent=prompt_consent)
     return {
         "cached": True,
         "account": account,
@@ -223,8 +225,11 @@ def main() -> None:
     )
     parser.add_argument("--account", choices=["user", "test"], default="user")
     parser.add_argument("--login-hint")
+    parser.add_argument("--prompt-consent", action="store_true")
     args = parser.parse_args()
-    result = run_gmail_oauth(account=args.account, login_hint=args.login_hint)
+    result = run_gmail_oauth(
+        account=args.account, login_hint=args.login_hint, prompt_consent=args.prompt_consent
+    )
     print(
         "OK: cached Gmail credentials for "
         f"{result['account']} label {result['label']} at {result['cache_path']}"
@@ -275,7 +280,9 @@ def _token_cache_path(account: str) -> Path:
     return TOKEN_CACHE_DIR / f"gmail-{account}.json"
 
 
-def _get_credentials(account: str, login_hint: str | None = None) -> Credentials:
+def _get_credentials(
+    account: str, login_hint: str | None = None, prompt_consent: bool = False
+) -> Credentials:
     cache_file = _token_cache_path(account)
     creds: Credentials | None = None
     if cache_file.exists():
@@ -291,6 +298,8 @@ def _get_credentials(account: str, login_hint: str | None = None) -> Credentials
         kwargs: dict[str, Any] = {"port": OAUTH_LOCAL_PORT, "open_browser": True}
         if login_hint:
             kwargs["login_hint"] = login_hint
+        if prompt_consent:
+            kwargs["prompt"] = "consent"
         creds = cast(Credentials, flow.run_local_server(**kwargs))
     TOKEN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(creds.to_json(), encoding="utf-8")

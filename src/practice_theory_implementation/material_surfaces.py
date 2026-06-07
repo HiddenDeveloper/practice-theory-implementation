@@ -68,6 +68,74 @@ _GMAIL_DRAFT_ID_SCHEMA = {
     "required": ["draft_id"],
 }
 
+_CALENDAR_LIST_EVENTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "start_date": {"type": "string", "format": "date"},
+        "end_date": {"type": "string", "format": "date"},
+        "calendar_id": {"type": "string"},
+        "max_results": {"type": "integer", "minimum": 1, "maximum": 2500},
+        "single_events": {"type": "boolean"},
+    },
+    "required": ["start_date", "end_date"],
+}
+
+_CALENDAR_EVENT_WRITE_PROPERTIES = {
+    "calendar_id": {"type": "string"},
+    "summary": {"type": "string"},
+    "description": {"type": "string"},
+    "location": {"type": "string"},
+    "start_datetime": {"type": "string"},
+    "end_datetime": {"type": "string"},
+    "start_date": {"type": "string", "format": "date"},
+    "end_date": {"type": "string", "format": "date"},
+    "time_zone": {"type": "string"},
+    "attendees": {"type": "array", "items": {"type": "string"}},
+    "send_updates": {"type": "string", "enum": ["none", "all", "externalOnly"]},
+    "transparency": {"type": "string", "enum": ["opaque", "transparent"]},
+    "visibility": {"type": "string", "enum": ["default", "public", "private", "confidential"]},
+}
+
+_CALENDAR_CREATE_EVENT_SCHEMA = {
+    "type": "object",
+    "properties": _CALENDAR_EVENT_WRITE_PROPERTIES,
+    "required": ["summary"],
+}
+
+_CALENDAR_PATCH_EVENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "event_id": {"type": "string"},
+        **_CALENDAR_EVENT_WRITE_PROPERTIES,
+    },
+    "required": ["event_id"],
+}
+
+_CALENDAR_DELETE_EVENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "event_id": {"type": "string"},
+        "calendar_id": {"type": "string"},
+        "send_updates": {"type": "string", "enum": ["none", "all", "externalOnly"]},
+    },
+    "required": ["event_id"],
+}
+
+_CALENDAR_RESPOND_EVENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "event_id": {"type": "string"},
+        "attendee_email": {"type": "string"},
+        "response_status": {
+            "type": "string",
+            "enum": ["accepted", "declined", "needsAction", "tentative"],
+        },
+        "calendar_id": {"type": "string"},
+        "send_updates": {"type": "string", "enum": ["none", "all", "externalOnly"]},
+    },
+    "required": ["event_id", "attendee_email", "response_status"],
+}
+
 
 def _gmail_materials(prefix: str, label: str) -> tuple[Material, ...]:
     return (
@@ -110,6 +178,56 @@ def _gmail_materials(prefix: str, label: str) -> tuple[Material, ...]:
                 "message boundary and should only be invoked after explicit review."
             ),
             input_schema=_GMAIL_DRAFT_ID_SCHEMA,
+        ),
+    )
+
+
+def _calendar_materials(prefix: str, label: str) -> tuple[Material, ...]:
+    return (
+        Material(
+            name=f"calendar_{prefix}_list_events",
+            description=(
+                f"List {label} Google Calendar events in a date range from a chosen "
+                "calendar, defaulting to the primary calendar. This is live read-only "
+                "Calendar API access."
+            ),
+            input_schema=_CALENDAR_LIST_EVENTS_SCHEMA,
+        ),
+        Material(
+            name=f"calendar_{prefix}_create_event",
+            description=(
+                f"Create an event on {label} Google Calendar. This writes to the live "
+                "calendar. `send_updates` defaults to `none`; use `all` or "
+                "`externalOnly` only after explicit review of attendee notifications."
+            ),
+            input_schema=_CALENDAR_CREATE_EVENT_SCHEMA,
+        ),
+        Material(
+            name=f"calendar_{prefix}_patch_event",
+            description=(
+                f"Patch fields on an existing event on {label} Google Calendar. This "
+                "writes to the live calendar. `send_updates` defaults to `none`; use "
+                "`all` or `externalOnly` only after explicit review."
+            ),
+            input_schema=_CALENDAR_PATCH_EVENT_SCHEMA,
+        ),
+        Material(
+            name=f"calendar_{prefix}_delete_event",
+            description=(
+                f"Delete an event from {label} Google Calendar. This is destructive. "
+                "`send_updates` defaults to `none`; use `all` or `externalOnly` only "
+                "after explicit review."
+            ),
+            input_schema=_CALENDAR_DELETE_EVENT_SCHEMA,
+        ),
+        Material(
+            name=f"calendar_{prefix}_respond_event",
+            description=(
+                f"Set an attendee response on an event visible to {label} Google Calendar, "
+                "such as accepted, declined, tentative, or needsAction. This writes to "
+                "the live calendar."
+            ),
+            input_schema=_CALENDAR_RESPOND_EVENT_SCHEMA,
         ),
     )
 
@@ -338,6 +456,9 @@ MATERIAL_SURFACES: dict[str, Material] = {
         # Gmail materials — account labels are resolved by env in google_mail.py.
         *_gmail_materials("user", "the user's"),
         *_gmail_materials("test", "the test mailbox's"),
+        # Google Calendar materials — account labels follow the Gmail convention.
+        *_calendar_materials("user", "the user's"),
+        *_calendar_materials("test", "the test mailbox's"),
         # Calendar Stewardship materials — Google-Calendar-shaped mock.
         Material(
             name="cal_list_events",
