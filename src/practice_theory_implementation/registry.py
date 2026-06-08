@@ -54,7 +54,7 @@ _ALLOWED_EXPRESSION_NODES = (
     ast.FormattedValue,
     ast.Add,
     ast.Sub,
-    ast.Mult,
+    ast.Mult,  # cspell:ignore Mult
     ast.Div,
     ast.FloorDiv,
     ast.Mod,

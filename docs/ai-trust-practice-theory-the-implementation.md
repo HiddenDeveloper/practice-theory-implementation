@@ -492,7 +492,7 @@ The resource surface is an alternative read-path to the inline `composition` fie
 The server supports two transports, chosen at startup via `PRACTICE_TRANSPORT`:
 
 - **`stdio`** (default) — the client launches the server as a subprocess and the two communicate over standard input and output. Each connection is its own process. Fits the verify, fits Codex's `.mcp.json` (Codex spawns the server per `codex exec`), and fits any harness that's happy to manage subprocesses.
-- **`http`** — the server binds to a port (`PRACTICE_HTTP_HOST` / `PRACTICE_HTTP_PORT`, default `127.0.0.1:7180`) and runs as a long-lived process. This path is experimental and must be enabled with `PRACTICE_EXPERIMENTAL_HTTP=1`, because active practice state is still process-global. Genuine concurrent use is gated on the per-session-state work noted above; until then the safe pattern is one HTTP client per server.
+- **`http`** — the server binds to a port (`PRACTICE_HTTP_HOST` / `PRACTICE_HTTP_PORT`, default `127.0.0.1:7180`) and runs as a long-lived process serving many clients. Active practice state is scoped per MCP session (a `ContextVar` + `_SessionState`), so concurrent HTTP clients are isolated and no longer race; the former `PRACTICE_EXPERIMENTAL_HTTP` gate is no longer required.
 
 Both transports run the same tool surface (six in somatic, five in autonomic — see step 6 for the asymmetry), the same projection, the same dispatcher. The MCP machinery is transport-agnostic; switching is a configuration choice, not a change to the tools.
 
@@ -500,12 +500,12 @@ Both transports run the same tool surface (six in somatic, five in autonomic —
 # stdio (default) — for verify, Codex, anything that wants a subprocess
 uv run python -m practice_theory_implementation.server
 
-# HTTP — experimental; one client per server until per-session state lands
-PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_HTTP_PORT=7180 \
+# HTTP — long-lived process serving many clients; per-session state isolates them
+PRACTICE_TRANSPORT=http PRACTICE_HTTP_PORT=7180 \
   uv run python -m practice_theory_implementation.server
 ```
 
-A repo-root `.mcp.json` declares `apprenticeship_somatic` as a stdio entry so Codex (and other clients that read `.mcp.json`) can spawn the somatic surface with one command. The autonomic server is deliberately *not* registered there: user-facing harnesses connecting via `.mcp.json` should not see the autonomic surface (exposing `judge_emit_friction` to the user seat is a footgun), and the autonomic runner reaches its server through other paths — `CodexExecAdapter` injects the autonomic config inline via `codex exec -c mcp_servers.…`, `ClaudeCliAdapter` via `--mcp-config`, `AnthropicSDKAdapter` via a spawned stdio subprocess or an HTTP URL. For a long-lived autonomic HTTP server, start it directly with the experimental opt-in: `PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_SERVER_MODE=autonomic uv run python -m practice_theory_implementation.server`.
+A repo-root `.mcp.json` declares `apprenticeship_somatic` as a stdio entry so Codex (and other clients that read `.mcp.json`) can spawn the somatic surface with one command. The autonomic server is deliberately *not* registered there: user-facing harnesses connecting via `.mcp.json` should not see the autonomic surface (exposing `judge_emit_friction` to the user seat is a footgun), and the autonomic runner reaches its server through other paths — `CodexExecAdapter` injects the autonomic config inline via `codex exec -c mcp_servers.…`, `ClaudeCliAdapter` via `--mcp-config`, `AnthropicSDKAdapter` via a spawned stdio subprocess or an HTTP URL. For a long-lived autonomic HTTP server, start it directly: `PRACTICE_TRANSPORT=http PRACTICE_SERVER_MODE=autonomic uv run python -m practice_theory_implementation.server`.
 
 ### Activities Management on the wire
 
@@ -1094,18 +1094,18 @@ The three real adapters are present and runnable via `autonomic_runner.py`. The 
 
 **One thing to know before any of these commands.** No router sends every closed enactment to `judge_inbox` — closed enactments pass through deterministic triage first, and only the *ambiguous* are queued for the Judge. Two routers apply that gate on different cadences: the dispatcher triages somatic completions continuously, and a separate reflective loop in the runner triages autonomic history (the Judge's and Smoother's own enactments) on a slower watermarked pass. Because both go through the gate, a Judge enactment that emits zero Friction is classified clean (a no-finding) and is not requeued, so the loop converges instead of judging the Judge's judgement of the Judge indefinitely. Step 12 ("One mechanism, two cadences") walks through how triage closes the convergence gap earlier drafts left open. The commands below run the same mechanism against a real LLM; the deterministic gate keeps the autonomic loop from spending tokens on clean work. Worth knowing before you point one of these at a paid API.
 
-**`AnthropicSDKAdapter` — long-lived in-process.** The SDK keeps a long-lived `ClaudeSDKClient` per role. The MCP transport is configurable: by default (`PRACTICE_AUTONOMIC_MCP_URL` unset) each adapter instance spawns its own stdio MCP server subprocess, which sidesteps the shared module-level state today. With `PRACTICE_AUTONOMIC_MCP_URL` set, the adapter connects to a long-lived HTTP server. That HTTP server is experimental and requires `PRACTICE_EXPERIMENTAL_HTTP=1` until per-session state lands. Stdio default:
+**`AnthropicSDKAdapter` — long-lived in-process.** The SDK keeps a long-lived `ClaudeSDKClient` per role. The MCP transport is configurable: by default (`PRACTICE_AUTONOMIC_MCP_URL` unset) each adapter instance spawns its own stdio MCP server subprocess. With `PRACTICE_AUTONOMIC_MCP_URL` set, the adapter connects to a long-lived HTTP server. Active practice state is scoped per MCP session, so that HTTP server is concurrency-safe; the former `PRACTICE_EXPERIMENTAL_HTTP` gate is no longer required. Stdio default:
 
 ```bash
 PRACTICE_AUTONOMIC_PROVIDER=anthropic \
   uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
 ```
 
-HTTP shape (experimental; one client per server until per-session state lands):
+HTTP shape (long-lived server; per-session state isolates concurrent clients):
 
 ```bash
 # Terminal 1 — long-lived HTTP autonomic server
-PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_HTTP_PORT=7181 \
+PRACTICE_TRANSPORT=http PRACTICE_HTTP_PORT=7181 \
   PRACTICE_SERVER_MODE=autonomic \
   uv run python -m practice_theory_implementation.server
 
@@ -1122,7 +1122,7 @@ PRACTICE_AUTONOMIC_PROVIDER=anthropic_cli \
   uv run python -m practice_theory_implementation.autonomic_runner
 ```
 
-If you prefer to point it at an existing long-lived HTTP server instead, start that server with `PRACTICE_EXPERIMENTAL_HTTP=1` and set `PRACTICE_AUTONOMIC_MCP_URL=http://…/mcp/`; the adapter switches its `--mcp-config` shape accordingly.
+If you prefer to point it at an existing long-lived HTTP server instead, start that server (`PRACTICE_TRANSPORT=http`) and set `PRACTICE_AUTONOMIC_MCP_URL=http://…/mcp/`; the adapter switches its `--mcp-config` shape accordingly.
 
 **`CodexExecAdapter` — subprocess per dispatch, stdio transport.** Each `codex exec` invocation spawns its own MCP server per dispatch via inline `-c mcp_servers.…` configuration injected by the adapter. No separate long-lived server needed and no dependency on the user's Codex MCP config:
 
@@ -1133,7 +1133,7 @@ PRACTICE_AUTONOMIC_PROVIDER=codex \
 
 The runner drives both Judge and Smoother concurrently via `asyncio.gather(run_role_loop(…), run_role_loop(…))`, exits on SIGINT/SIGTERM or when `/tmp/practice-autonomic-quit` appears. The substrate has no idea which adapter is driving it; the difference is entirely at the adapter layer.
 
-For the somatic side, the user's harness connects to the somatic server the same way: Codex via the `.mcp.json` entry `apprenticeship_somatic`, Claude Code via its MCP-server config pointing at an experimental HTTP somatic server (`PRACTICE_TRANSPORT=http PRACTICE_EXPERIMENTAL_HTTP=1 PRACTICE_SERVER_MODE=somatic`).
+For the somatic side, the user's harness connects to the somatic server the same way: Codex via the `.mcp.json` entry `apprenticeship_somatic`, Claude Code via its MCP-server config pointing at an HTTP somatic server (`PRACTICE_TRANSPORT=http PRACTICE_SERVER_MODE=somatic`).
 
 ### What step 11 contributes
 

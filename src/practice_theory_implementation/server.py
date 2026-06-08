@@ -103,8 +103,8 @@ if _MODE not in ("somatic", "autonomic"):
 # verify works without configuration. HTTP runs one long-lived process serving
 # many clients; active practice/engagement state is scoped per MCP session (see
 # _SessionState / the session ContextVar below), so concurrent HTTP clients no
-# longer race. PRACTICE_EXPERIMENTAL_HTTP is still honoured for back-compat but
-# is no longer required.
+# longer race. The former PRACTICE_EXPERIMENTAL_HTTP gate is no longer required
+# and is now inert (nothing reads it).
 _TRANSPORT: str = os.environ.get("PRACTICE_TRANSPORT", "stdio")
 if _TRANSPORT not in ("stdio", "http"):
     raise ValueError(

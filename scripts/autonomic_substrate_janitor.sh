@@ -38,7 +38,7 @@ snapshot_once() {
 
   # Build the snapshot tree in a throwaway index: main's tree, with substrate/
   # overlaid from the working tree. The real index and HEAD are untouched.
-  local tmpindex tree parent ts msg commit status
+  local tmpindex tree parent ts msg commit status  # cspell:ignore tmpindex
   tmpindex=$(mktemp)
   status=0
   (

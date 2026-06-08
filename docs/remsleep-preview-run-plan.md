@@ -12,6 +12,15 @@ canonical writes are captured, never applied, until an explicit apply step.
 RemSleep is now the **sole** canonical keeper — the Cognabot Self-Reflection Agent
 is retired. There should be no other writer to the canonical spine.
 
+> **Correction (2026-06-02):** this "SRA retired" claim was *not* true when written.
+> Live evidence showed the Cognabot daemon's `self_reflection` task (the Pillar
+> Maintainer) was still stamping `last_reviewed_at` on the canonical spine — an
+> uncontrolled second writer. It was then explicitly disabled
+> (`config/stonemonkey/daemon.json` → `self_reflection.enabled: false`, then
+> `curl -X POST localhost:8001/reload`). RemSleep is sole keeper only while that
+> flag stays off; a daemon restart from another config re-introduces the second
+> writer. Watch `last_reviewed_at` for non-RemSleep writes before relying on this.
+
 ## Why (context for a fresh session)
 
 - The canonical memory (`CanonicalSelf` / `CanonicalProfile` / `CanonicalContext` /

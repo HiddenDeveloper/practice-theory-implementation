@@ -119,7 +119,7 @@ def compose_composition(practice: ProjectedPractice) -> str:
 
 def _merge_unique_by_id(
     eng: tuple[Any, ...],
-    pract: tuple[Any, ...],
+    pract: tuple[Any, ...],  # cspell:ignore pract
 ) -> tuple[Any, ...]:
     """Engagement-first, dedupe by `.id`, return tuple. Used for TA/U/rules/aff."""
     seen: set[str] = set()

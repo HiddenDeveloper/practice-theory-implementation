@@ -31,7 +31,7 @@ PRACTICE_AUTONOMIC_PROVIDER=anthropic \
   uv run --extra anthropic python -m practice_theory_implementation.autonomic_runner
 ```
 
-Each adapter instance spawns its own stdio MCP server subprocess. A long-lived HTTP server is still experimental because active practice state is not yet per-session; start it only with `PRACTICE_EXPERIMENTAL_HTTP=1` and use one client per server process until that lands.
+Each adapter instance spawns its own stdio MCP server subprocess. A long-lived HTTP server is also supported: active practice state is now scoped per MCP session (a `ContextVar` + `_SessionState` in `server.py`), so concurrent HTTP clients no longer race. The former `PRACTICE_EXPERIMENTAL_HTTP` gate is no longer required.
 
 ### Claude CLI
 

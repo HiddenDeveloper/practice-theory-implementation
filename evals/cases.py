@@ -112,7 +112,7 @@ def _grade_unevaluated_proposal(
             return True
         return ("rank" in content or "recall" in content or "top" in content) and (
             "without" in content or "not " in content or "blind" in content
-        ) and ("evaluat" in content or "judg" in content or "select" in content)
+        ) and ("evaluat" in content or "judg" in content or "select" in content)  # cspell:ignore evaluat judg
 
     passed = any(_names_it(f) for f in frictions)
     return passed, frictions

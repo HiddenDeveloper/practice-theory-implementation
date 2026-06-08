@@ -286,7 +286,7 @@ class EnactmentStore:
                     "ALTER TABLE enactments "
                     "ADD COLUMN mode TEXT NOT NULL DEFAULT 'somatic'"
                 )
-            fcols = {
+            fcols = {  # cspell:ignore fcols scols
                 row["name"] for row in cur.execute("PRAGMA table_info(invariant_firings)")
             }
             if fcols and "audited_at" not in fcols:

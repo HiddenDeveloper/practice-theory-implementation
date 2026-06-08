@@ -27,8 +27,9 @@ PRACTICE_AUTONOMIC_MCP_URL is optional. Unset, each adapter instance spawns
 its own stdio MCP server subprocess (Anthropic SDK) or invokes the autonomic
 MCP server inline (Claude CLI via `--mcp-config`, Codex via inline
 `-c mcp_servers.…`). Set, the adapter connects to a long-lived HTTP MCP
-server instead. The HTTP server itself requires PRACTICE_EXPERIMENTAL_HTTP=1
-until active practice state is scoped per session.
+server instead. Active practice state is now scoped per session, so the HTTP
+server is concurrency-safe; the former PRACTICE_EXPERIMENTAL_HTTP gate is no
+longer required.
 
 All three real adapters drive the same role machinery. Judge and Smoother are
 inbox-driven; RemSleep Recall is wall-clock-driven; RemSleep Consolidation is

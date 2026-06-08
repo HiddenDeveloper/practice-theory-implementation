@@ -48,7 +48,7 @@ def test_validate_accepts_known_predicates() -> None:
 def test_validate_rejects_malformed() -> None:
     assert "unknown predicate op" in (ie.validate_predicate({"nope": 1}) or "")
     assert "exactly one key" in (ie.validate_predicate({"a": 1, "b": 2}) or "")
-    assert "mapping" in (ie.validate_predicate("notamap") or "")
+    assert "mapping" in (ie.validate_predicate("notamap") or "")  # cspell:ignore notamap
     assert "expects a list" in (ie.validate_predicate({"all": "x"}) or "")
     assert "expects a string" in (
         ie.validate_predicate({"any_earlier_step_result_contains": 5}) or ""
