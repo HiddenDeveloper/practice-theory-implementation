@@ -86,7 +86,7 @@ The **technical reason** is to avoid duplication. If two affordances reach for t
 
 The **practice-theoretic reason** is that the same material is often afforded differently. A chisel in a workshop is the same physical tool whether it is being used to cut a joint, clean out a mortice, or trim a dowel — but the affordance the practitioner reaches for is different in each case. The material does not change; the framing does. Pooling materials at the bundle level lets a single material be afforded multiple ways by different affordances in the same bundle, which matches how practices actually work.
 
-In the worked example below, `garmin_list_activities` sits in the bundle's material pool once and is reached for by two affordances — `recent_activity` and `intermittent_walking_analysis` — each affording it differently. Step 2 extends this pooling pattern further, sharing pools across bundles. Within a single bundle, the pooling is already in place.
+In the worked example below, `garmin_list_activities` sits in the bundle's material pool once and is reached for by two affordances — `recent_activity` and `intermittent_walking_analysis` — each affording it differently. The current repository extends the same pattern with route-aware IWT analysis: GPS, speed, cadence, and elevation are still Garmin materials, but the affordance frames them as interval-walking interpretation rather than raw activity detail. Step 2 extends this pooling pattern further, sharing pools across bundles. Within a single bundle, the pooling is already in place.
 
 ### A worked example: Activities Management
 
@@ -128,7 +128,7 @@ Bundle
 
     - id          : activity_detail
       name        : Activity detail
-      description : Review one activity in detail — splits, heart rate, route.
+      description : Review one activity in detail — splits, heart rate, GPS route.
       materials   : [ garmin_get_activity ]
 
     - id          : daily_summary
@@ -142,6 +142,12 @@ Bundle
                     time-in-fast vs time-in-slow, weekly fast minutes, progression
                     over recent weeks.
       materials   : [ garmin_list_activities, garmin_get_activity, garmin_get_user_stats ]
+
+    - id          : route_aware_iwt_analysis
+      name        : Route-aware IWT analysis
+      description : Analyse IWT sessions against speed/cadence intervals while
+                    separating route, terrain, stop, and turn effects.
+      materials   : [ garmin_route_aware_iwt_analysis ]
 
   materials:
     - name          : garmin_list_activities
@@ -159,9 +165,14 @@ Bundle
     - name          : garmin_get_user_stats
       description   : Fetch aggregate stats (volume, distance, time-in-zones) for a period.
       input_schema  : { start_date: date, end_date: date }
+
+    - name          : garmin_route_aware_iwt_analysis
+      description   : Analyse IWT sessions with route, speed, cadence, and elevation evidence.
+      input_schema  : { start_date: date, end_date: date, normal_minutes?: int,
+                        fast_minutes?: int, repetitions?: int }
 ```
 
-*In the implementation accompanying this essay these four materials are mocked — each returns synthetic data parameterised by date — so the focus stays on the bundle shape rather than the Garmin integration.*
+*At this early implementation step the original four materials are mocked — each returns synthetic data parameterised by date — so the focus stays on the bundle shape rather than the Garmin integration. The current repository later grows a live Garmin Connect implementation behind the same material names, adds route-aware IWT analysis, and keeps the mock selectable for verification/demo runs.*
 
 A few things to notice in the captured form.
 
@@ -295,7 +306,7 @@ Bundle
                           intermittent_walking_analysis )
 ```
 
-Behind that selection, the registry binds each material name to its mock function:
+Behind that selection, at this step, the registry binds each material name to its mock function:
 
 ```text
 Registry

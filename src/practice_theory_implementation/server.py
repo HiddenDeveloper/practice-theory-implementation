@@ -369,6 +369,8 @@ def _reload_seed_substrate() -> dict[str, Any]:
             "practice_theory_implementation.materials.calendar_mock",
             "practice_theory_implementation.materials.engagement_context",
             "practice_theory_implementation.materials.episodic_memory",
+            "practice_theory_implementation.materials.garmin",
+            "practice_theory_implementation.materials.garmin_live",
             "practice_theory_implementation.materials.garmin_mock",
             "practice_theory_implementation.materials.judge",
             "practice_theory_implementation.materials.practice_management",

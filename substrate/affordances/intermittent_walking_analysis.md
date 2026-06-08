@@ -6,4 +6,4 @@ materials:
 - garmin_get_activity
 - garmin_get_user_stats
 ---
-Analyse the user's IWT sessions — fast/slow interval recognition, time-in-fast vs time-in-slow, weekly fast minutes, progression over recent weeks.
+Analyse Garmin Connect walking/IWT sessions from Garmin-native activities and metric samples — fast/slow interval recognition, time-in-fast vs time-in-slow, weekly fast minutes, and progression over recent weeks. Do not use Strava as the source for this practice.

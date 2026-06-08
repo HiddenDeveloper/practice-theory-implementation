@@ -111,3 +111,35 @@ def garmin_get_user_stats(
         "total_distance_km": total_distance,
         "by_type": by_type,
     }
+
+
+def garmin_route_aware_iwt_analysis(
+    start_date: date | str,
+    end_date: date | str,
+    normal_minutes: int = 3,
+    fast_minutes: int = 3,
+    repetitions: int = 5,
+    activity_type: str = "walking",
+) -> dict[str, object]:
+    start = _as_date(start_date)
+    end = _as_date(end_date)
+    return {
+        "period": {"start": start.isoformat(), "end": end.isoformat()},
+        "intended_pattern": {
+            "normal_minutes": normal_minutes,
+            "fast_minutes": fast_minutes,
+            "repetitions": repetitions,
+            "iwt_minutes": (normal_minutes + fast_minutes) * repetitions,
+            "post_iwt_expectation": "relaxed walking",
+        },
+        "activity_count": 0,
+        "iwt_pattern_present_count": 0,
+        "route_comparability": {
+            "with_gps_count": 0,
+            "same_route_likely": False,
+        },
+        "activities": [],
+        "source": "garmin_mock",
+        "provider": "garmin",
+        "notes": f"synthetic mock — no GPS route samples for {activity_type}",
+    }

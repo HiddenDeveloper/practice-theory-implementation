@@ -532,7 +532,12 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="garmin_list_activities",
-            description="List the user's activities within a date range.",
+            description=(
+                "List the user's Garmin Connect activities within a date range. "
+                "Uses Garmin-native activity ids and live Garmin Connect as the "
+                "source unless PRACTICE_GARMIN_SOURCE=mock is explicitly set for "
+                "verification/demo runs."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
@@ -545,7 +550,12 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="garmin_get_activity",
-            description="Fetch full detail for a single activity by its Garmin ID.",
+            description=(
+                "Fetch detail for one Garmin Connect activity by its Garmin-native "
+                "activity id, including summary fields and available per-point "
+                "metric samples for cadence, speed, heart rate, elevation, and GPS "
+                "route summaries/points when Garmin exposes them."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {"activity_id": {"type": "string"}},
@@ -554,7 +564,11 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="garmin_get_daily_summary",
-            description="Fetch the daily wellness summary for a given date.",
+            description=(
+                "Fetch a Garmin Connect daily wellness summary for a given date: "
+                "steps, sleep when Garmin reports it, stress, body battery, "
+                "resting heart rate, distance, and active calories."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {"date": {"type": "string", "format": "date"}},
@@ -563,12 +577,37 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="garmin_get_user_stats",
-            description=("Fetch aggregate stats (volume, distance, time-in-zones) for a period."),
+            description=(
+                "Fetch aggregate Garmin Connect activity stats for a period using "
+                "Garmin as the activity source: count, minutes, distance, and type "
+                "breakdown."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "start_date": {"type": "string", "format": "date"},
                     "end_date": {"type": "string", "format": "date"},
+                },
+                "required": ["start_date", "end_date"],
+            },
+        ),
+        Material(
+            name="garmin_route_aware_iwt_analysis",
+            description=(
+                "Analyse Garmin walking activities against an interval-walking "
+                "pattern using live speed, cadence, elevation, and GPS route data. "
+                "Returns per-segment normal/fast/relaxed evidence and route "
+                "comparability signals without using sleep or heart-rate data."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "start_date": {"type": "string", "format": "date"},
+                    "end_date": {"type": "string", "format": "date"},
+                    "normal_minutes": {"type": "integer", "minimum": 1, "maximum": 30},
+                    "fast_minutes": {"type": "integer", "minimum": 1, "maximum": 30},
+                    "repetitions": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "activity_type": {"type": "string"},
                 },
                 "required": ["start_date", "end_date"],
             },

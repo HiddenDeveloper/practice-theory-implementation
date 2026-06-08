@@ -17,5 +17,6 @@ affordance_ids:
 - activity_detail
 - daily_summary
 - intermittent_walking_analysis
+- route_aware_iwt_analysis
 ---
 Keep an honest, useful view of the user's physical activities — what's been done, what the body is showing, what the rhythm looks like.
