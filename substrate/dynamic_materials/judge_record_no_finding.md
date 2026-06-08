@@ -16,4 +16,4 @@ input_schema:
 implementation:
   kind: echo
 ---
-Record that a Judge inspected a target and found no Friction warranted. This is a judgement outcome, not a Friction observation: include the inspected target enactment id, the read/list step ids or returned basis used for the judgement, and the reason no Friction was emitted.
+Record that a Judge inspected a target and found no Friction warranted. This is a judgement outcome, not a Friction observation: include the inspected target enactment id, the read/list step ids or returned basis used for the judgement, and the reason no Friction was emitted. When the reason discusses a failed invocation, corrected invocation, or unused alternative, name the affordance_id, material_name, and step id exactly as recorded in the structured basis; do not substitute an affordance such as emit_friction, no_finding_outcome, or any other surface that is not actually present in the target steps.
