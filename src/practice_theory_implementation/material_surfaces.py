@@ -10,6 +10,7 @@ injects these into `Substrate.materials`.
 from __future__ import annotations
 
 from practice_theory_implementation.types import Material
+from practice_theory_implementation.visualizations import activity_type_keys
 
 _GMAIL_SEARCH_SCHEMA = {
     "type": "object",
@@ -610,6 +611,52 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "activity_type": {"type": "string"},
                 },
                 "required": ["start_date", "end_date"],
+            },
+        ),
+        Material(
+            name="garmin_render_activity_gps_shape",
+            description=(
+                "Render an MCP App visualization of one Garmin activity's GPS route. "
+                "By default this draws the route on OpenStreetMap tiles; set "
+                "show_tiles=false for a route-only shape that makes no external tile "
+                "requests. Accepts an explicit Garmin-native activity id, or scans a "
+                "date range and selects the newest activity that exposes GPS route "
+                "points."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "string"},
+                    "garmin_id": {"type": "string"},
+                    "start_date": {"type": "string", "format": "date"},
+                    "end_date": {"type": "string", "format": "date"},
+                    "activity_type": {"type": "string"},
+                    "max_candidates": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "show_tiles": {"type": "boolean"},
+                    "map_style": {"type": "string", "enum": ["osm", "shape"]},
+                },
+            },
+        ),
+        Material(
+            name="garmin_render_activity_type_visualization",
+            description=(
+                "Render an MCP App dashboard for Garmin activities grouped by one "
+                f"or all supported activity types: {', '.join(activity_type_keys())}. "
+                "Shows recent sessions, totals, latest activity, "
+                "and a GPS route preview when Garmin exposes route points."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "activity_type": {
+                        "type": "string",
+                        "enum": activity_type_keys(),
+                    },
+                    "start_date": {"type": "string", "format": "date"},
+                    "end_date": {"type": "string", "format": "date"},
+                    "max_per_type": {"type": "integer", "minimum": 1, "maximum": 25},
+                    "show_tiles": {"type": "boolean"},
+                },
             },
         ),
         # Practice Management meta-materials.

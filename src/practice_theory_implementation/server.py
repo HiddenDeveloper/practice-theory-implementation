@@ -659,7 +659,14 @@ if _MODE == "somatic":
     @mcp_app.resource(
         _viz.VIZ_RESOURCE_URI,
         mime_type=_viz.VIZ_MIME_TYPE,
-        meta={"ui": {"prefersBorder": True}},
+        meta={
+            "ui": {
+                "prefersBorder": True,
+                # The GPS map embeds OpenStreetMap tiles; hosts enforcing the
+                # MCP Apps CSP block external resources unless declared here.
+                "csp": {"resourceDomains": ["https://tile.openstreetmap.org"]},
+            }
+        },
     )
     def viz_shell() -> str:
         """Generic MCP Apps shell that hosts a named visualization (somatic only)."""
@@ -673,7 +680,8 @@ if _MODE == "somatic":
 
         `name` selects from the visualization registry (`status` is the autonomic
         loop dashboard); `args` is passed to that visualization. Returns
-        `{name, html}`; the host renders the shell and pushes this result into it.
+        `{name, html, args}`; the host renders the shell and pushes this result
+        into it, and the echoed args let the shell's Refresh re-run the same view.
         The same registry also backs the `render_status_dashboard` affordance and
         the standalone :7182 dashboard server, so all three share one source.
         """

@@ -29,6 +29,7 @@ class _FakeGarminClient:
                 "activityId": 42,
                 "activityName": "Morning Walk",
                 "activityType": {"typeKey": activity_type or "walking"},
+                "hasPolyline": True,
                 "startTimeLocal": f"{start_date} 07:15:00",
                 "movingDuration": 1800,
                 "distance": 3200,
@@ -107,6 +108,7 @@ def test_garmin_defaults_to_live_source(monkeypatch) -> None:
     assert summary["sleep_hours"] == 7.0
     assert activities[0]["activity_id"] == "42"
     assert activities[0]["provider"] == "garmin"
+    assert activities[0]["has_gps"] is True
 
 
 def test_garmin_activity_detail_includes_route_data(monkeypatch) -> None:

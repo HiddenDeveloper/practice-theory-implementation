@@ -124,6 +124,10 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "garmin_get_daily_summary": garmin.garmin_get_daily_summary,
     "garmin_get_user_stats": garmin.garmin_get_user_stats,
     "garmin_route_aware_iwt_analysis": garmin.garmin_route_aware_iwt_analysis,
+    "garmin_render_activity_gps_shape": garmin.garmin_render_activity_gps_shape,
+    "garmin_render_activity_type_visualization": (
+        garmin.garmin_render_activity_type_visualization
+    ),
     # Calendar Stewardship — Google-Calendar-shaped mock
     "cal_list_events": calendar_mock.cal_list_events,
     "cal_propose_reschedule": calendar_mock.cal_propose_reschedule,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import date
+from typing import Any
 
 from practice_theory_implementation.materials import garmin_live, garmin_mock
 
@@ -52,3 +53,77 @@ def garmin_route_aware_iwt_analysis(
         repetitions,
         activity_type,
     )
+
+
+def garmin_render_activity_gps_shape(
+    activity_id: str | None = None,
+    garmin_id: str | None = None,
+    start_date: date | str | None = None,
+    end_date: date | str | None = None,
+    activity_type: str | None = None,
+    max_candidates: int = 20,
+    show_tiles: bool = True,
+    map_style: str = "osm",
+) -> dict[str, Any]:
+    """Render the GPS route-shape MCP App payload for Activities Management."""
+    from practice_theory_implementation.visualizations import render_visualization
+
+    args: dict[str, Any] = {
+        "max_candidates": max_candidates,
+        "show_tiles": show_tiles,
+        "map_style": map_style,
+    }
+    if activity_id:
+        args["activity_id"] = activity_id
+    if garmin_id:
+        args["garmin_id"] = garmin_id
+    if start_date:
+        args["start_date"] = (
+            start_date.isoformat() if isinstance(start_date, date) else start_date
+        )
+    if end_date:
+        args["end_date"] = (
+            end_date.isoformat() if isinstance(end_date, date) else end_date
+        )
+    if activity_type:
+        args["activity_type"] = activity_type
+    result = render_visualization("activity_gps_shape", args)
+    result["mcp_app"] = {
+        "tool": "show_visualization",
+        "name": "activity_gps_shape",
+        "args": args,
+    }
+    return result
+
+
+def garmin_render_activity_type_visualization(
+    activity_type: str | None = None,
+    start_date: date | str | None = None,
+    end_date: date | str | None = None,
+    max_per_type: int = 10,
+    show_tiles: bool = True,
+) -> dict[str, Any]:
+    """Render the activity-type dashboard MCP App payload for Activities Management."""
+    from practice_theory_implementation.visualizations import render_visualization
+
+    args: dict[str, Any] = {
+        "max_per_type": max_per_type,
+        "show_tiles": show_tiles,
+    }
+    if activity_type:
+        args["activity_type"] = activity_type
+    if start_date:
+        args["start_date"] = (
+            start_date.isoformat() if isinstance(start_date, date) else start_date
+        )
+    if end_date:
+        args["end_date"] = (
+            end_date.isoformat() if isinstance(end_date, date) else end_date
+        )
+    result = render_visualization("activity_types", args)
+    result["mcp_app"] = {
+        "tool": "show_visualization",
+        "name": "activity_types",
+        "args": args,
+    }
+    return result

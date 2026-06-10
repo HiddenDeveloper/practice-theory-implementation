@@ -221,6 +221,13 @@ def garmin_list_activities(
                         "max_hr": activity.get("maxHR"),
                         "steps": activity.get("steps"),
                         "calories": activity.get("calories"),
+                        # Lets GPS-hunting callers skip the two-request detail
+                        # fetch for rows Garmin already marks as route-less.
+                        "has_gps": (
+                            activity.get("hasPolyline")
+                            if isinstance(activity.get("hasPolyline"), bool)
+                            else None
+                        ),
                         **_source_fields(),
                     }
                 ),
