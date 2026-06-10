@@ -185,7 +185,8 @@ def run_invariants(
 
     firings: list[Firing] = []
     for inv in active:
-        trigger_idxs = [k for k, s in enumerate(steps) if s.material_name == inv.trigger]  # cspell:ignore idxs
+        # cspell:ignore idxs
+        trigger_idxs = [k for k, s in enumerate(steps) if s.material_name == inv.trigger]
         if not trigger_idxs:
             continue
         if store.invariant_fired(inv.id, enactment.id):

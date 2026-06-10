@@ -64,7 +64,11 @@ def test_loader_rejects_historical_engagement_bundle_id(tmp_path: Path) -> None:
     _write_pool(tmp_path / "understanding" / "und.md", entity_id="und")
     _write_pool(tmp_path / "rules" / "rule.md", entity_id="rule")
     _write_affordance(tmp_path / "affordances" / "aff.md")
-    _write_bundle(tmp_path / "bundles" / "continuous_self.md", bundle_id="continuous_self", engagement=True)
+    _write_bundle(
+        tmp_path / "bundles" / "continuous_self.md",
+        bundle_id="continuous_self",
+        engagement=True,
+    )
     _write_bundle(
         tmp_path / "bundles" / "user_focused_engagement.md",
         bundle_id="user_focused_engagement",
