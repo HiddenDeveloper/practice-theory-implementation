@@ -489,13 +489,26 @@ def _maybe_close_idle_engagement_segment() -> None:
     _refresh_engagement_projection(force=True)
 
 
-def _refresh_engagement_projection(*, force: bool = False) -> None:
+def _refresh_engagement_projection(
+    *, force: bool = False, open_enactment: bool = True
+) -> None:
     """Keep the current session's projections in sync with the live substrate.
 
     Projections are intentionally frozen snapshots, but the substrate is
     mutable at runtime. Re-project on each read/invoke boundary so Practice
     Management changes to affordances, materials, pool elements, or bundle
     selections become visible without restarting the MCP server.
+
+    `open_enactment` gates the lazy opening of the engagement enactment from
+    the projection refresh. It is True on every real interaction (a bound
+    session touching a tool), so the engagement enactment opens when a client
+    actually arrives. It is False for the module-import prep below: importing
+    the server — or starting a long-lived HTTP process that serves many
+    per-session clients — must prepare the projection without opening a
+    phantom engagement enactment against the stdio key. Such a phantom has no
+    client to step it and is never reaped (the idle reaper skips the stdio
+    key), so it would leak one open `continuous_self` enactment per process
+    start. Opening is deferred to the first real interaction instead.
     """
     if _MODE != "somatic":
         return
@@ -504,7 +517,7 @@ def _refresh_engagement_projection(*, force: bool = False) -> None:
     s.engagement = project(bundle, substrate, FUNCTIONS)
     s.engagement_bundle = bundle
     s.engagement_affordance_ids = frozenset(a.id for a in s.engagement.affordances)
-    if s.engagement_enactment_id is None:
+    if open_enactment and s.engagement_enactment_id is None:
         # The engagement layer is somatic-only (this runs under _MODE=='somatic').
         s.engagement_enactment_id = _trail.open_enactment(
             s.engagement.id, mode="somatic"
@@ -519,7 +532,9 @@ def _refresh_engagement_projection(*, force: bool = False) -> None:
         )
 
 
-_refresh_engagement_projection(force=True)
+# Prepare the projection at import without opening an engagement enactment: the
+# enactment opens lazily when a real session first interacts (see open_enactment).
+_refresh_engagement_projection(force=True, open_enactment=False)
 
 
 @mcp_app.tool()
