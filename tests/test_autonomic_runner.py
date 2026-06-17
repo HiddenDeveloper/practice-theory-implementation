@@ -71,3 +71,41 @@ def test_autonomic_inbox_backlog_combines_judge_and_smoother() -> None:
             return 7
 
     assert autonomic_runner._autonomic_inbox_backlog(Store()) == 9
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "coverage_gap",
+        "coverage_gap_noop",
+        "coverage_report",
+        "memory_coverage_gap",
+        "no_op",
+        "no_op_recall",
+        "noop",
+        "noop_review",
+        "recall_blocked_noop",
+        "source_basis_gap",
+    ],
+)
+def test_diagnostic_memory_signals_do_not_need_consolidation_dispatch(
+    kind: str,
+) -> None:
+    assert autonomic_runner._is_diagnostic_memory_signal({"kind": kind})
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "memory_candidate",
+        "memory_delta",
+        "context_candidate_with_coverage_gap",
+        "substrate_change_candidate_with_coverage_gap",
+        "",
+        None,
+    ],
+)
+def test_candidate_memory_signals_still_go_to_consolidation(
+    kind: object,
+) -> None:
+    assert not autonomic_runner._is_diagnostic_memory_signal({"kind": kind})

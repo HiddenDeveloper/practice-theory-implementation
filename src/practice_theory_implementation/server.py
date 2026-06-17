@@ -471,6 +471,24 @@ def _close_active_practice_enactment() -> None:
     s.active_practice_enactment_id = None
 
 
+def _close_session_state(s: _SessionState) -> dict[str, Any]:
+    closed: dict[str, Any] = {
+        "practice_enactment_id": s.active_practice_enactment_id,
+        "engagement_enactment_id": s.engagement_enactment_id,
+    }
+    if s.active_practice_enactment_id is not None:
+        _trail.close_enactment(s.active_practice_enactment_id)
+    if s.engagement_enactment_id is not None:
+        _trail.close_enactment(s.engagement_enactment_id)
+    s.active_practice = None
+    s.active_practice_enactment_id = None
+    s.engagement = None
+    s.engagement_enactment_id = None
+    s.engagement_affordance_ids = set()
+    s.last_step_at = None
+    return closed
+
+
 def _maybe_close_idle_engagement_segment() -> None:
     """Close a complete engagement segment after a noticeable idle gap."""
     if _MODE != "somatic" or _ENGAGEMENT_IDLE_CLOSE_SECONDS <= 0:
@@ -631,6 +649,23 @@ def current_practice(ctx: Context) -> dict[str, Any]:
         "enactment_id": s.active_practice_enactment_id,
         "composition": compose_composition(p),
     }
+
+
+@mcp_app.tool()
+def close_session(ctx: Context) -> dict[str, Any]:
+    """Close this MCP session's open trail enactments.
+
+    Streamable HTTP clients can terminate a transport session without giving
+    this application a close callback. Short-lived clients should call this
+    tool before disconnecting so the trail records completed engagement and
+    practice enactments immediately instead of waiting for the idle reaper.
+    """
+    s = _bind_session(ctx)
+    key = _current_session_key.get()
+    closed = _close_session_state(s)
+    if key != _STDIO_SESSION_KEY:
+        _sessions.pop(key, None)
+    return {"closed": closed}
 
 
 # continuous_self is a somatic-only tool — registered only when the server is
@@ -913,12 +948,7 @@ async def _shutdown_handler() -> None:
     """Close still-open enactments (every session) so the dispatcher routes a
     complete trail."""
     for s in list(_sessions.values()):
-        if s.active_practice_enactment_id is not None:
-            _trail.close_enactment(s.active_practice_enactment_id)
-            s.active_practice_enactment_id = None
-        if s.engagement_enactment_id is not None:
-            _trail.close_enactment(s.engagement_enactment_id)
-            s.engagement_enactment_id = None
+        _close_session_state(s)
 
 
 async def _reap_idle_sessions(stop: Any) -> None:
@@ -943,10 +973,7 @@ async def _reap_idle_sessions(stop: Any) -> None:
                 continue
             if s.last_step_at > cutoff:
                 continue
-            if s.active_practice_enactment_id is not None:
-                _trail.close_enactment(s.active_practice_enactment_id)
-            if s.engagement_enactment_id is not None:
-                _trail.close_enactment(s.engagement_enactment_id)
+            _close_session_state(s)
             _sessions.pop(key, None)
             _log.info("reaped idle MCP session %s", key)
 

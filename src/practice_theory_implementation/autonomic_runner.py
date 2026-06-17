@@ -86,6 +86,20 @@ DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS = 60
 DEFAULT_REMSLEEP_STARTUP_DELAY_SECONDS = 5 * 60
 DEFAULT_REMSLEEP_MAX_AUTONOMIC_BACKLOG = 10
 DEFAULT_REMSLEEP_BACKLOG_RETRY_SECONDS = 5 * 60
+DIAGNOSTIC_MEMORY_SIGNAL_KINDS = frozenset(
+    {
+        "coverage_gap",
+        "coverage_gap_noop",
+        "coverage_report",
+        "memory_coverage_gap",
+        "no_op",
+        "no_op_recall",
+        "noop",
+        "noop_review",
+        "recall_blocked_noop",
+        "source_basis_gap",
+    }
+)
 # The reflective loop runs on its own (slow) timescale, distinct from the
 # reactive dispatcher's seconds-scale poll. Hourly by default — see
 # trail.route_autonomic_history_to_judge_inbox and the strange-loop essay.
@@ -135,6 +149,11 @@ def _build_adapter(provider: str, role: str) -> AutonomicAdapter:
             reasoning_effort=os.environ.get("PRACTICE_CODEX_REASONING_EFFORT"),
         )
     raise ValueError(f"unknown PRACTICE_AUTONOMIC_PROVIDER={provider!r}")
+
+
+def _is_diagnostic_memory_signal(signal: dict[str, object]) -> bool:
+    kind = signal.get("kind")
+    return isinstance(kind, str) and kind.strip() in DIAGNOSTIC_MEMORY_SIGNAL_KINDS
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
@@ -459,6 +478,22 @@ async def _run_memory_consolidation_signal_loop(
             signal = pending[0] if pending else None
             if isinstance(signal, dict) and isinstance(signal.get("id"), str):
                 signal_id = signal["id"]
+                if _is_diagnostic_memory_signal(signal):
+                    kind = str(signal.get("kind", "")).strip()
+                    logger.info(
+                        "[memory_consolidation] auto-handling diagnostic signal %s (%s)",
+                        signal_id,
+                        kind,
+                    )
+                    await asyncio.to_thread(
+                        remsleep.remsleep_mark_memory_signal_handled,
+                        signal_id,
+                        notes=(
+                            "auto-handled diagnostic memory signal: "
+                            f"{kind}; no consolidation dispatch needed"
+                        ),
+                    )
+                    continue
                 logger.info("[memory_consolidation] dispatching signal %s", signal_id)
                 dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
                 work = WorkItem(
