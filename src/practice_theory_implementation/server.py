@@ -343,6 +343,30 @@ def _configure_stateful_materials(
     )
 
 
+def _material_module_names() -> tuple[str, ...]:
+    """Every submodule of the materials package, fully qualified and sorted.
+
+    Discovered dynamically rather than hand-listed: a hand-maintained tuple
+    drifted out of date (paper_fund, market_data, operational_observability,
+    status_dashboard and others were never reloaded), so an edit to a
+    code-owned material's body stayed stale until a full server restart.
+    Walking the package means a newly-added material module is reloaded
+    automatically and this class of bug cannot recur. Sorted for deterministic
+    reload order; material_surfaces and registry are reloaded afterwards, so
+    they re-bind to whatever these fresh modules expose.
+    """
+    import pkgutil
+
+    from practice_theory_implementation import materials as materials_pkg
+
+    return tuple(
+        sorted(
+            f"{materials_pkg.__name__}.{info.name}"
+            for info in pkgutil.iter_modules(materials_pkg.__path__)
+        )
+    )
+
+
 def _reload_seed_substrate() -> dict[str, Any]:
     """Reload material code and re-read the file substrate from disk.
 
@@ -365,21 +389,7 @@ def _reload_seed_substrate() -> dict[str, Any]:
     }
 
     try:
-        material_module_names = (
-            "practice_theory_implementation.materials.calendar_mock",
-            "practice_theory_implementation.materials.engagement_context",
-            "practice_theory_implementation.materials.episodic_memory",
-            "practice_theory_implementation.materials.garmin",
-            "practice_theory_implementation.materials.garmin_live",
-            "practice_theory_implementation.materials.garmin_mock",
-            "practice_theory_implementation.materials.google_calendar",
-            "practice_theory_implementation.materials.judge",
-            "practice_theory_implementation.materials.practice_management",
-            "practice_theory_implementation.materials.remsleep",
-            "practice_theory_implementation.materials.reflection_mock",
-            "practice_theory_implementation.materials.smoother",
-        )
-        for module_name in material_module_names:
+        for module_name in _material_module_names():
             importlib.reload(importlib.import_module(module_name))
         importlib.reload(
             importlib.import_module("practice_theory_implementation.material_surfaces")
