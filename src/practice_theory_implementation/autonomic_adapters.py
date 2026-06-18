@@ -105,6 +105,26 @@ class AdapterConfig:
     bundle_id: str                 # which bundle in the catalog this role enacts
     brief: str                     # the system prompt (composed from bundle content)
     mcp_url: str | None = None     # for HTTP MCP transport; None for stdio
+    mcp_mode: str = "autonomic"    # "autonomic" or "somatic"
+
+
+def _mcp_label(mode: str) -> str:
+    if mode not in ("autonomic", "somatic"):
+        raise ValueError(f"unsupported MCP mode {mode!r}")
+    return f"apprenticeship_{mode}"
+
+
+def _allowed_mcp_tool_names(mode: str) -> tuple[str, ...]:
+    base = (
+        "list_practices",
+        "switch_practice",
+        "current_practice",
+        "discover_affordances",
+        "invoke_affordance",
+    )
+    if mode == "somatic":
+        return base + ("continuous_self", "close_session")
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -354,13 +374,10 @@ class AnthropicSDKAdapter(AutonomicAdapter):
             ClaudeSDKClient,
         )
 
-        mcp_label = "apprenticeship_autonomic"
+        mcp_label = _mcp_label(self.config.mcp_mode)
         allowed_tools = [
-            f"mcp__{mcp_label}__list_practices",
-            f"mcp__{mcp_label}__switch_practice",
-            f"mcp__{mcp_label}__current_practice",
-            f"mcp__{mcp_label}__discover_affordances",
-            f"mcp__{mcp_label}__invoke_affordance",
+            f"mcp__{mcp_label}__{tool}"
+            for tool in _allowed_mcp_tool_names(self.config.mcp_mode)
         ]
         if self.config.mcp_url:
             server_cfg: dict[str, Any] = {"type": "http", "url": self.config.mcp_url}
@@ -370,7 +387,7 @@ class AnthropicSDKAdapter(AutonomicAdapter):
                 "command": _sys.executable,
                 "args": ["-m", "practice_theory_implementation.server"],
                 "env": _server_env(
-                    mode="autonomic",
+                    mode=self.config.mcp_mode,
                     cwd=self._cwd,
                     disable_dispatcher=True,
                     include_service_env=True,
@@ -546,7 +563,7 @@ class ClaudeCliAdapter(AutonomicAdapter):
         import sys as _sys
 
         self.last_usage = None
-        mcp_label = "apprenticeship_autonomic"
+        mcp_label = _mcp_label(self.config.mcp_mode)
         if self.config.mcp_url:
             server_cfg: dict[str, Any] = {"type": "http", "url": self.config.mcp_url}
         else:
@@ -558,7 +575,7 @@ class ClaudeCliAdapter(AutonomicAdapter):
                 # The claude subprocess gets them through its process env, and
                 # the MCP server it spawns inherits them.
                 "env": _server_env(
-                    mode="autonomic",
+                    mode=self.config.mcp_mode,
                     cwd=self._cwd,
                     disable_dispatcher=True,
                     include_service_env=False,
@@ -568,13 +585,7 @@ class ClaudeCliAdapter(AutonomicAdapter):
 
         allowed_tools = " ".join(
             f"mcp__{mcp_label}__{name}"
-            for name in (
-                "list_practices",
-                "switch_practice",
-                "current_practice",
-                "discover_affordances",
-                "invoke_affordance",
-            )
+            for name in _allowed_mcp_tool_names(self.config.mcp_mode)
         )
 
         prompt = work.dispatch_message
@@ -719,7 +730,7 @@ class CodexExecAdapter(AutonomicAdapter):
     Stateless across dispatches. Each dispatch spawns a fresh `codex exec`
     with the brief as part of the prompt and the work's dispatch_message
     appended. The autonomic MCP server is injected inline via
-    `codex exec -c mcp_servers.apprenticeship_autonomic.…`, so the
+    `codex exec -c mcp_servers.apprenticeship_<mode>.…`, so the
     subprocess does not depend on the user's `~/.codex/config.toml` or a
     `.mcp.json` in cwd.
 
@@ -751,6 +762,7 @@ class CodexExecAdapter(AutonomicAdapter):
         cmd: list[str] = [
             self._codex_bin,
             "exec",
+            "--ignore-user-config",
             "--json",  # JSONL events; the turn.completed event carries usage
             "--cd",
             str(self._cwd),
@@ -758,18 +770,17 @@ class CodexExecAdapter(AutonomicAdapter):
             "danger-full-access",
             "--dangerously-bypass-approvals-and-sandbox",
         ]
-        # Inject our autonomic MCP server inline so we don't depend on the
-        # user's ~/.codex/config.toml. With mcp_url set, point Codex at the
-        # long-lived HTTP server (streamable_http); otherwise spawn a stdio
-        # server per exec. Either way, disable any of the user's pre-configured
-        # MCP servers that we know fail to connect during autonomic runs — Codex
-        # aborts the whole exec on the first MCP connection failure, even
-        # servers our prompt won't touch.
+        # Inject our autonomic MCP server inline so we don't depend on ambient
+        # Codex MCP config. `--ignore-user-config` also prevents a local/project
+        # HTTP entry for the same server name from merging with this stdio entry.
+        # With mcp_url set, point Codex at the long-lived HTTP server; otherwise
+        # spawn a stdio server per exec.
+        mcp_label = _mcp_label(self.config.mcp_mode)
         if self.config.mcp_url:
             cmd.extend(
                 [
                     "-c",
-                    f'mcp_servers.apprenticeship_autonomic.url="{self.config.mcp_url}"',
+                    f'mcp_servers.{mcp_label}.url="{self.config.mcp_url}"',
                 ]
             )
         else:
@@ -779,23 +790,17 @@ class CodexExecAdapter(AutonomicAdapter):
             cmd.extend(
                 [
                     "-c",
-                    f'mcp_servers.apprenticeship_autonomic.command="{py_quoted}"',
+                    f'mcp_servers.{mcp_label}.command="{py_quoted}"',
                     "-c",
-                    'mcp_servers.apprenticeship_autonomic.args=['
+                    f'mcp_servers.{mcp_label}.args=['
                     '"-m","practice_theory_implementation.server"]',
                     "-c",
-                    'mcp_servers.apprenticeship_autonomic.env={'
-                    'PRACTICE_SERVER_MODE="autonomic",'
+                    f'mcp_servers.{mcp_label}.env={{'
+                    f'PRACTICE_SERVER_MODE="{self.config.mcp_mode}",'
                     'PRACTICE_TRANSPORT="stdio",'
                     'PRACTICE_DISABLE_DISPATCHER="1"}',
                 ]
             )
-        for disabled in os.environ.get(
-            "PRACTICE_CODEX_DISABLE_MCP", "cognabot,laputa"
-        ).split(","):
-            disabled = disabled.strip()
-            if disabled:
-                cmd.extend(["-c", f"mcp_servers.{disabled}.enabled=false"])
         if self._model:
             cmd.extend(["--model", self._model])
         if self._reasoning_effort:

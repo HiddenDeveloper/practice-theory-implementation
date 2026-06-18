@@ -532,6 +532,208 @@ MATERIAL_SURFACES: dict[str, Material] = {
             },
         ),
         Material(
+            name="market_fetch_snapshot",
+            description=(
+                "Fetch a near-live read-only market snapshot from public finance "
+                "endpoints for investment analysis. Returns quote prices, "
+                "market timestamps, source URLs, optional recent history, and data "
+                "limitations. This material reads real market information; it does "
+                "not execute trades."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "symbols": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Symbols to fetch. Defaults to broad US equity, sector, "
+                            "rates, dollar, and volatility proxies."
+                        ),
+                    },
+                    "range": {
+                        "type": "string",
+                        "default": "1mo",
+                        "description": "Yahoo chart range such as 5d, 1mo, 3mo, 6mo, 1y.",
+                    },
+                    "interval": {
+                        "type": "string",
+                        "default": "1d",
+                        "description": "Yahoo chart interval such as 1d, 1h, 5m.",
+                    },
+                    "include_history": {"type": "boolean", "default": True},
+                    "timeout_seconds": {"type": "number", "default": 10.0},
+                },
+            },
+        ),
+        Material(
+            name="fund_write_decision_report",
+            description=(
+                "Write a concise Markdown report for a fund action decision. "
+                "The report explains the evidence, market interpretation, rationale, "
+                "risk basis, action recorded, and next review triggers. This writes a "
+                "local artifact under data/paper_stock_reports."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "fund_id": {"type": "string"},
+                    "report_id": {"type": "string"},
+                    "as_of": {"type": "string"},
+                    "decision_id": {"type": "string"},
+                    "action": {"type": "string"},
+                    "symbol": {"type": "string"},
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "market_regime": {"type": "string"},
+                    "evidence_basis": {"type": "array", "items": {"type": "string"}},
+                    "decision_rationale": {"type": "string"},
+                    "risk_basis": {"type": "string"},
+                    "action_recorded": {"type": "string"},
+                    "expected_portfolio_effect": {"type": "string"},
+                    "open_questions": {"type": "array", "items": {"type": "string"}},
+                    "next_review_triggers": {"type": "array", "items": {"type": "string"}},
+                    "source_citations": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": [
+                    "fund_id",
+                    "report_id",
+                    "as_of",
+                    "decision_id",
+                    "action",
+                    "title",
+                    "summary",
+                    "decision_rationale",
+                    "risk_basis",
+                ],
+            },
+        ),
+        Material(
+            name="brokerage_submit_buy_order",
+            description=(
+                "Submit a buy order for a stock after the decision basis and sizing "
+                "check have been recorded. Returns order status, fill details, and "
+                "the order identifier recorded for the fund trail."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "fund_id": {"type": "string"},
+                    "symbol": {"type": "string"},
+                    "quantity": {"type": "number"},
+                    "order_type": {"type": "string"},
+                    "time_in_force": {"type": "string"},
+                    "decision_id": {"type": "string"},
+                    "as_of": {"type": "string"},
+                    "limit_price": {"type": "number"},
+                    "estimated_price": {"type": "number"},
+                    "rationale": {"type": "string"},
+                },
+                "required": [
+                    "fund_id",
+                    "symbol",
+                    "quantity",
+                    "order_type",
+                    "time_in_force",
+                    "decision_id",
+                    "as_of",
+                ],
+            },
+        ),
+        Material(
+            name="brokerage_submit_sell_order",
+            description=(
+                "Submit a sell order for a stock after the decision basis and sizing "
+                "check have been recorded. Returns order status, fill details, and "
+                "the order identifier recorded for the fund trail."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "fund_id": {"type": "string"},
+                    "symbol": {"type": "string"},
+                    "quantity": {"type": "number"},
+                    "order_type": {"type": "string"},
+                    "time_in_force": {"type": "string"},
+                    "decision_id": {"type": "string"},
+                    "as_of": {"type": "string"},
+                    "limit_price": {"type": "number"},
+                    "estimated_price": {"type": "number"},
+                    "rationale": {"type": "string"},
+                },
+                "required": [
+                    "fund_id",
+                    "symbol",
+                    "quantity",
+                    "order_type",
+                    "time_in_force",
+                    "decision_id",
+                    "as_of",
+                ],
+            },
+        ),
+        Material(
+            name="fund_read_follow_up_register",
+            description=(
+                "Read recent structured open questions and review triggers for a "
+                "fund from prior stock-investor enactments. Use this at the start "
+                "of a scheduled review so prior unresolved items are addressed or "
+                "explicitly carried forward."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "fund_id": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                    "include_closed": {"type": "boolean", "default": False},
+                },
+                "required": ["fund_id"],
+            },
+        ),
+        Material(
+            name="fund_read_state",
+            description=(
+                "Reconstruct the latest visible fund state from prior stock-investor "
+                "trail steps: mandate, cash, positions, order history, decisions, "
+                "theses, latest valuation, latest follow-ups, and reconstruction "
+                "warnings. Use this before treating a fund as empty or changing a "
+                "position."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "fund_id": {"type": "string"},
+                    "limit_enactments": {"type": "integer", "default": 50},
+                },
+                "required": ["fund_id"],
+            },
+        ),
+        Material(
+            name="fund_record_follow_up_register",
+            description=(
+                "Record structured open questions, review triggers, prior items "
+                "addressed, carried-forward items, and the next review intent for "
+                "a fund decision."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "fund_id": {"type": "string"},
+                    "as_of": {"type": "string"},
+                    "decision_id": {"type": "string"},
+                    "open_questions": {"type": "array", "items": {"type": "string"}},
+                    "review_triggers": {"type": "array", "items": {"type": "string"}},
+                    "prior_items_addressed": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "carried_forward": {"type": "array", "items": {"type": "string"}},
+                    "next_review_intent": {"type": "string"},
+                },
+                "required": ["fund_id", "as_of", "decision_id"],
+            },
+        ),
+        Material(
             name="garmin_list_activities",
             description=(
                 "List the user's Garmin Connect activities within a date range. "

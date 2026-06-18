@@ -46,6 +46,9 @@ import os
 import signal
 import sys
 from pathlib import Path
+from typing import Any, Protocol
+
+import yaml
 
 from practice_theory_implementation.autonomic_adapters import (
     AdapterConfig,
@@ -72,6 +75,12 @@ from practice_theory_implementation.trail import EnactmentStore
 
 logger = logging.getLogger(__name__)
 
+
+class _InboxBacklogStore(Protocol):
+    def pending_judge_inbox_count(self) -> int: ...
+
+    def pending_smoother_inbox_count(self) -> int: ...
+
 QUIT_SENTINEL = Path("/tmp/practice-autonomic-quit")  # noqa: S108
 REMSLEEP_ENABLED_ENV = "PRACTICE_REMSLEEP_ENABLED"
 REMSLEEP_ONLY_ENV = "PRACTICE_REMSLEEP_ONLY"
@@ -81,11 +90,26 @@ REMSLEEP_STARTUP_DELAY_ENV = "PRACTICE_REMSLEEP_STARTUP_DELAY_SECONDS"
 REMSLEEP_MAX_BACKLOG_ENV = "PRACTICE_REMSLEEP_MAX_AUTONOMIC_BACKLOG"
 REMSLEEP_BACKLOG_RETRY_ENV = "PRACTICE_REMSLEEP_BACKLOG_RETRY_SECONDS"
 REFLECTIVE_INTERVAL_ENV = "PRACTICE_REFLECTIVE_INTERVAL_SECONDS"
+INBOX_ROLES_ENABLED_ENV = "PRACTICE_INBOX_ROLES_ENABLED"
+AUTONOMIC_CONFIG_ENV = "PRACTICE_AUTONOMIC_CONFIG"
+SOMATIC_SCHEDULER_ENABLED_ENV = "PRACTICE_SOMATIC_SCHEDULER_ENABLED"
+SOMATIC_SCHEDULER_TARGET_ENV = "PRACTICE_SOMATIC_SCHEDULER_TARGET"
+SOMATIC_SCHEDULER_INTERVAL_ENV = "PRACTICE_SOMATIC_SCHEDULER_INTERVAL_SECONDS"
+SOMATIC_SCHEDULER_STARTUP_DELAY_ENV = (
+    "PRACTICE_SOMATIC_SCHEDULER_STARTUP_DELAY_SECONDS"
+)
+SOMATIC_SCHEDULER_TASK_ENV = "PRACTICE_SOMATIC_SCHEDULER_TASK"
+SOMATIC_SCHEDULER_MCP_URL_ENV = "PRACTICE_SOMATIC_SCHEDULER_MCP_URL"
+AUTONOMIC_LOG_FILE_ENV = "PRACTICE_AUTONOMIC_LOG_FILE"
 DEFAULT_REMSLEEP_INTERVAL_SECONDS = 6 * 60 * 60
 DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS = 60
 DEFAULT_REMSLEEP_STARTUP_DELAY_SECONDS = 5 * 60
 DEFAULT_REMSLEEP_MAX_AUTONOMIC_BACKLOG = 10
 DEFAULT_REMSLEEP_BACKLOG_RETRY_SECONDS = 5 * 60
+DEFAULT_SOMATIC_SCHEDULER_INTERVAL_SECONDS = 24 * 60 * 60
+DEFAULT_SOMATIC_SCHEDULER_STARTUP_DELAY_SECONDS = 60
+DEFAULT_SOMATIC_SCHEDULER_TARGET = "stock_investor"
+DEFAULT_AUTONOMIC_LOG_FILE = Path("data/autonomic_runner.log")
 DIAGNOSTIC_MEMORY_SIGNAL_KINDS = frozenset(
     {
         "coverage_gap",
@@ -106,10 +130,29 @@ DIAGNOSTIC_MEMORY_SIGNAL_KINDS = frozenset(
 DEFAULT_REFLECTIVE_INTERVAL_SECONDS = 60 * 60
 
 
-def _build_adapter(provider: str, role: str) -> AutonomicAdapter:
-    bundle = BUNDLES[role]
+def _build_adapter(
+    provider: str,
+    role: str,
+    *,
+    bundle_id: str | None = None,
+    brief_bundle_id: str | None = None,
+    mcp_mode: str = "autonomic",
+) -> AutonomicAdapter:
+    bundle_id = bundle_id or role
+    bundle = BUNDLES[brief_bundle_id or bundle_id]
     brief = compose_brief(bundle, substrate)
-    mcp_url = os.environ.get("PRACTICE_AUTONOMIC_MCP_URL")
+    mcp_url = (
+        os.environ.get(SOMATIC_SCHEDULER_MCP_URL_ENV)
+        if mcp_mode == "somatic"
+        else os.environ.get("PRACTICE_AUTONOMIC_MCP_URL")
+    )
+    config = AdapterConfig(
+        role=role,
+        bundle_id=bundle_id,
+        brief=brief,
+        mcp_url=mcp_url,
+        mcp_mode=mcp_mode,
+    )
 
     if provider == "anthropic":
         from practice_theory_implementation.autonomic_adapters import (
@@ -122,7 +165,7 @@ def _build_adapter(provider: str, role: str) -> AutonomicAdapter:
         # state lands), HTTP gives one long-lived server many workers
         # connect to concurrently.
         return AnthropicSDKAdapter(
-            AdapterConfig(role=role, bundle_id=role, brief=brief, mcp_url=mcp_url),
+            config,
             model=os.environ.get("PRACTICE_ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             max_turns=int(os.environ.get("PRACTICE_ANTHROPIC_MAX_TURNS", "60")),
         )
@@ -133,7 +176,7 @@ def _build_adapter(provider: str, role: str) -> AutonomicAdapter:
 
         budget_raw = os.environ.get("PRACTICE_CLAUDE_MAX_BUDGET_USD", "").strip()
         return ClaudeCliAdapter(
-            AdapterConfig(role=role, bundle_id=role, brief=brief, mcp_url=mcp_url),
+            config,
             model=os.environ.get("PRACTICE_CLAUDE_MODEL"),
             max_budget_usd=float(budget_raw) if budget_raw else None,
             effort=os.environ.get("PRACTICE_CLAUDE_EFFORT"),
@@ -144,7 +187,7 @@ def _build_adapter(provider: str, role: str) -> AutonomicAdapter:
         )
 
         return CodexExecAdapter(
-            AdapterConfig(role=role, bundle_id=role, brief=brief, mcp_url=mcp_url),
+            config,
             model=os.environ.get("PRACTICE_CODEX_MODEL"),
             reasoning_effort=os.environ.get("PRACTICE_CODEX_REASONING_EFFORT"),
         )
@@ -163,6 +206,94 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
     return raw in ("1", "true", "yes", "on")
 
 
+def _set_env_from_config(name: str, value: object) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool):
+        os.environ[name] = "1" if value else "0"
+        return
+    text = str(value).strip()
+    if text:
+        os.environ[name] = text
+
+
+def _load_autonomic_config() -> dict[str, Any]:
+    path_raw = os.environ.get(AUTONOMIC_CONFIG_ENV, "").strip()
+    if not path_raw:
+        return {}
+    path = Path(path_raw)
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"{AUTONOMIC_CONFIG_ENV} points to missing file {path}") from exc
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{path} must contain a YAML mapping at top level")
+    return payload
+
+
+def _apply_autonomic_config(config: dict[str, Any]) -> None:
+    """Map a declarative runner config onto the env knobs used internally."""
+    llm = config.get("llm")
+    if isinstance(llm, dict):
+        provider = llm.get("provider")
+        _set_env_from_config("PRACTICE_AUTONOMIC_PROVIDER", provider)
+        model = llm.get("model")
+        if provider == "codex":
+            _set_env_from_config("PRACTICE_CODEX_MODEL", model)
+            _set_env_from_config("PRACTICE_CODEX_REASONING_EFFORT", llm.get("reasoning_effort"))
+        elif provider == "anthropic":
+            _set_env_from_config("PRACTICE_ANTHROPIC_MODEL", model)
+        elif provider == "anthropic_cli":
+            _set_env_from_config("PRACTICE_CLAUDE_MODEL", model)
+            _set_env_from_config("PRACTICE_CLAUDE_EFFORT", llm.get("effort"))
+
+    runtime = config.get("runtime")
+    if isinstance(runtime, dict):
+        _set_env_from_config(INBOX_ROLES_ENABLED_ENV, runtime.get("inbox_roles_enabled"))
+        _set_env_from_config(AUTONOMIC_LOG_FILE_ENV, runtime.get("log_file"))
+        _set_env_from_config("PRACTICE_OTEL_CONSOLE", runtime.get("otel_console"))
+
+    schedule = config.get("somatic_schedule")
+    if isinstance(schedule, dict):
+        _set_env_from_config(SOMATIC_SCHEDULER_ENABLED_ENV, schedule.get("enabled"))
+        _set_env_from_config(SOMATIC_SCHEDULER_TARGET_ENV, schedule.get("practice"))
+        _set_env_from_config(SOMATIC_SCHEDULER_INTERVAL_ENV, schedule.get("interval_seconds"))
+        _set_env_from_config(
+            SOMATIC_SCHEDULER_STARTUP_DELAY_ENV,
+            schedule.get("startup_delay_seconds"),
+        )
+        _set_env_from_config(SOMATIC_SCHEDULER_MCP_URL_ENV, schedule.get("mcp_url"))
+        _set_env_from_config(SOMATIC_SCHEDULER_TASK_ENV, schedule.get("task"))
+
+
+def _autonomic_log_file() -> Path | None:
+    raw = os.environ.get(AUTONOMIC_LOG_FILE_ENV)
+    if raw is None:
+        return DEFAULT_AUTONOMIC_LOG_FILE
+    raw = raw.strip()
+    if not raw:
+        return None
+    return Path(raw)
+
+
+def _configure_logging() -> None:
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    log_file = _autonomic_log_file()
+    if log_file is not None:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(message)s",
+        handlers=handlers,
+        force=True,
+    )
+    if log_file is not None:
+        logger.info("autonomic runner logging to %s", log_file)
+
+
 def _selected_roles() -> tuple[bool, bool]:
     """Decide which loops run, from the env flags. Pure, so it is unit-testable.
 
@@ -174,7 +305,7 @@ def _selected_roles() -> tuple[bool, bool]:
     ``PRACTICE_REMSLEEP_ENABLED`` is set.
     """
     remsleep_only = _env_flag(REMSLEEP_ONLY_ENV)
-    run_inbox_roles = not remsleep_only
+    run_inbox_roles = _env_flag(INBOX_ROLES_ENABLED_ENV, default=True) and not remsleep_only
     run_remsleep = remsleep_only or _env_flag(REMSLEEP_ENABLED_ENV)
     return run_inbox_roles, run_remsleep
 
@@ -250,7 +381,7 @@ def _remsleep_max_autonomic_backlog() -> int:
     )
 
 
-def _autonomic_inbox_backlog(store: EnactmentStore) -> int:
+def _autonomic_inbox_backlog(store: _InboxBacklogStore) -> int:
     return store.pending_judge_inbox_count() + store.pending_smoother_inbox_count()
 
 
@@ -284,6 +415,96 @@ def _remsleep_signal_poll_seconds() -> float:
             DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS,
         )
         return float(DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS)
+
+
+def _somatic_scheduler_enabled() -> bool:
+    return _env_flag(SOMATIC_SCHEDULER_ENABLED_ENV)
+
+
+def _somatic_scheduler_target() -> str:
+    return (
+        os.environ.get(SOMATIC_SCHEDULER_TARGET_ENV, "").strip()
+        or DEFAULT_SOMATIC_SCHEDULER_TARGET
+    )
+
+
+def _somatic_scheduler_interval_seconds() -> float:
+    return _env_float(
+        SOMATIC_SCHEDULER_INTERVAL_ENV,
+        default=float(DEFAULT_SOMATIC_SCHEDULER_INTERVAL_SECONDS),
+        minimum=60.0,
+    )
+
+
+def _somatic_scheduler_startup_delay_seconds() -> float:
+    return _env_float(
+        SOMATIC_SCHEDULER_STARTUP_DELAY_ENV,
+        default=float(DEFAULT_SOMATIC_SCHEDULER_STARTUP_DELAY_SECONDS),
+        minimum=0.0,
+    )
+
+
+def _somatic_scheduler_task(target_bundle_id: str) -> str:
+    configured = os.environ.get(SOMATIC_SCHEDULER_TASK_ENV, "").strip()
+    if configured:
+        return configured
+    if target_bundle_id == "stock_investor":
+        return (
+            "Run one scheduled stock-fund construction and review pass for "
+            "`proof_fund_001`. Start by reading the continuous engagement "
+            "layer, switch to `stock_investor`, inspect the available "
+            "affordances, read fund state and prior fund follow-ups for "
+            "`proof_fund_001`, and invoke the live market snapshot material before "
+            "making any allocation, watch, reject, or cash decision. Interpret the "
+            "current market regime from real timestamped data, map which stock "
+            "types fit or do not fit that regime, then record market evidence and "
+            "valuation from the reconstructed state plus current prices. If the "
+            "state read shows the fund is empty, record at least one construction "
+            "outcome: a buy order, watchlist thesis, rejected candidate or stock "
+            "type, or explicit all-cash posture with regime-based justification. "
+            "If the state read shows existing positions, review them before adding "
+            "exposure and do not duplicate an existing starter position without a "
+            "fresh add thesis. If the decision is buy or sell, submit the "
+            "corresponding order through the available stock-order affordance after "
+            "the decision basis is recorded. Do not invent prices; if live data is "
+            "incomplete, record the measurement gap and make only decisions the "
+            "remaining evidence supports. After "
+            "recording the action decision, write a short decision summary report "
+            "that explains how the decision was reached, what action was recorded, "
+            "the evidence used, market-regime interpretation, stock-type fit, risk "
+            "basis, expected portfolio effect, open questions, and next review "
+            "triggers. After the report, record the report's open questions and "
+            "next review triggers in the fund follow-up register, naming any prior "
+            "items addressed or carried forward. Close the somatic session when the "
+            "scheduled pass is complete."
+        )
+    return (
+        f"Run one scheduled enactment of `{target_bundle_id}`. Read the continuous "
+        "engagement layer, switch to the target practice, inspect its affordances, "
+        "perform one bounded scheduled pass using only that practice's authority, "
+        "record any gaps instead of inventing data, and close the somatic session."
+    )
+
+
+def _scheduled_practitioner_role(target_bundle_id: str) -> str:
+    return f"{target_bundle_id}_practitioner"
+
+
+def _build_scheduled_practitioner_adapter(
+    provider: str, target_bundle_id: str
+) -> AutonomicAdapter:
+    """Build the LLM that enacts the scheduled somatic practice.
+
+    The scheduler supplies cadence, but the practitioner agent's system brief is
+    the target practice itself. `bundle_id` remains the target bundle so usage
+    and lifecycle finalization resolve against the somatic enactment it opens.
+    """
+    return _build_adapter(
+        provider,
+        _scheduled_practitioner_role(target_bundle_id),
+        bundle_id=target_bundle_id,
+        mcp_mode="somatic",
+    )
 
 
 async def _run_reflective_judge_loop(
@@ -575,6 +796,100 @@ async def _run_memory_consolidation_signal_loop(
         await adapter.close()
 
 
+async def _run_scheduled_somatic_loop(
+    adapter: AutonomicAdapter,
+    store: EnactmentStore,
+    *,
+    stop: asyncio.Event,
+    target_bundle_id: str,
+    interval_seconds: float,
+    startup_delay_seconds: float = 0.0,
+    breaker: CircuitBreaker | None = None,
+) -> None:
+    """Periodically dispatch one bounded enactment of a somatic practice."""
+    import time as _time
+    from datetime import UTC, datetime
+
+    await adapter.open()
+    try:
+        if startup_delay_seconds > 0:
+            logger.info(
+                "[somatic_scheduler] startup delay %.1fs before first %s dispatch",
+                startup_delay_seconds,
+                target_bundle_id,
+            )
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=startup_delay_seconds)
+        while not stop.is_set():
+            logger.info(
+                "[somatic_scheduler] scheduled somatic dispatch for %s",
+                target_bundle_id,
+            )
+            dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
+            work = WorkItem(
+                primary_id=dispatch_started,
+                role=adapter.config.role,
+                dispatch_message=_somatic_scheduler_task(target_bundle_id),
+                metadata={"target_bundle_id": target_bundle_id},
+            )
+            t0 = _time.monotonic()
+            with autonomic_dispatch_span(
+                role=adapter.config.role,
+                bundle_id=adapter.config.bundle_id,
+                primary_id=work.primary_id,
+                worker_id="somatic-scheduler",
+                metadata=work.metadata,
+            ) as span:
+                try:
+                    await adapter.dispatch(work)
+                    consumer_id = _resolve_consumer_id(
+                        store, adapter.config.bundle_id, dispatch_started
+                    )
+                    dispatch_ms = int((_time.monotonic() - t0) * 1000)
+                    if consumer_id:
+                        try:
+                            _record_usage_and_close_consumer(
+                                store,
+                                adapter,
+                                consumer_id,
+                                dispatch_ms=dispatch_ms,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "[somatic_scheduler] usage/finalize failed for %s",
+                                consumer_id,
+                            )
+                        annotate_dispatch_result(
+                            span,
+                            status="ok",
+                            consumer_id=consumer_id,
+                            usage=getattr(adapter, "last_usage", None),
+                            dispatch_ms=dispatch_ms,
+                        )
+                    else:
+                        annotate_dispatch_result(
+                            span,
+                            status="no_consumer",
+                            usage=getattr(adapter, "last_usage", None),
+                            dispatch_ms=dispatch_ms,
+                            error="no consumer id resolved",
+                        )
+                except Exception as exc:
+                    annotate_dispatch_result(span, status="error", error=str(exc))
+                    logger.exception(
+                        "[somatic_scheduler] dispatch failed for %s",
+                        target_bundle_id,
+                    )
+            if observe_dispatch(
+                breaker, getattr(adapter, "last_error", None), on_stop_signal=stop.set
+            ):
+                break
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
+    finally:
+        await adapter.close()
+
+
 def _invariant_audit_poll_seconds() -> float:
     return _env_float("PRACTICE_INVARIANT_AUDIT_POLL_SECONDS", default=30.0, minimum=5.0)
 
@@ -731,7 +1046,6 @@ async def _watch_sentinel(stop: asyncio.Event) -> None:
 
 
 async def main_async() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     provider = os.environ.get("PRACTICE_AUTONOMIC_PROVIDER", "").strip()
     if provider not in ("anthropic", "anthropic_cli", "codex"):
         raise RuntimeError(
@@ -779,6 +1093,29 @@ async def main_async() -> None:
             )
         memory_recall = _build_adapter(provider, "memory_recall")
         memory_consolidation = _build_adapter(provider, "memory_consolidation")
+
+    scheduled_somatic: AutonomicAdapter | None = None
+    scheduled_somatic_target = _somatic_scheduler_target()
+    if _somatic_scheduler_enabled():
+        if "somatic_scheduler" not in BUNDLES:
+            raise RuntimeError(
+                "Somatic scheduler is enabled but bundle 'somatic_scheduler' "
+                "is not loaded"
+            )
+        if scheduled_somatic_target not in BUNDLES:
+            raise RuntimeError(
+                "Somatic scheduler target bundle "
+                f"{scheduled_somatic_target!r} is not loaded"
+            )
+        if BUNDLES[scheduled_somatic_target].mode != "somatic":
+            raise RuntimeError(
+                "Somatic scheduler target bundle "
+                f"{scheduled_somatic_target!r} is not somatic"
+            )
+        scheduled_somatic = _build_scheduled_practitioner_adapter(
+            provider,
+            scheduled_somatic_target,
+        )
 
     try:
         tasks = [_watch_sentinel(stop)]
@@ -856,12 +1193,26 @@ async def main_async() -> None:
                     breaker=breaker,
                 )
             )
+        if scheduled_somatic is not None:
+            tasks.append(
+                _run_scheduled_somatic_loop(
+                    scheduled_somatic,
+                    store,
+                    stop=stop,
+                    target_bundle_id=scheduled_somatic_target,
+                    interval_seconds=_somatic_scheduler_interval_seconds(),
+                    startup_delay_seconds=_somatic_scheduler_startup_delay_seconds(),
+                    breaker=breaker,
+                )
+            )
         await asyncio.gather(*tasks)
     finally:
         store.close()
 
 
 def main() -> None:
+    _apply_autonomic_config(_load_autonomic_config())
+    _configure_logging()
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:

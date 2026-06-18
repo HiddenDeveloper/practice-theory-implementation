@@ -25,7 +25,9 @@ from practice_theory_implementation.materials import (
     google_calendar,
     google_mail,
     judge,
+    market_data,
     operational_observability,
+    paper_fund,
     practice_management,
     reflection_mock,
     remsleep,
@@ -135,6 +137,15 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "cal_issue_reschedule": calendar_mock.cal_issue_reschedule,
     # Reflection
     "store_reflection": reflection_mock.store_reflection,
+    # Market data and local brokerage adapter for stock investing.
+    "market_fetch_snapshot": market_data.market_fetch_snapshot,
+    "fund_write_decision_report": paper_fund.fund_write_decision_report,
+    "paper_fund_write_decision_report": paper_fund.paper_fund_write_decision_report,
+    "brokerage_submit_buy_order": paper_fund.brokerage_submit_buy_order,
+    "brokerage_submit_sell_order": paper_fund.brokerage_submit_sell_order,
+    "fund_record_follow_up_register": paper_fund.fund_record_follow_up_register,
+    "fund_read_follow_up_register": paper_fund.fund_read_follow_up_register,
+    "fund_read_state": paper_fund.fund_read_state,
     # Practice Management — meta-materials
     "pm_read_pool": practice_management.pm_read_pool,
     "pm_create_element": practice_management.pm_create_element,

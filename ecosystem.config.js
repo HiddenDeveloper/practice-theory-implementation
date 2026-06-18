@@ -44,6 +44,15 @@ module.exports = {
       error_file: "./data/autonomic_http.log",
     },
     {
+      // Generic autonomic scheduler: periodically creates an LLM practitioner
+      // for the configured somatic practice. See config/somatic_scheduler.yaml.
+      ...common,
+      name: "somatic-scheduler",
+      script: "./scripts/somatic_scheduler_service.sh",
+      out_file: "./data/somatic_scheduler.pm2.log",
+      error_file: "./data/somatic_scheduler.pm2.log",
+    },
+    {
       // Long-lived periodic service: snapshot the loop's substrate
       // self-amendments onto the autonomic/substrate quarantine branch for
       // review. It stays online between passes so PM2 status and boot

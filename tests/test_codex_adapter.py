@@ -67,10 +67,32 @@ def test_codex_injects_stdio_when_no_mcp_url(
     )
     _run_dispatch(adapter)
     joined = " ".join(captured["cmd"])
+    assert "--ignore-user-config" in captured["cmd"]
     assert "apprenticeship_autonomic.command=" in joined
     assert "apprenticeship_autonomic.args=" in joined
+    assert "mcp_servers.cognabot.enabled=false" not in joined
+    assert "mcp_servers.laputa.enabled=false" not in joined
     # No HTTP url when spawning stdio.
     assert "apprenticeship_autonomic.url=" not in joined
+
+
+def test_codex_can_inject_somatic_stdio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _capture_cmd(monkeypatch)
+    adapter = CodexExecAdapter(
+        AdapterConfig(
+            role="somatic_scheduler",
+            bundle_id="stock_investor",
+            brief="brief",
+            mcp_mode="somatic",
+        )
+    )
+    _run_dispatch(adapter)
+    joined = " ".join(captured["cmd"])
+    assert "apprenticeship_somatic.command=" in joined
+    assert 'PRACTICE_SERVER_MODE="somatic"' in joined
+    assert "apprenticeship_autonomic.command=" not in joined
 
 
 def test_codex_exec_closes_stdin(

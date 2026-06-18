@@ -86,6 +86,43 @@ signals live in `data/remsleep_memory_signals.jsonl`, with handled markers in
 `PRACTICE_REMSLEEP_MEMORY_SIGNALS_PATH`, and
 `PRACTICE_REMSLEEP_HANDLED_SIGNALS_PATH`.
 
+## Scheduled somatic enactments
+
+The same runner can periodically create a target-practice practitioner agent and
+dispatch a bounded somatic enactment. The generic service is configured by
+`config/somatic_scheduler.yaml`: provider/model, target somatic practice,
+cadence, log file, MCP transport, and task prompt all live there. The included
+config schedules `stock_investor`, but any somatic bundle can be used by
+changing `somatic_schedule.practice` and `somatic_schedule.task`.
+
+```bash
+make somatic-scheduler-up
+```
+
+Then use:
+
+```bash
+make somatic-scheduler-status
+make somatic-scheduler-logs
+make somatic-scheduler-restart
+make somatic-scheduler-down
+```
+
+By default the configured runner log is `data/somatic_scheduler.log`; PM2 also
+captures stdout/stderr in `data/somatic_scheduler.pm2.log`.
+
+For one-off/manual runs, set `PRACTICE_AUTONOMIC_CONFIG` explicitly:
+
+```bash
+PRACTICE_AUTONOMIC_CONFIG=config/somatic_scheduler.yaml \
+  uv run python -m practice_theory_implementation.autonomic_runner
+```
+
+The resulting target-practice enactment is ordinary somatic trail evidence, so
+the Judge/Smoother loop can inspect it like any other user-facing work. The
+scheduler supplies cadence; the spawned practitioner agent's brief comes from
+the target practice.
+
 For a staging-only dry run that uses the local `.codex/config.toml` service env
 without advancing the real checkpoint — a mechanical check of the
 read/dispatch/stage/handle plumbing (not a practitioner pass), writing into temp
@@ -163,8 +200,10 @@ src/practice_theory_implementation/
   autonomic_adapters.py    # ScriptedAdapter, AnthropicSDKAdapter, ClaudeCliAdapter, CodexExecAdapter
   autonomic_runner.py      # drives Judge, Smoother, and optional RemSleep workers
   __main__.py              # verify
-  bundles/                 # Activities Management, Reflection, Practice Management,
-                           # Judge, Smoother, plus the engagement bundle
+  bundles/                 # Activities Management, Calendar Stewardship, Correspondent,
+                           # Stock Investor, Reflection, Practice Management,
+                           # Judge, Smoother, RemSleep, Somatic Scheduler,
+                           # plus the engagement bundle
   materials/               # the executables each material's name resolves to
 ```
 

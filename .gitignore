@@ -18,3 +18,7 @@ data/
 # but never the compiled cache under the whitelisted hooks dir
 .codex/hooks/**/__pycache__/
 social-media
+
+# other repositories
+cognabot
+

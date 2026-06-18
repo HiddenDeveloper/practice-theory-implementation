@@ -1,0 +1,48 @@
+# Generic autonomic scheduler for periodically enacting a somatic practice with
+# an LLM practitioner. Live-world reads are owned by the target practice's
+# materials; execution adapters can be local/mocked below the practice surface.
+
+llm:
+  provider: codex
+  model: gpt-5.5
+  reasoning_effort:
+
+runtime:
+  # Keep Judge/Smoother + dispatcher active around the scheduled somatic work.
+  inbox_roles_enabled: true
+  log_file: data/somatic_scheduler.log
+  otel_console: false
+
+somatic_schedule:
+  enabled: true
+  practice: stock_investor
+  interval_seconds: 86400
+  startup_delay_seconds: 0
+  # Optional: point scheduled practitioners at a long-lived somatic HTTP MCP
+  # server. Empty means each practitioner gets a fresh stdio server.
+  mcp_url:
+  task: |
+    Run one scheduled stock-fund construction and review pass for `proof_fund_001`.
+    Start by reading the continuous engagement layer, switch to `stock_investor`,
+    inspect the available affordances, read fund state and prior fund follow-ups
+    for `proof_fund_001`, and invoke the live market snapshot material before
+    making any allocation, watch, reject, or cash decision.
+    Interpret the current market regime from real timestamped data, map which
+    stock types fit or do not fit that regime, then record market evidence and
+    valuation from the reconstructed state plus current prices. If the state
+    read shows the fund is empty, record at least one construction outcome: a
+    buy order, watchlist thesis, rejected candidate or stock type, or explicit
+    all-cash posture with regime-based justification. If the state read shows
+    existing positions, review them before adding exposure and do not duplicate
+    an existing starter position without a fresh add thesis. If the decision is
+    buy or sell, submit the corresponding order through the available stock-order
+    affordance after the decision basis is recorded. Do not invent prices; if
+    live data is incomplete, record the measurement gap and make only decisions
+    the remaining evidence supports. After recording the action decision, write
+    a short decision summary report that explains how the decision was reached,
+    what action was recorded, the evidence used, market-regime interpretation,
+    stock-type fit, risk basis, expected portfolio effect, open questions, and
+    next review triggers. Close the somatic session when the scheduled pass is
+    complete. After the report, record the report's open questions and next
+    review triggers in the fund follow-up register, naming any prior items
+    addressed or carried forward.
