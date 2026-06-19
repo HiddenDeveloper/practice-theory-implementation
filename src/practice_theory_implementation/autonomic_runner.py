@@ -106,7 +106,7 @@ DEFAULT_REMSLEEP_SIGNAL_POLL_SECONDS = 60
 DEFAULT_REMSLEEP_STARTUP_DELAY_SECONDS = 5 * 60
 DEFAULT_REMSLEEP_MAX_AUTONOMIC_BACKLOG = 10
 DEFAULT_REMSLEEP_BACKLOG_RETRY_SECONDS = 5 * 60
-DEFAULT_SOMATIC_SCHEDULER_INTERVAL_SECONDS = 24 * 60 * 60
+DEFAULT_SOMATIC_SCHEDULER_INTERVAL_SECONDS = 60 * 60
 DEFAULT_SOMATIC_SCHEDULER_STARTUP_DELAY_SECONDS = 60
 DEFAULT_SOMATIC_SCHEDULER_TARGET = "stock_investor"
 DEFAULT_AUTONOMIC_LOG_FILE = Path("data/autonomic_runner.log")
@@ -254,6 +254,17 @@ def _apply_autonomic_config(config: dict[str, Any]) -> None:
         _set_env_from_config(INBOX_ROLES_ENABLED_ENV, runtime.get("inbox_roles_enabled"))
         _set_env_from_config(AUTONOMIC_LOG_FILE_ENV, runtime.get("log_file"))
         _set_env_from_config("PRACTICE_OTEL_CONSOLE", runtime.get("otel_console"))
+
+    evaluation = config.get("practice_evaluation")
+    if isinstance(evaluation, dict):
+        _set_env_from_config(PRACTICE_EVAL_ENABLED_ENV, evaluation.get("enabled"))
+        _set_env_from_config(
+            "PRACTICE_PRACTICE_EVAL_POLL_SECONDS", evaluation.get("poll_seconds")
+        )
+        _set_env_from_config(
+            "PRACTICE_PRACTICE_EVAL_COOLDOWN_SECONDS",
+            evaluation.get("cooldown_seconds"),
+        )
 
     schedule = config.get("somatic_schedule")
     if isinstance(schedule, dict):
@@ -900,6 +911,23 @@ def _invariant_audit_cooldown_seconds() -> float:
     )
 
 
+PRACTICE_EVAL_ENABLED_ENV = "PRACTICE_PRACTICE_EVAL_ENABLED"
+
+
+def _practice_eval_enabled() -> bool:
+    return _env_flag(PRACTICE_EVAL_ENABLED_ENV)
+
+
+def _practice_eval_poll_seconds() -> float:
+    return _env_float("PRACTICE_PRACTICE_EVAL_POLL_SECONDS", default=30.0, minimum=5.0)
+
+
+def _practice_eval_cooldown_seconds() -> float:
+    return _env_float(
+        "PRACTICE_PRACTICE_EVAL_COOLDOWN_SECONDS", default=600.0, minimum=0.0
+    )
+
+
 def _invariant_audit_brief(firings: list[dict[str, object]]) -> str:
     """Build the audit dispatch from a batch of unaudited firings + their rules."""
     from practice_theory_implementation.substrate_loader import loaded
@@ -1035,6 +1063,135 @@ async def _run_invariant_audit_loop(
         await adapter.close()
 
 
+async def _run_practice_evaluation_loop(
+    adapter: AutonomicAdapter,
+    store: EnactmentStore,
+    *,
+    stop: asyncio.Event,
+    poll_seconds: float,
+    cooldown_seconds: float,
+    breaker: CircuitBreaker | None = None,
+) -> None:
+    """Idle-triggered Phase-2 practice-quality loop (gated off by default).
+
+    Runs only when both inboxes are empty, so it never competes with real-time
+    Judge/Smoother work. Each pass: (1) emit the deterministic, idempotent
+    governance Frictions — missing evaluation layer, uncovered objective — with
+    no LLM; (2) run the engine over each evaluated practice and, for any with
+    concerns, dispatch the Judge to decide whether each concern is real quality
+    friction or acceptable variation. The Judge's `emit_friction` routes genuine
+    ones to the Smoother by the normal path.
+
+    Gated by PRACTICE_PRACTICE_EVAL_ENABLED because, until the Smoother carries
+    the pooled authoring (Phases 3-4), routed Frictions cannot yet be resolved;
+    enabling it before then would only churn the Smoother inbox.
+    """
+    import time as _time
+    from datetime import UTC, datetime
+
+    from practice_theory_implementation import substrate_loader
+    from practice_theory_implementation.practice_evaluation_routing import (
+        compose_concern_brief,
+        practices_with_concerns,
+        route_evaluation_governance,
+    )
+
+    await adapter.open()
+    last_eval = 0.0
+    try:
+        while not stop.is_set():
+            backlog = _autonomic_inbox_backlog(store)
+            cooling = (_time.monotonic() - last_eval) < cooldown_seconds
+            if backlog != 0 or cooling:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
+                continue
+
+            loaded = substrate_loader.loaded()
+            try:
+                summary = await asyncio.to_thread(
+                    route_evaluation_governance, store, loaded
+                )
+                if summary.missing_evaluation or summary.objective_uncovered:
+                    logger.info("[practice_eval] %s", summary.notification)
+            except Exception:
+                logger.exception("[practice_eval] governance routing failed; continuing")
+
+            try:
+                concerns = await asyncio.to_thread(
+                    practices_with_concerns, loaded, store
+                )
+            except Exception:
+                logger.exception("[practice_eval] concern evaluation failed; continuing")
+                concerns = []
+
+            for result in concerns:
+                if stop.is_set():
+                    break
+                logger.info(
+                    "[practice_eval] dispatching Judge for %s (%d concern(s))",
+                    result.get("practice_id"),
+                    result.get("concern_count", 0),
+                )
+                dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
+                work = WorkItem(
+                    primary_id=dispatch_started,
+                    role="practice_evaluation",
+                    dispatch_message=compose_concern_brief(result),
+                    metadata={"practice_id": result.get("practice_id")},
+                )
+                t0 = _time.monotonic()
+                with autonomic_dispatch_span(
+                    role=adapter.config.role,
+                    bundle_id=adapter.config.bundle_id,
+                    primary_id=work.primary_id,
+                    worker_id="practice-evaluation",
+                    metadata=work.metadata,
+                ) as span:
+                    try:
+                        await adapter.dispatch(work)
+                        consumer_id = _resolve_consumer_id(
+                            store, adapter.config.bundle_id, dispatch_started
+                        )
+                        dispatch_ms = int((_time.monotonic() - t0) * 1000)
+                        if consumer_id:
+                            with contextlib.suppress(Exception):
+                                _record_usage_and_close_consumer(
+                                    store, adapter, consumer_id, dispatch_ms=dispatch_ms
+                                )
+                            annotate_dispatch_result(
+                                span,
+                                status="ok",
+                                consumer_id=consumer_id,
+                                usage=getattr(adapter, "last_usage", None),
+                                dispatch_ms=dispatch_ms,
+                            )
+                        else:
+                            annotate_dispatch_result(
+                                span,
+                                status="no_consumer",
+                                usage=getattr(adapter, "last_usage", None),
+                                dispatch_ms=dispatch_ms,
+                                error="no consumer id resolved",
+                            )
+                    except Exception as exc:
+                        annotate_dispatch_result(span, status="error", error=str(exc))
+                        logger.exception(
+                            "[practice_eval] judge dispatch failed for %s",
+                            result.get("practice_id"),
+                        )
+                if observe_dispatch(
+                    breaker, getattr(adapter, "last_error", None), on_stop_signal=stop.set
+                ):
+                    break
+
+            last_eval = _time.monotonic()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
+    finally:
+        await adapter.close()
+
+
 async def _watch_sentinel(stop: asyncio.Event) -> None:
     while not stop.is_set():
         if await asyncio.to_thread(QUIT_SENTINEL.exists):
@@ -1069,12 +1226,17 @@ async def main_async() -> None:
     judge: AutonomicAdapter | None = None
     smoother: AutonomicAdapter | None = None
     invariant_auditor: AutonomicAdapter | None = None
+    practice_evaluator: AutonomicAdapter | None = None
     if run_inbox_roles:
         judge = _build_adapter(provider, "judge")
         smoother = _build_adapter(provider, "smoother")
         # The audit reviews the governed invariants — judgement over the rules.
         # It reuses the Judge bundle but runs only when the loop is idle.
         invariant_auditor = _build_adapter(provider, "judge")
+        # Phase-2 practice-quality loop, gated off by default. Reuses the Judge
+        # bundle (it judges concerns) and runs only when the loop is idle.
+        if _practice_eval_enabled():
+            practice_evaluator = _build_adapter(provider, "judge")
 
     memory_recall: AutonomicAdapter | None = None
     memory_consolidation: AutonomicAdapter | None = None
@@ -1164,6 +1326,17 @@ async def main_async() -> None:
                         stop=stop,
                         poll_seconds=_invariant_audit_poll_seconds(),
                         cooldown_seconds=_invariant_audit_cooldown_seconds(),
+                        breaker=breaker,
+                    )
+                )
+            if practice_evaluator is not None:
+                tasks.append(
+                    _run_practice_evaluation_loop(
+                        practice_evaluator,
+                        store,
+                        stop=stop,
+                        poll_seconds=_practice_eval_poll_seconds(),
+                        cooldown_seconds=_practice_eval_cooldown_seconds(),
                         breaker=breaker,
                     )
                 )

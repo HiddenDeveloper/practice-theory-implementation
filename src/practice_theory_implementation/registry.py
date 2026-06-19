@@ -28,6 +28,7 @@ from practice_theory_implementation.materials import (
     market_data,
     operational_observability,
     paper_fund,
+    practice_evaluation,
     practice_management,
     reflection_mock,
     remsleep,
@@ -156,6 +157,8 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "pm_amend_material": practice_management.pm_amend_material,
     "pm_create_bundle": practice_management.pm_create_bundle,
     "pm_amend_bundle": practice_management.pm_amend_bundle,
+    "pm_create_evaluation": practice_management.pm_create_evaluation,
+    "pm_amend_evaluation": practice_management.pm_amend_evaluation,
     "pm_create_invariant": practice_management.pm_create_invariant,
     "pm_amend_invariant": practice_management.pm_amend_invariant,
     "pm_tombstone_invariant": practice_management.pm_tombstone_invariant,
@@ -166,6 +169,7 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "judge_read_enactment_steps": judge.judge_read_enactment_steps,
     "judge_read_bundle": judge.judge_read_bundle,
     "judge_emit_friction": judge.judge_emit_friction,
+    "evaluate_quality_for_practice": practice_evaluation.evaluate_quality_for_practice,
     # Smoother — two smoother-specific materials; the other six affordances
     # in the Smoother bundle reuse PM materials registered above.
     "smoother_read_pending_friction": smoother.smoother_read_pending_friction,

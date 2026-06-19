@@ -31,6 +31,7 @@ from practice_theory_implementation.engagement_aliases import (
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
+    EvaluationSpec,
     Invariant,
     Material,
     PoolElement,
@@ -142,9 +143,22 @@ def pm_read_pool(pool: str) -> list[dict[str, Any]]:
             }
             for m in sorted(s.materials.values(), key=lambda x: x.name)
         ]
+    if pool == "evaluations":
+        return [
+            {
+                "id": e.id,
+                "name": e.name,
+                "practice_id": e.practice_id,
+                "objective_ref": e.objective_ref,
+                "window": e.window,
+                "signals": [dict(sig) for sig in e.signals],
+                "content": e.content,
+            }
+            for e in sorted(s.evaluations.values(), key=lambda x: x.id)
+        ]
     raise ValueError(
         f"unknown pool {pool!r}; must be one of "
-        f"{list(POOL_ELEMENT_POOLS) + ['affordances', 'materials']}"
+        f"{list(POOL_ELEMENT_POOLS) + ['affordances', 'materials', 'evaluations']}"
     )
 
 
@@ -358,6 +372,102 @@ def pm_tombstone_invariant(id: str, reason: str) -> dict[str, Any]:  # noqa: A00
     return {"tombstoned": {"invariant": id, "reason": reason}}
 
 
+# --- evaluation spec create / amend ---------------------------------------
+
+
+def _coerce_signals(signals: object) -> list[dict[str, Any]] | str:
+    """Validate the signals payload, returning a list of dicts or an error str.
+
+    Runs the engine's deterministic well-formedness gate (known signal kinds +
+    required list params) so a malformed evaluator cannot be authored.
+    """
+    from practice_theory_implementation.materials.practice_evaluation import (
+        validate_signals,
+    )
+
+    if not isinstance(signals, list) or not all(isinstance(s, Mapping) for s in signals):
+        return "signals must be a list of mappings"
+    coerced = [dict(s) for s in signals]
+    if errors := validate_signals(coerced):
+        return "invalid signals: " + "; ".join(errors)
+    return coerced
+
+
+def pm_create_evaluation(
+    id: str,  # noqa: A002
+    name: str,
+    practice_id: str,
+    signals: list[Mapping[str, Any]],
+    objective_ref: str | None = None,
+    derived_from: str | None = None,
+    window: int = 8,
+) -> dict[str, Any]:
+    """Author a new evaluation spec — a practice's declarative measure of whether
+    it delivers its objective. Data, not code: `signals` are generic signal kinds
+    parameterised for the practice, and `objective_ref` should name one of the
+    practice bundle's teleo-affective ids so the evaluator is not vacuous."""
+    s, _ = _need_substrate()
+    if id in s.evaluations:
+        return {"error": f"evaluation {id!r} already exists"}
+    coerced = _coerce_signals(signals)
+    if isinstance(coerced, str):
+        return {"error": coerced}
+    if not isinstance(window, int) or window < 1:
+        return {"error": "window must be a positive integer"}
+    spec = EvaluationSpec(
+        id=id,
+        name=name,
+        practice_id=practice_id,
+        window=window,
+        objective_ref=objective_ref,
+        derived_from=derived_from,
+        signals=tuple(coerced),
+    )
+    if err := _persist(lambda: substrate_writer.write_evaluation(spec)):
+        return err
+    s.evaluations[id] = spec
+    return {"created": {"evaluation": id, "practice_id": practice_id}}
+
+
+def pm_amend_evaluation(
+    id: str,  # noqa: A002
+    name: str | None = None,
+    practice_id: str | None = None,
+    signals: list[Mapping[str, Any]] | None = None,
+    objective_ref: str | None = None,
+    derived_from: str | None = None,
+    window: int | None = None,
+) -> dict[str, Any]:
+    """Amend an existing evaluation spec. Omitted fields keep their current value;
+    `objective_ref`/`derived_from` are only changed when explicitly passed."""
+    s, _ = _need_substrate()
+    if id not in s.evaluations:
+        return {"error": f"evaluation {id!r} not found"}
+    current = s.evaluations[id]
+    if signals is not None:
+        coerced = _coerce_signals(signals)
+        if isinstance(coerced, str):
+            return {"error": coerced}
+        new_signals = tuple(coerced)
+    else:
+        new_signals = current.signals
+    if window is not None and (not isinstance(window, int) or window < 1):
+        return {"error": "window must be a positive integer"}
+    spec = EvaluationSpec(
+        id=id,
+        name=name if name is not None else current.name,
+        practice_id=practice_id if practice_id is not None else current.practice_id,
+        window=window if window is not None else current.window,
+        objective_ref=objective_ref if objective_ref is not None else current.objective_ref,
+        derived_from=derived_from if derived_from is not None else current.derived_from,
+        signals=new_signals,
+    )
+    if err := _persist(lambda: substrate_writer.write_evaluation(spec)):
+        return err
+    s.evaluations[id] = spec
+    return {"amended": {"evaluation": id}}
+
+
 # --- affordance create / amend --------------------------------------------
 
 
@@ -491,6 +601,7 @@ def _validate_bundle_refs(
     understanding_ids: list[str],
     rules_ids: list[str],
     affordance_ids: list[str],
+    evaluation_ids: list[str],
 ) -> list[str]:
     missing: list[str] = []
     for i in teleo_affective_ids:
@@ -505,7 +616,32 @@ def _validate_bundle_refs(
     for i in affordance_ids:
         if i not in s.affordances:
             missing.append(f"affordance {i!r}")
+    for i in evaluation_ids:
+        if i not in s.evaluations:
+            missing.append(f"evaluation {i!r}")
     return missing
+
+
+def _evaluation_coverage_errors(
+    s: Substrate, *, evaluation_ids: list[str], teleo_affective_ids: list[str]
+) -> list[str]:
+    """The mechanical promotion gate: an eval-spec may only be wired into a
+    bundle when its `objective_ref` names one of that bundle's teleo-affective
+    ids, so a vacuous evaluator cannot be activated."""
+    errors: list[str] = []
+    teleo = set(teleo_affective_ids)
+    for sid in evaluation_ids:
+        spec = s.evaluations.get(sid)
+        if spec is None:
+            continue  # missing-ref already reported by _validate_bundle_refs
+        if not spec.objective_ref:
+            errors.append(f"evaluation {sid!r} declares no objective_ref")
+        elif spec.objective_ref not in teleo:
+            errors.append(
+                f"evaluation {sid!r} objective_ref {spec.objective_ref!r} is not "
+                f"a teleo-affective id of this bundle"
+            )
+    return errors
 
 
 def pm_create_bundle(
@@ -517,6 +653,7 @@ def pm_create_bundle(
     rules_ids: list[str],
     affordance_ids: list[str],
     mode: str = "somatic",
+    evaluation_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     s, catalog = _need_substrate()
     if id in HISTORICAL_ENGAGEMENT_IDS:
@@ -530,15 +667,21 @@ def pm_create_bundle(
         return {"error": f"bundle {id!r} already exists in catalog"}
     if mode not in ("somatic", "autonomic"):
         return {"error": f"mode must be 'somatic' or 'autonomic', got {mode!r}"}
+    new_eval = list(evaluation_ids) if evaluation_ids is not None else []
     missing = _validate_bundle_refs(
         s,
         teleo_affective_ids=teleo_affective_ids,
         understanding_ids=understanding_ids,
         rules_ids=rules_ids,
         affordance_ids=affordance_ids,
+        evaluation_ids=new_eval,
     )
     if missing:
         return {"error": f"unresolved references: {missing}"}
+    if coverage := _evaluation_coverage_errors(
+        s, evaluation_ids=new_eval, teleo_affective_ids=teleo_affective_ids
+    ):
+        return {"error": f"evaluation coverage gate: {coverage}"}
     bundle = Bundle(
         id=id,
         name=name,
@@ -547,6 +690,7 @@ def pm_create_bundle(
         understanding_ids=tuple(understanding_ids),
         rules_ids=tuple(rules_ids),
         affordance_ids=tuple(affordance_ids),
+        evaluation_ids=tuple(new_eval),
         mode=mode,  # type: ignore[arg-type]
     )
     if err := _persist(lambda: substrate_writer.write_bundle(bundle)):
@@ -563,6 +707,7 @@ def pm_amend_bundle(
     understanding_ids: list[str] | None = None,
     rules_ids: list[str] | None = None,
     affordance_ids: list[str] | None = None,
+    evaluation_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     s, catalog = _need_substrate()
     if id not in catalog:
@@ -578,15 +723,25 @@ def pm_amend_bundle(
     new_aff = affordance_ids if affordance_ids is not None else list(
         current.affordance_ids
     )
+    # Preserve the evaluation layer unless explicitly changed — an amend that
+    # omits this key must not silently drop a practice's eval-spec link.
+    new_eval = evaluation_ids if evaluation_ids is not None else list(
+        current.evaluation_ids
+    )
     missing = _validate_bundle_refs(
         s,
         teleo_affective_ids=new_teleo,
         understanding_ids=new_und,
         rules_ids=new_rules,
         affordance_ids=new_aff,
+        evaluation_ids=new_eval,
     )
     if missing:
         return {"error": f"unresolved references: {missing}"}
+    if coverage := _evaluation_coverage_errors(
+        s, evaluation_ids=new_eval, teleo_affective_ids=new_teleo
+    ):
+        return {"error": f"evaluation coverage gate: {coverage}"}
     bundle = Bundle(
         id=id,
         name=name if name is not None else current.name,
@@ -595,6 +750,7 @@ def pm_amend_bundle(
         understanding_ids=tuple(new_und),
         rules_ids=tuple(new_rules),
         affordance_ids=tuple(new_aff),
+        evaluation_ids=tuple(new_eval),
         mode=current.mode,
     )
     if err := _persist(lambda: substrate_writer.write_bundle(bundle)):

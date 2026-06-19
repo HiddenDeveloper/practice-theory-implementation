@@ -7,6 +7,7 @@ teleo_affective_ids:
 - te_practice_management
 understanding_ids:
 - und_practice_management
+- und_substrate_authoring
 rules_ids:
 - rule_pm_preview_before_apply
 - rule_substrate_no_id_collision
@@ -25,6 +26,8 @@ affordance_ids:
 - amend_material
 - author_bundle
 - amend_bundle
+- author_evaluation
+- amend_evaluation
 - reload_seed_substrate
 - check_documentation_impact
 ---

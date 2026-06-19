@@ -36,6 +36,7 @@ from practice_theory_implementation.material_surfaces import MATERIAL_SURFACES
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
+    EvaluationSpec,
     Invariant,
     Material,
     PoolElement,
@@ -171,6 +172,45 @@ def _load_dynamic_materials(
     return result
 
 
+def _load_evaluations(root: Path, errors: list[str]) -> dict[str, EvaluationSpec]:
+    """Load the evaluation layer from `evaluations/*.md`.
+
+    Each spec is YAML frontmatter (the structured signal definitions) plus a
+    prose body (the objective it measures, in words). Graceful: a malformed
+    spec is recorded in `errors` and skipped, never raised.
+    """
+    result: dict[str, EvaluationSpec] = {}
+    for stem, fm, body in _read_dir(root / "evaluations", errors):
+        if fm.get("id") != stem:
+            errors.append(f"evaluations/{stem}.md: frontmatter id {fm.get('id')!r} != filename")
+            continue
+        practice_id = fm.get("practice_id")
+        if not isinstance(practice_id, str) or not practice_id:
+            errors.append(f"evaluations/{stem}.md: missing/invalid practice_id")
+            continue
+        signals_raw = fm.get("signals") or []
+        if not isinstance(signals_raw, list) or not all(
+            isinstance(s, dict) for s in signals_raw
+        ):
+            errors.append(f"evaluations/{stem}.md: signals must be a list of mappings")
+            continue
+        window = fm.get("window", 8)
+        if not isinstance(window, int) or window < 1:
+            errors.append(f"evaluations/{stem}.md: window must be a positive integer")
+            continue
+        result[stem] = EvaluationSpec(
+            id=stem,
+            name=str(fm.get("name", stem)),
+            practice_id=practice_id,
+            window=window,
+            objective_ref=fm.get("objective_ref"),
+            derived_from=fm.get("derived_from"),
+            signals=tuple(signals_raw),
+            content=body,
+        )
+    return result
+
+
 def _load_invariants(root: Path, errors: list[str]) -> dict[str, Invariant]:
     """Load governed deterministic invariants from `invariants/*.md`.
 
@@ -242,6 +282,7 @@ def _load_bundles(root: Path, errors: list[str]) -> tuple[dict[str, Bundle], lis
             understanding_ids=tuple(fm.get("understanding_ids") or ()),
             rules_ids=tuple(fm.get("rules_ids") or ()),
             affordance_ids=tuple(fm.get("affordance_ids") or ()),
+            evaluation_ids=tuple(fm.get("evaluation_ids") or ()),
             mode=mode,  # type: ignore[arg-type]
         )
         if fm.get("engagement") is True:
@@ -272,6 +313,7 @@ def load_substrate(
         affordances=_load_affordances(base, errors),
         materials={**code_surfaces, **dynamic_surfaces},
         invariants=_load_invariants(base, errors),
+        evaluations=_load_evaluations(base, errors),
     )
     catalog, engagements = _load_bundles(base, errors)
 

@@ -35,6 +35,7 @@ from practice_theory_implementation.substrate_loader import (
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
+    EvaluationSpec,
     Invariant,
     PoolElement,
 )
@@ -118,6 +119,11 @@ def write_bundle(bundle: Bundle, *, root: str | Path | None = None) -> Path:
         "rules_ids": list(bundle.rules_ids),
         "affordance_ids": list(bundle.affordance_ids),
     }
+    # Only emit the evaluation layer when present, so unrelated bundles keep a
+    # clean diff while a bundle that carries one round-trips it losslessly
+    # (an amend that omitted this key used to silently drop the link).
+    if bundle.evaluation_ids:
+        frontmatter["evaluation_ids"] = list(bundle.evaluation_ids)
     _write_atomic(path, _render(frontmatter, bundle.description))
     return path
 
@@ -153,6 +159,30 @@ def write_invariant(invariant: Invariant, *, root: str | Path | None = None) -> 
     if invariant.tombstone_reason is not None:
         frontmatter["tombstone_reason"] = invariant.tombstone_reason
     _write_atomic(path, _render(frontmatter, invariant.content))
+    return path
+
+
+def write_evaluation(spec: EvaluationSpec, *, root: str | Path | None = None) -> Path:
+    """Persist one evaluation spec to `evaluations/<id>.md`.
+
+    Mirrors the loader's read: the structured signal definitions become
+    frontmatter (stable key order), the prose objective becomes the verbatim
+    body. Optional fields are emitted only when set, so a minimal spec stays
+    clean.
+    """
+    path = _path_for("evaluations", spec.id, root=root)
+    frontmatter: dict[str, Any] = {
+        "id": spec.id,
+        "name": spec.name,
+        "practice_id": spec.practice_id,
+    }
+    if spec.objective_ref is not None:
+        frontmatter["objective_ref"] = spec.objective_ref
+    if spec.derived_from is not None:
+        frontmatter["derived_from"] = spec.derived_from
+    frontmatter["window"] = spec.window
+    frontmatter["signals"] = _plain(list(spec.signals))
+    _write_atomic(path, _render(frontmatter, spec.content))
     return path
 
 

@@ -1002,6 +1002,7 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "understanding_ids": {"type": "array", "items": {"type": "string"}},
                     "rules_ids": {"type": "array", "items": {"type": "string"}},
                     "affordance_ids": {"type": "array", "items": {"type": "string"}},
+                    "evaluation_ids": {"type": "array", "items": {"type": "string"}},
                     "mode": {"type": "string", "enum": ["somatic", "autonomic"]},
                 },
                 "required": [
@@ -1017,7 +1018,11 @@ MATERIAL_SURFACES: dict[str, Material] = {
         ),
         Material(
             name="pm_amend_bundle",
-            description="Change which pool ids an existing bundle selects.",
+            description=(
+                "Change which pool ids an existing bundle selects. Omitted id "
+                "lists are preserved, including evaluation_ids — pass it only to "
+                "change the bundle's evaluation layer."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
@@ -1028,6 +1033,55 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "understanding_ids": {"type": "array", "items": {"type": "string"}},
                     "rules_ids": {"type": "array", "items": {"type": "string"}},
                     "affordance_ids": {"type": "array", "items": {"type": "string"}},
+                    "evaluation_ids": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["id"],
+            },
+        ),
+        # Evaluation-spec authoring — pooled into both Practice Management
+        # (somatic, the human's door) and the Smoother (autonomic, the loop's).
+        Material(
+            name="pm_create_evaluation",
+            description=(
+                "Author a new evaluation spec: a practice's declarative measure of "
+                "whether it delivers its objective. Data, not code — `signals` are "
+                "generic signal kinds (affordance_coverage, outcome_presence, "
+                "shape_repetition, recurring_summary_marker) parameterised for the "
+                "practice. `objective_ref` should name one of the practice bundle's "
+                "teleo-affective ids so the evaluator is not vacuous. Wire the spec "
+                "id into the bundle's evaluation_ids (via amend_bundle) to activate it."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "practice_id": {"type": "string"},
+                    "signals": {"type": "array", "items": {"type": "object"}},
+                    "objective_ref": {"type": "string"},
+                    "derived_from": {"type": "string"},
+                    "window": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["id", "name", "practice_id", "signals"],
+            },
+        ),
+        Material(
+            name="pm_amend_evaluation",
+            description=(
+                "Amend an existing evaluation spec. Omitted fields keep their "
+                "current value; pass only what changes (signals, window, "
+                "objective_ref, derived_from, name, practice_id)."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "practice_id": {"type": "string"},
+                    "signals": {"type": "array", "items": {"type": "object"}},
+                    "objective_ref": {"type": "string"},
+                    "derived_from": {"type": "string"},
+                    "window": {"type": "integer", "minimum": 1, "maximum": 50},
                 },
                 "required": ["id"],
             },
@@ -1173,6 +1227,40 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "observation_data": {"type": "object"},
                 },
                 "required": ["target_enactment_id", "kind", "content"],
+            },
+        ),
+        # Practice-evaluation engine — generic, afforded to the Judge. Reads a
+        # practice's declarative evaluation layer and runs its signals over the
+        # practice's real trail. Read-only; emits no Friction.
+        Material(
+            name="evaluate_quality_for_practice",
+            description=(
+                "Measure whether a practice is delivering its objective. Reads the "
+                "named practice's evaluation layer (its declarative EvaluationSpec) "
+                "and runs each signal over that practice's recent real enactments, "
+                "returning structured findings (pass/concern per signal) — a "
+                "measurement, not a verdict. A practice with no evaluation layer "
+                "returns spec_present=false with newness_signal=true. Read-only: it "
+                "does not emit Friction or change substrate."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The practice (bundle) id to evaluate.",
+                    },
+                    "window": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": (
+                            "Override how many recent closed enactments to "
+                            "consider; defaults to the spec's own window."
+                        ),
+                    },
+                },
+                "required": ["name"],
             },
         ),
         # Smoother — two smoother-specific materials; the Smoother bundle's

@@ -16,6 +16,7 @@ affordance_ids:
 - list_recent_enactments
 - read_enactment_steps
 - read_bundle
+- evaluate_practice_quality
 - emit_friction
 - no_finding_outcome
 ---

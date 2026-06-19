@@ -59,6 +59,32 @@ class Affordance:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class EvaluationSpec:
+    """A declarative measure of whether a practice delivers its objective.
+
+    A practice's own statement of how it should be judged — the assertion layer
+    of its system test, run by the evaluation engine over that practice's real
+    trail. Data, never code: `signals` is a tuple of small declarative checks
+    (kind + params) the generic engine knows how to compute deterministically.
+
+    `objective_ref` ties the spec back to the teleo-affective element it
+    measures, so an evaluator that does not actually exercise the practice's
+    declared objective is itself detectable as vacuous. `window` is how many
+    recent closed enactments the engine considers. `derived_from` pins the
+    bundle revision the spec was authored against, so staleness is detectable.
+    """
+
+    id: str
+    name: str
+    practice_id: str
+    window: int = 8
+    objective_ref: str | None = None
+    derived_from: str | None = None
+    signals: tuple[Mapping[str, object], ...] = ()
+    content: str = ""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Bundle:
     """A practice captured as a selection of pool IDs.
 
@@ -70,6 +96,11 @@ class Bundle:
     `mode` declares whether the bundle is somatic (requires the user) or
     autonomic (acts alone). A mode-aware server filters its catalog by this
     field and only projects the engagement layer in somatic mode.
+
+    `evaluation_ids` selects the bundle's evaluation layer — the practice's
+    own measure of whether it delivers its objective. Empty is tolerated for
+    now (the invariant that requires a present evaluation lands in a later
+    phase); existing bundles without it stay valid.
     """
 
     id: str
@@ -79,6 +110,7 @@ class Bundle:
     understanding_ids: tuple[str, ...]
     rules_ids: tuple[str, ...]
     affordance_ids: tuple[str, ...]
+    evaluation_ids: tuple[str, ...] = ()
     mode: Mode = "somatic"
 
 
@@ -126,6 +158,7 @@ class Substrate:
     affordances: dict[str, Affordance] = field(default_factory=dict)
     materials: dict[str, Material] = field(default_factory=dict)
     invariants: dict[str, Invariant] = field(default_factory=dict)
+    evaluations: dict[str, EvaluationSpec] = field(default_factory=dict)
 
 
 def validate_bundle(bundle: Bundle, substrate: Substrate) -> None:
@@ -145,6 +178,9 @@ def validate_bundle(bundle: Bundle, substrate: Substrate) -> None:
     for r_id in bundle.rules_ids:
         if r_id not in substrate.rules:
             missing.append(f"rules id {r_id!r}")
+    for ev_id in bundle.evaluation_ids:
+        if ev_id not in substrate.evaluations:
+            missing.append(f"evaluation id {ev_id!r}")
     for aff_id in bundle.affordance_ids:
         if aff_id not in substrate.affordances:
             missing.append(f"affordance id {aff_id!r}")

@@ -13,6 +13,17 @@ runtime:
   log_file: data/somatic_scheduler.log
   otel_console: false
 
+# Phase-4 self-evaluating-practices loop. When enabled, an idle-triggered loop
+# emits the deterministic governance Frictions (missing/uncovered evaluation
+# layer) and dispatches the Judge to rule on engine-measured quality concerns;
+# the Smoother resolves what is routed using its pooled authoring. Left OFF by
+# default — turning it on lets the loop modify substrate autonomously, so it is
+# a deliberate go-live decision. Set enabled: true to activate.
+practice_evaluation:
+  enabled: true
+  # poll_seconds: 30       # how often to check for idle + concerns
+  # cooldown_seconds: 600  # min gap between evaluation passes
+
 somatic_schedule:
   enabled: true
   practice: stock_investor

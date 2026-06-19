@@ -63,6 +63,9 @@ from practice_theory_implementation.bundles import BUNDLES, ENGAGEMENT_BUNDLE
 from practice_theory_implementation.materials.judge import (
     configure as configure_judge,
 )
+from practice_theory_implementation.materials.practice_evaluation import (
+    configure as configure_practice_evaluation,
+)
 from practice_theory_implementation.materials.practice_management import (
     configure as configure_practice_management,
 )
@@ -227,6 +230,13 @@ configure_smoother(
     trail=_trail,
     active_enactment_id_getter=lambda: _session().active_practice_enactment_id,
 )
+# The practice-evaluation engine reads the trail + the evaluation layer; it
+# holds no per-enactment state, so it only needs trail, substrate, and catalog.
+configure_practice_evaluation(
+    trail=_trail,
+    substrate=substrate,
+    bundle_catalog=_AUTHORING_BUNDLES,
+)
 
 # Per-session state. Under stdio each process serves one client, so a single
 # session keyed by _STDIO_SESSION_KEY reproduces the old module-global
@@ -325,6 +335,9 @@ def _configure_stateful_materials(
     smoother_module = importlib.import_module(
         "practice_theory_implementation.materials.smoother"
     )
+    practice_evaluation_module = importlib.import_module(
+        "practice_theory_implementation.materials.practice_evaluation"
+    )
     practice_management_module.configure(
         substrate=live_substrate,
         bundle_catalog=live_catalog,
@@ -340,6 +353,11 @@ def _configure_stateful_materials(
     smoother_module.configure(
         trail=_trail,
         active_enactment_id_getter=lambda: _session().active_practice_enactment_id,
+    )
+    practice_evaluation_module.configure(
+        trail=_trail,
+        substrate=live_substrate,
+        bundle_catalog=live_catalog,
     )
 
 

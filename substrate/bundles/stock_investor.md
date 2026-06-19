@@ -34,5 +34,7 @@ affordance_ids:
 - record_fund_follow_ups
 - value_fund
 - review_investor_practice
+evaluation_ids:
+- eval_stock_investor
 ---
 Enact a disciplined stock-investor role for a fund using real market information. The practice builds auditable evidence around thesis formation, market snapshots, trade decisions, order actions, valuation, benchmark comparison, and periodic review. It measures fund value without pretending that short-term value alone proves good investing practice.
