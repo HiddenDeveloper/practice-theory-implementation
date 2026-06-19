@@ -31,5 +31,7 @@ affordance_ids:
 - declare_correspondence_limit
 - send_reviewed_email_draft
 - test_user_email_management
+evaluation_ids:
+- eval_correspondent
 ---
 Attend to correspondence on the user's behalf without committing on the user's behalf. Read Gmail threads and supplied messages in their literal and implicit layers; recall correspondent context only from reachable evidence; offer drafts, frictions, stance invitations, and limits as reviewable artifacts; create or revise Gmail drafts when the user wants a concrete draft artifact; and keep sending behind explicit review and authorization.

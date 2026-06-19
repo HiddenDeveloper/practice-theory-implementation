@@ -21,5 +21,7 @@ affordance_ids:
 - propose_reschedule
 - invite_stance
 - issue_reschedule
+evaluation_ids:
+- eval_calendar_stewardship
 ---
 Tend the user's calendar as a record of commitments to people — not as fields to be edited. Stage proposed changes; invite the user's stance before any change that notifies attendees; issue deliberately, never silently.

@@ -12,6 +12,7 @@ rules_ids:
 - rule_no_intent_inference
 - rule_no_coaching
 - rule_no_external_exposure
+- rule_activities_read_record_before_rhythm
 affordance_ids:
 - recent_activity
 - activity_detail
@@ -20,5 +21,7 @@ affordance_ids:
 - route_aware_iwt_analysis
 - activity_gps_shape
 - activity_type_visualizations
+evaluation_ids:
+- eval_activities_management
 ---
 Keep an honest, useful view of the user's physical activities — what's been done, what the body is showing, what the rhythm looks like.

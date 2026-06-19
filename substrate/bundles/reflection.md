@@ -11,5 +11,7 @@ rules_ids:
 - rule_reflection_verbatim
 affordance_ids:
 - record_reflection
+evaluation_ids:
+- eval_reflection
 ---
 Record a short written reflection from the user, dated and stored verbatim.

@@ -30,5 +30,7 @@ affordance_ids:
 - amend_evaluation
 - reload_seed_substrate
 - check_documentation_impact
+evaluation_ids:
+- eval_practice_management
 ---
 Author and amend the substrate at runtime — pool elements, affordances, materials, and bundles — on the user's behalf.
