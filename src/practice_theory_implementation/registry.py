@@ -26,6 +26,7 @@ from practice_theory_implementation.materials import (
     google_mail,
     judge,
     market_data,
+    morning_briefing,
     operational_observability,
     paper_fund,
     practice_evaluation,
@@ -140,6 +141,10 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "store_reflection": reflection_mock.store_reflection,
     # Market data and local brokerage adapter for stock investing.
     "market_fetch_snapshot": market_data.market_fetch_snapshot,
+    "read_morning_briefing_sites": morning_briefing.read_morning_briefing_sites,
+    "morning_briefing_browser_site_check": (
+        morning_briefing.morning_briefing_browser_site_check
+    ),
     "fund_write_decision_report": paper_fund.fund_write_decision_report,
     "paper_fund_write_decision_report": paper_fund.paper_fund_write_decision_report,
     "brokerage_submit_buy_order": paper_fund.brokerage_submit_buy_order,

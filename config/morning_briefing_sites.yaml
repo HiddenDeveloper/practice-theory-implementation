@@ -1,0 +1,8 @@
+sites:
+  - id: guardian_uk
+    name: Guardian UK
+    url: https://www.theguardian.com/uk
+    enabled: true
+    cadence: daily
+    section: news
+    notes: UK homepage for morning news scan.

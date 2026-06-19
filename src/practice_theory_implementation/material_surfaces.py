@@ -567,6 +567,53 @@ MATERIAL_SURFACES: dict[str, Material] = {
             },
         ),
         Material(
+            name="read_morning_briefing_sites",
+            description=(
+                "Read the local Morning Briefing site list from YAML. Returns enabled "
+                "recurring sites with id, name, URL, cadence, section, notes, and any "
+                "configuration gaps."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "config_path": {
+                        "type": "string",
+                        "default": "config/morning_briefing_sites.yaml",
+                    },
+                    "include_disabled": {"type": "boolean", "default": False},
+                },
+            },
+        ),
+        Material(
+            name="morning_briefing_browser_site_check",
+            description=(
+                "Check one recurring morning site through Cognabot's browser JIT "
+                "proxy. The proxy starts the headless-browser MCP service on first "
+                "request, opens the URL, captures the accessibility-tree snapshot, "
+                "and returns source notes, headline candidates, snapshot text, or a "
+                "structured access gap."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "site_name": {"type": "string"},
+                    "url": {"type": "string"},
+                    "checked_at": {"type": "string"},
+                    "browser_jit_url": {
+                        "type": "string",
+                        "default": "http://127.0.0.1:3019",
+                        "description": (
+                            "Cognabot browser JIT proxy base URL. Defaults to the "
+                            "local apprenticeship-cognabot proxy."
+                        ),
+                    },
+                    "timeout_seconds": {"type": "number", "default": 90.0},
+                    "headline_limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["site_name", "url"],
+            },
+        ),
+        Material(
             name="fund_write_decision_report",
             description=(
                 "Write a concise Markdown report for a fund action decision. "
