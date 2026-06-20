@@ -70,13 +70,59 @@ snapshot_once() {
   return "$status"
 }
 
+# Auto-ratify mode (AUTONOMIC_JANITOR_AUTORATIFY=1): instead of staging to the
+# quarantine branch for a human to merge, commit the loop's substrate/ edits
+# directly onto the live branch — no human in the loop. The loop's edits are
+# already in force the moment they are written (git is only the durable record),
+# so this removes a bookkeeping-only human step, not a runtime gate. Oversight
+# stays in the in-loop gates + the Judge re-examining authoring + git revert.
+#
+# Scoped to substrate/ (never -A), authored as autonomic-loop, as discrete
+# revertible commits. PRECONDITION: the working tree's uncommitted substrate/
+# must be genuine loop output — a clean human/loop baseline must already be
+# committed, or human WIP would be mislabelled as the loop's.
+autoratify_once() {
+  if git diff --quiet -- substrate/ \
+     && [ -z "$(git ls-files --others --exclude-standard -- substrate/)" ]; then
+    echo "janitor: no substrate changes to ratify"
+    return 0
+  fi
+  local branch
+  branch=$(git symbolic-ref --short -q HEAD || true)
+  if [ -z "$branch" ]; then
+    echo "janitor: HEAD is detached; refusing to auto-ratify"
+    return 0
+  fi
+  git add -- substrate/
+  if git diff --cached --quiet -- substrate/; then
+    echo "janitor: nothing staged after add; skipping"
+    return 0
+  fi
+  local ts msg
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  msg="autonomic: substrate self-amendment $ts"
+  GIT_AUTHOR_NAME="autonomic-loop" GIT_AUTHOR_EMAIL="autonomic@localhost" \
+  GIT_COMMITTER_NAME="autonomic-janitor" GIT_COMMITTER_EMAIL="autonomic@localhost" \
+    git commit -q -m "$msg" -- substrate/
+  echo "janitor: auto-ratified substrate -> $branch ($(git rev-parse --short HEAD))"
+}
+
+pass_once() {
+  if [ "${AUTONOMIC_JANITOR_AUTORATIFY:-0}" = "1" ]; then
+    autoratify_once
+  else
+    snapshot_once
+  fi
+}
+
 if [ "${AUTONOMIC_JANITOR_ONESHOT:-0}" = "1" ]; then
-  snapshot_once
+  pass_once
   exit 0
 fi
 
-echo "janitor: starting substrate snapshot loop every ${INTERVAL_SECONDS}s"
+mode="quarantine"; [ "${AUTONOMIC_JANITOR_AUTORATIFY:-0}" = "1" ] && mode="auto-ratify"
+echo "janitor: starting substrate $mode loop every ${INTERVAL_SECONDS}s"
 while true; do
-  snapshot_once
+  pass_once
   sleep "$INTERVAL_SECONDS"
 done
