@@ -1,6 +1,6 @@
 ---
 id: recent_activity
-name: Start with recent activity record
+name: 'First Garmin move: recent activity record'
 materials:
 - garmin_list_activities
 ---
