@@ -576,10 +576,9 @@ MATERIAL_SURFACES: dict[str, Material] = {
             input_schema={
                 "type": "object",
                 "properties": {
-                    "config_path": {
-                        "type": "string",
-                        "default": "config/morning_briefing_sites.yaml",
-                    },
+                    # config_path is intentionally NOT exposed: the practitioner
+                    # always reads the configured default site list, so a material
+                    # argument cannot be used to read arbitrary local files.
                     "include_disabled": {"type": "boolean", "default": False},
                 },
             },
@@ -599,14 +598,10 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "site_name": {"type": "string"},
                     "url": {"type": "string"},
                     "checked_at": {"type": "string"},
-                    "browser_jit_url": {
-                        "type": "string",
-                        "default": "http://127.0.0.1:3019",
-                        "description": (
-                            "Cognabot browser JIT proxy base URL. Defaults to the "
-                            "local apprenticeship-cognabot proxy."
-                        ),
-                    },
+                    # browser_jit_url is intentionally NOT exposed: the proxy is a
+                    # fixed loopback service read from configuration, never an
+                    # LLM-chosen host (SSRF). The target `url` is additionally
+                    # checked against internal/private addresses in the material.
                     "timeout_seconds": {"type": "number", "default": 90.0},
                     "headline_limit": {"type": "integer", "minimum": 1, "maximum": 50},
                 },

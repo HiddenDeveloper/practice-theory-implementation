@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,10 @@ DEFAULT_BROWSER_JIT_URL = "http://127.0.0.1:3019"
 DEFAULT_SITE_LIST_PATH = "config/morning_briefing_sites.yaml"
 MAX_SNAPSHOT_CHARS = 12_000
 
+# The browser JIT proxy is host-native and loopback-only; we never let a caller
+# point the browser at an arbitrary proxy host.
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -22,6 +28,39 @@ def _now() -> str:
 def _valid_url(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _host_blocked_reason(hostname: str | None) -> str | None:
+    """Return a reason string if `hostname` resolves to a non-public address.
+
+    Blocks a host that resolves to any loopback / private / link-local /
+    reserved / multicast / unspecified IP — the actual SSRF targets (cloud
+    metadata, localhost admin ports, RFC1918, etc.). A host that does not resolve
+    is allowed through: it is not a reachable target, and the fetch fails
+    naturally. (DNS rebinding remains a residual risk the proxy layer must own.)
+    """
+    if not hostname:
+        return "missing host"
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except OSError:
+        return None
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr.split("%", 1)[0])
+        except ValueError:
+            return f"host {hostname!r} resolved to an unparseable address"
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return f"host {hostname!r} resolves to a non-public address ({ip})"
+    return None
 
 
 def _tool_url(base_url: str, tool_name: str) -> str:
@@ -98,7 +137,13 @@ def read_morning_briefing_sites(
     config_path: str = DEFAULT_SITE_LIST_PATH,
     include_disabled: bool = False,
 ) -> dict[str, Any]:
-    """Read the local morning briefing site list from YAML."""
+    """Read the local morning briefing site list from YAML.
+
+    `config_path` is not part of the LLM-facing material schema (see
+    material_surfaces): the practitioner always reads the configured default, so
+    it cannot be used to read arbitrary local files. The parameter remains for
+    trusted/internal and test callers.
+    """
     path = Path(config_path).expanduser()
     try:
         payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -109,12 +154,13 @@ def read_morning_briefing_sites(
             "count": 0,
             "access_gap": "morning briefing site list file not found",
         }
-    except Exception as exc:
+    except Exception:
+        # Do not leak filesystem/parse internals back to the caller.
         return {
             "config_path": str(path),
             "sites": [],
             "count": 0,
-            "access_gap": f"could not read morning briefing site list: {exc}",
+            "access_gap": "could not read or parse the morning briefing site list",
         }
 
     raw_sites = payload.get("sites") if isinstance(payload, dict) else None
@@ -171,6 +217,25 @@ def morning_briefing_browser_site_check(
             "url": url,
             "checked_at": checked,
             "access_gap": "invalid URL; expected http(s) URL with host",
+            "provider": "Cognabot browser JIT",
+        }
+
+    # SSRF guards: the proxy must be loopback (never an arbitrary host), and the
+    # target must resolve to a public address (never internal/private/metadata).
+    if urlparse(browser_jit_url).hostname not in _LOOPBACK_HOSTS:
+        return {
+            "site_name": site_name,
+            "url": url,
+            "checked_at": checked,
+            "access_gap": "browser_jit_url must be a loopback proxy (127.0.0.1/::1)",
+            "provider": "Cognabot browser JIT",
+        }
+    if reason := _host_blocked_reason(urlparse(url).hostname):
+        return {
+            "site_name": site_name,
+            "url": url,
+            "checked_at": checked,
+            "access_gap": f"refusing to fetch a non-public target: {reason}",
             "provider": "Cognabot browser JIT",
         }
 
