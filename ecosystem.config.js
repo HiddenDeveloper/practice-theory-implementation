@@ -64,7 +64,12 @@ module.exports = {
       script: "./scripts/autonomic_substrate_janitor.sh",
       out_file: "./data/substrate_janitor.log",
       error_file: "./data/substrate_janitor.log",
-      env: { AUTONOMIC_JANITOR_AUTORATIFY: "1" },
+      env: {
+        AUTONOMIC_JANITOR_AUTORATIFY: "1",
+        // Only ratify onto these branches (space-separated); never a stray
+        // release branch. Update when the loop's live branch changes.
+        AUTONOMIC_JANITOR_RATIFY_BRANCHES: "main self-evaluating-practices",
+      },
     },
     {
       // Self-refreshing HTTP status dashboard (:7182): Judge/Smoother inbox

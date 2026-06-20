@@ -93,9 +93,32 @@ autoratify_once() {
     echo "janitor: HEAD is detached; refusing to auto-ratify"
     return 0
   fi
+  # Branch allowlist: never drop loop commits onto an unexpected (e.g. release)
+  # branch. Default to main; the live branch is set explicitly in ecosystem env.
+  local allowed="${AUTONOMIC_JANITOR_RATIFY_BRANCHES:-main}"
+  case " $allowed " in
+    *" $branch "*) : ;;
+    *)
+      echo "janitor: branch '$branch' not in ratify allowlist ($allowed); refusing"
+      return 0
+      ;;
+  esac
+  # Integrity guard: refuse if substrate/ is already staged by someone else, so
+  # the janitor only ever commits what it stages itself under the loop identity.
+  if ! git diff --cached --quiet -- substrate/; then
+    echo "janitor: substrate already staged externally; refusing to auto-ratify"
+    return 0
+  fi
   git add -- substrate/
   if git diff --cached --quiet -- substrate/; then
     echo "janitor: nothing staged after add; skipping"
+    return 0
+  fi
+  # Pre-commit policy gate: do not make a broken substrate batch durable. If the
+  # batch does not load cleanly, unstage and leave it for the next pass / review.
+  if ! uv run python -c "import sys; from practice_theory_implementation.substrate_loader import load_substrate; from practice_theory_implementation.material_surfaces import MATERIAL_SURFACES; sys.exit(1 if load_substrate(material_surfaces=MATERIAL_SURFACES).errors else 0)" >/dev/null 2>&1; then
+    echo "janitor: substrate does not load cleanly; refusing to ratify this batch"
+    git reset -q -- substrate/
     return 0
   fi
   local ts msg
