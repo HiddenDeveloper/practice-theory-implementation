@@ -1,6 +1,6 @@
 ---
 id: daily_summary
-name: Daily summary, gated by recent list
+name: Daily summary after recent list
 materials:
 - garmin_list_activities
 - garmin_get_daily_summary

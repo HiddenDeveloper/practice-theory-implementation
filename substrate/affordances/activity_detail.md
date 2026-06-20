@@ -1,6 +1,6 @@
 ---
 id: activity_detail
-name: Activity detail, gated by recent list
+name: Activity detail after recent list
 materials:
 - garmin_list_activities
 - garmin_get_activity
