@@ -19,6 +19,7 @@ rules_ids:
 - rule_pm_read_pool_before_authoring
 - rule_pm_invariants_do_not_substitute_for_pool_read
 - rule_pm_pool_read_first_or_stop
+- rule_pm_substrate_stewardship_starts_with_pool_read
 affordance_ids:
 - read_pool
 - author_pool_element
