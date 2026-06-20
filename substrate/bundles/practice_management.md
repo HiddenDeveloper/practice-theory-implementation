@@ -16,6 +16,9 @@ rules_ids:
 - rule_pm_update_affected_documentation
 - rule_material_judgement_is_evaluable
 - rule_adapt_after_failed_invocation
+- rule_pm_read_pool_before_authoring
+- rule_pm_invariants_do_not_substitute_for_pool_read
+- rule_pm_pool_read_first_or_stop
 affordance_ids:
 - read_pool
 - author_pool_element
@@ -33,4 +36,4 @@ affordance_ids:
 evaluation_ids:
 - eval_practice_management
 ---
-Author and amend the substrate at runtime — pool elements, affordances, materials, and bundles — on the user's behalf.
+Author and amend the substrate at runtime — pool elements, affordances, materials, evaluations, invariants, and bundles — on the user's behalf. Begin substrate stewardship by invoking `read_pool` / `pm_read_pool` for the pool surface the work will rely on; this is the entry gate before reload, documentation-impact checks, authoring, amendment, evaluation or invariant changes, and bundle wiring. If the intended surface cannot be identified or read, stop with that surface gap instead of proceeding from reload, documentation, memory, or a successful write.
