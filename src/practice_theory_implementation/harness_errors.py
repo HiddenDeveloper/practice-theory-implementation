@@ -389,6 +389,27 @@ def trip_and_stop(
             },
         )
     logger.error("%s", notification)
+    # Escalate-when-unsure: the loop is going DOWN — tap the human now (CRITICAL).
+    with contextlib.suppress(Exception):
+        from practice_theory_implementation.escalation import Severity, emit_escalation
+
+        emit_escalation(
+            kind="autonomic_halt",
+            severity=Severity.CRITICAL,
+            source="circuit_breaker",
+            dedup_key=f"autonomic_halt:{err.provider}:{err.kind.value}",
+            content=(
+                f"The autonomic loop halted: {err.provider} {err.kind.value}. "
+                f"{decision.reason}"
+            ),
+            evidence={
+                "kind": err.kind.value,
+                "provider": err.provider,
+                "reason": decision.reason,
+                "retry_at": err.retry_at,
+                "consecutive": decision.consecutive,
+            },
+        )
     if on_stop_signal is not None:
         with contextlib.suppress(Exception):
             on_stop_signal()

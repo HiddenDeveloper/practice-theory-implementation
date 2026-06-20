@@ -133,6 +133,25 @@ CREATE TABLE IF NOT EXISTS enactment_usage (
     dispatch_ms            INTEGER,
     recorded_at            TEXT NOT NULL
 );
+
+-- Escalate-when-unsure: the loop's tap-on-the-shoulder to the human. One open
+-- row per dedup_key (a persistent condition is one escalation, not a stream).
+CREATE TABLE IF NOT EXISTS escalations (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind             TEXT NOT NULL,
+    severity         TEXT NOT NULL,   -- 'critical' | 'attention' | 'fyi'
+    source           TEXT NOT NULL,
+    dedup_key        TEXT NOT NULL,
+    content          TEXT NOT NULL,
+    evidence_json    TEXT,
+    state            TEXT NOT NULL DEFAULT 'open',  -- open|notified|acknowledged|resolved
+    created_at       TEXT NOT NULL,
+    notified_at      TEXT,
+    acknowledged_at  TEXT,
+    resolved_at      TEXT,
+    user_stance      TEXT
+);
+CREATE INDEX IF NOT EXISTS escalations_open ON escalations(dedup_key, state);
 """
 
 
@@ -184,6 +203,23 @@ class SmootherInboxRow:
     consumed_at: str | None
     consumed_by_enactment_id: str | None
     attempts: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class EscalationRow:
+    id: int
+    kind: str
+    severity: str
+    source: str
+    dedup_key: str
+    content: str
+    evidence_json: str | None
+    state: str
+    created_at: str
+    notified_at: str | None
+    acknowledged_at: str | None
+    resolved_at: str | None
+    user_stance: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -453,6 +489,100 @@ class EnactmentStore:
             )
             row_id = cur.lastrowid
         return row_id or 0
+
+    # --- escalations (escalate-when-unsure) --------------------------------
+
+    def record_escalation(
+        self,
+        *,
+        kind: str,
+        severity: str,
+        source: str,
+        dedup_key: str,
+        content: str,
+        evidence: object | None = None,
+    ) -> int:
+        """Record an Escalation, idempotent on `dedup_key`.
+
+        If an unresolved escalation with the same `dedup_key` already exists, no
+        new row is created and its id is returned — a persistent condition is one
+        escalation, not a stream. Returns the (new or existing) escalation id.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT id FROM escalations WHERE dedup_key = ? "
+                "AND state != 'resolved' ORDER BY id LIMIT 1",
+                (dedup_key,),
+            )
+            existing = cur.fetchone()
+            if existing is not None:
+                return int(existing[0])
+            cur.execute(
+                "INSERT INTO escalations("
+                "kind, severity, source, dedup_key, content, evidence_json,"
+                " state, created_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, 'open', ?)",
+                (
+                    kind,
+                    severity,
+                    source,
+                    dedup_key,
+                    content,
+                    json.dumps(evidence) if evidence is not None else None,
+                    _now(),
+                ),
+            )
+            return cur.lastrowid or 0
+
+    def _escalations_where(self, clause: str, params: tuple, limit: int) -> list[EscalationRow]:
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT id, kind, severity, source, dedup_key, content,"
+                " evidence_json, state, created_at, notified_at, acknowledged_at,"
+                " resolved_at, user_stance FROM escalations "
+                f"WHERE {clause} ORDER BY id DESC LIMIT ?",
+                (*params, limit),
+            )
+            return [EscalationRow(**dict(r)) for r in cur.fetchall()]
+
+    def open_escalations(self, *, limit: int = 50) -> list[EscalationRow]:
+        """Escalations still awaiting resolution (open/notified/acknowledged)."""
+        return self._escalations_where("state != 'resolved'", (), limit)
+
+    def unnotified_escalations(self, *, limit: int = 50) -> list[EscalationRow]:
+        """Open escalations not yet pushed to the human."""
+        return self._escalations_where(
+            "state = 'open' AND notified_at IS NULL", (), limit
+        )
+
+    def mark_escalation_notified(self, escalation_id: int) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                "UPDATE escalations SET notified_at = ?, "
+                "state = CASE WHEN state = 'open' THEN 'notified' ELSE state END "
+                "WHERE id = ?",
+                (_now(), escalation_id),
+            )
+
+    def acknowledge_escalation(
+        self, escalation_id: int, *, stance: str
+    ) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                "UPDATE escalations SET acknowledged_at = ?, user_stance = ?, "
+                "state = 'acknowledged' WHERE id = ?",
+                (_now(), stance, escalation_id),
+            )
+
+    def resolve_escalations(self, dedup_key: str) -> int:
+        """Resolve any open escalation(s) for a dedup_key (the condition cleared)."""
+        with self._cursor() as cur:
+            cur.execute(
+                "UPDATE escalations SET resolved_at = ?, state = 'resolved' "
+                "WHERE dedup_key = ? AND state != 'resolved'",
+                (_now(), dedup_key),
+            )
+            return cur.rowcount
 
     def pending_friction(
         self, *, limit: int = 20, friction_id: int | None = None

@@ -18,6 +18,7 @@ unaddressed" needs no judgement, so it belongs in code, not the loop.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
 
@@ -66,6 +67,26 @@ def reconcile_smoother_frictions(
             basis = f"{RECONCILE_OBSERVER}:unresolved_after_{attempts}_attempts"
             store.mark_friction_addressed(friction_id, basis)
             summary.tombstoned += 1
+            # Escalate-when-unsure: a Friction self-correction couldn't resolve
+            # is being tombstoned — surface it rather than letting it vanish.
+            with contextlib.suppress(Exception):
+                from practice_theory_implementation.escalation import (
+                    Severity,
+                    emit_escalation,
+                )
+
+                emit_escalation(
+                    kind="friction_unresolved",
+                    severity=Severity.ATTENTION,
+                    source="friction_reconcile",
+                    dedup_key=f"friction_tombstoned:{friction_id}",
+                    content=(
+                        f"Friction {friction_id} could not be resolved after "
+                        f"{attempts} attempts and was tombstoned. It may need a steer."
+                    ),
+                    evidence={"friction_id": friction_id, "attempts": attempts},
+                    store=store,
+                )
         else:
             store.reroute_smoother_friction(friction_id)
             summary.rerouted += 1
