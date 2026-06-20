@@ -66,9 +66,9 @@ module.exports = {
       error_file: "./data/substrate_janitor.log",
       env: {
         AUTONOMIC_JANITOR_AUTORATIFY: "1",
-        // Only ratify onto these branches (space-separated); never a stray
-        // release branch. Update when the loop's live branch changes.
-        AUTONOMIC_JANITOR_RATIFY_BRANCHES: "main self-evaluating-practices",
+        // Only ratify onto these branches (space-separated). main is the
+        // autonomous line: the loop self-ratifies here directly, no merge.
+        AUTONOMIC_JANITOR_RATIFY_BRANCHES: "main",
       },
     },
     {
