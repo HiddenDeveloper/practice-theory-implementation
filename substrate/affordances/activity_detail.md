@@ -1,6 +1,6 @@
 ---
 id: activity_detail
-name: Activity detail after recent list
+name: Activity detail only after current list
 materials:
 - garmin_list_activities
 - garmin_get_activity
