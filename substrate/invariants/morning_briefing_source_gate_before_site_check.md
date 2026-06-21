@@ -4,7 +4,7 @@ name: Morning briefing source gate before site check
 status: active
 trigger: morning_briefing_browser_site_check
 mode: detect
-friction_kind: quality_affordance_coverage
+friction_kind: practice_quality_affordance_coverage
 forbid_when:
   any:
   - not:

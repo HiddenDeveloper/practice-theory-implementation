@@ -4,12 +4,12 @@ name: Morning briefing Gmail before site list
 status: active
 trigger: read_morning_briefing_sites
 mode: detect
-friction_kind: quality_affordance_coverage
+friction_kind: practice_quality_affordance_coverage
 forbid_when:
   not:
     step_exists:
       material_name: gmail_user_search_threads
-message: Morning briefing site-list reads must come after the unread Gmail search,
+message: Morning briefing site-list reads require an earlier unread Gmail search,
   or the practice has skipped the required unread-mail grounding at the start of the
   briefing.
 ---
