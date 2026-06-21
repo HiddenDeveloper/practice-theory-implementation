@@ -1,0 +1,16 @@
+---
+id: activities_detail_requires_recent_list
+name: Activity detail requires current activity list
+status: active
+trigger: garmin_get_activity
+mode: detect
+friction_kind: quality_affordance_coverage_gap
+forbid_when:
+  not:
+    step_exists:
+      material_name: garmin_list_activities
+message: activities_management invoked garmin_get_activity before garmin_list_activities;
+  recover by listing recent activities or record a concrete list/auth/data/material
+  blocker before activity-rhythm synthesis.
+---
+Friction 872 confirmed repeated activities_management passes used activity detail without the required current activity-list grounding. When garmin_get_activity appears without an earlier garmin_list_activities row in the same enactment, raise an auto-resolved quality_affordance_coverage_gap so the missing entry row is detected deterministically rather than by another manual quality-window review.

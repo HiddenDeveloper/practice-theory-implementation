@@ -9,10 +9,14 @@ signals:
 - id: reads_calendar_before_calendar_conduct
   kind: affordance_coverage
   required_materials:
+  - cal_list_events
   - calendar_user_list_events
-  detail: Calendar stewardship should inspect the live calendar before offering, staging,
-    issuing, or otherwise changing calendar commitments. Without a calendar read,
-    the practice cannot make visible what commitments or people a change touches.
+  detail: Calendar stewardship should inspect the calendar before offering, staging,
+    issuing, or otherwise changing calendar commitments. Count either the deterministic
+    `cal_list_events` material used by the `read_calendar` affordance in verification/demo
+    runs or the live `calendar_user_list_events` material when Google Calendar OAuth
+    is available. Without a calendar read, the practice cannot make visible what commitments
+    or people a change touches.
 - id: stewardship_produces_calendar_outcomes
   kind: outcome_presence
   outcome_materials:
