@@ -1,16 +1,16 @@
 ---
 id: pm_reload_requires_prior_pool_read
-name: Practice Management reload requires prior pool read
+name: Practice Management reload requires pool grounding
 status: active
 trigger: pm_reload_seed_substrate
 mode: detect
-friction_kind: practice_quality_affordance_coverage
+friction_kind: uses_substrate_authoring_surface
 forbid_when:
   not:
     step_exists:
       material_name: pm_read_pool
-message: Practice Management substrate stewardship reached pm_reload_seed_substrate
-  before any visible pm_read_pool row. The pass is interrupted until the exact relied-on
-  pool is read or a concrete pool-read blocker is recorded.
+message: Practice Management reached pm_reload_seed_substrate before a visible pm_read_pool
+  row for the substrate pool the stewardship pass relies on. Read the exact pool first
+  or stop with a concrete substrate-surface blocker.
 ---
-When a Practice Management enactment reaches pm_reload_seed_substrate, the earlier trail must already contain pm_read_pool. This deterministic check covers the recurring entry failure named in Friction 835: reload began substrate stewardship without the pool-grounding row the bundle already requires. The invariant is deliberately narrow: it enforces the reload entry gate and leaves exact-pool adequacy, blocker adequacy, and non-reload stewardship paths to judgement or future narrower invariants when their recorded shape is determinable.
+Friction 839 shows the Practice Management `uses_substrate_authoring_surface` quality concern is repeatedly re-found in evaluated windows where `pm_reload_seed_substrate` appears before any `pm_read_pool`, followed in some traces by documentation checks or authoring/amendment. This invariant makes that determinate entry-gate failure machine-detectable: a Practice Management reload step is forbidden unless an earlier same-enactment `pm_read_pool` exposed the substrate pool being relied on. The create attempt for this id failed only because the invariant already existed; this amendment is the explicit same-id refinement path and does not rely on unread existing invariant fields.
