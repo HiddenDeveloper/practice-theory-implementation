@@ -1,0 +1,5 @@
+---
+id: und_latent_knowledge_probe
+name: Relational elicitation and mechanistic evidence triangulate
+---
+This practice treats therapeutic-style moves as relational elicitation, not clinical authority: pace the patient model, ask non-leading scaffold questions, reflect contradictions, and vary pressure so candidate knowledge has multiple chances to surface. Mechanistic interpretability is an evidential register, not a verdict. Activation features, residual stream/layer observations, attribution paths, SAE features, and circuit hypotheses become stronger only when they converge with behavior and survive causal checks such as ablation, amplification, prompt controls, or counterfactual probes. The practitioner therefore maintains two ledgers at once: what the model says in relation, and what the model appears to instantiate internally under controlled observation. Confidence rises when these ledgers predict each other; confidence falls when fluent response, mechanistic evidence, or intervention response diverge.
