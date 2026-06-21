@@ -38,14 +38,14 @@ def test_record_escalation_is_idempotent_on_dedup_key(store: EnactmentStore) -> 
 
 
 def test_notify_line_unconfigured_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(escalation.LINE_TOKEN_ENV, raising=False)
-    monkeypatch.delenv(escalation.LINE_TO_ENV, raising=False)
+    for name in (*escalation.LINE_TOKEN_ENVS, *escalation.LINE_TO_ENVS):
+        monkeypatch.delenv(name, raising=False)
     assert escalation.notify_line("hello") is False
 
 
 def test_notify_line_posts_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(escalation.LINE_TOKEN_ENV, "tok")
-    monkeypatch.setenv(escalation.LINE_TO_ENV, "U123")
+    monkeypatch.setenv("PRACTICE_LINE_TOKEN", "tok")
+    monkeypatch.setenv("PRACTICE_LINE_TO", "U123")
     sent: dict[str, Any] = {}
 
     class _Resp:

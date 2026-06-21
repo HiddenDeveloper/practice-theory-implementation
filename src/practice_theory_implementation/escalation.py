@@ -10,9 +10,10 @@ not push.
 The whole module is best-effort: an escalation must never crash the loop it is
 reporting on. Every public entry point swallows its own errors.
 
-LINE config (env, like the other service creds): `PRACTICE_LINE_TOKEN` (channel
-access token) + `PRACTICE_LINE_TO` (target user/group id). Unset → recorded but
-not pushed (the mechanism is built; flip the creds on to go live).
+LINE config (env): reuses the project-standard credential names so the LINE bot
+already set up for the engagement is shared, not duplicated — token from the
+first set of `PRACTICE_LINE_TOKEN` / `LINE_CHANNEL_ACCESS_TOKEN`, target from
+`PRACTICE_LINE_TO` / `LINE_DEFAULT_USER_ID`. Unset → recorded but not pushed.
 """
 
 from __future__ import annotations
@@ -26,9 +27,20 @@ from practice_theory_implementation.trail import EnactmentStore, EscalationRow
 
 logger = logging.getLogger(__name__)
 
-LINE_TOKEN_ENV = "PRACTICE_LINE_TOKEN"
-LINE_TO_ENV = "PRACTICE_LINE_TO"
+# Resolved in order; first non-empty wins. The latter names are the project-wide
+# convention (also used by practice-projection's direct_channel), so the same
+# bot creds in the environment serve both without duplication.
+LINE_TOKEN_ENVS = ("PRACTICE_LINE_TOKEN", "LINE_CHANNEL_ACCESS_TOKEN")
+LINE_TO_ENVS = ("PRACTICE_LINE_TO", "LINE_DEFAULT_USER_ID")
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
+
+
+def _first_env(names: tuple[str, ...]) -> str:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
 
 
 class Severity(StrEnum):
@@ -43,8 +55,8 @@ def notify_line(text: str) -> bool:
     Returns True only if the message was actually delivered. Unconfigured or
     failed pushes return False (the escalation stays recorded + un-notified, so a
     later pass / the dashboard still surfaces it)."""
-    token = os.environ.get(LINE_TOKEN_ENV, "").strip()
-    to = os.environ.get(LINE_TO_ENV, "").strip()
+    token = _first_env(LINE_TOKEN_ENVS)
+    to = _first_env(LINE_TO_ENVS)
     if not token or not to:
         logger.info("[escalation] LINE not configured; recorded, not pushed")
         return False
