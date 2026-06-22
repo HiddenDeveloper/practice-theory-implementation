@@ -15,8 +15,10 @@ rules_ids:
 affordance_ids:
 - design_latent_probe_protocol
 - record_latent_probe_trial
+- discover_neuronpedia_topk_features
 - run_neuronpedia_activation_probe
 - run_neuronpedia_steering_probe
+- run_latent_recovery_trial
 - run_transformerlens_activation_probe
 - judge_latent_probe_confidence
 evaluation_ids:
