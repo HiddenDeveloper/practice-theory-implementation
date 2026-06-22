@@ -799,7 +799,17 @@ MATERIAL_SURFACES: dict[str, Material] = {
                 "Fetch detail for one Garmin Connect activity by its Garmin-native "
                 "activity id, including summary fields and available per-point "
                 "metric samples for cadence, speed, heart rate, elevation, and GPS "
-                "route summaries/points when Garmin exposes them."
+                "route summaries/points when Garmin exposes them. In "
+                "activities_management, this is a detail/deepening read, not the "
+                "entry record for activity rhythm or what was done: choose it before "
+                "garmin_list_activities only for an explicitly isolated supplied "
+                "activity id/date, or after naming a concrete list/auth/data/material "
+                "blocker and limiting the answer to that isolated record. If this or "
+                "a stale detail alias is reached before the current activity list and "
+                "the work would broaden to rhythm, weekly pattern, completed-activity "
+                "mix, gaps, streaks, cadence, recovery context, or what was done, the "
+                "next visible move must be garmin_list_activities before more Garmin "
+                "reads, synthesis, or final answer."
             ),
             input_schema={
                 "type": "object",
@@ -812,7 +822,17 @@ MATERIAL_SURFACES: dict[str, Material] = {
             description=(
                 "Fetch a Garmin Connect daily wellness summary for a given date: "
                 "steps, sleep when Garmin reports it, stress, body battery, "
-                "resting heart rate, distance, and active calories."
+                "resting heart rate, distance, and active calories. In "
+                "activities_management, this is daily wellness context, not a "
+                "substitute for the recent activity record: choose it before "
+                "garmin_list_activities only for an explicitly bounded daily wellness "
+                "snapshot, or after naming a concrete list/auth/data/material blocker "
+                "and limiting the answer to that snapshot. If this or a stale "
+                "daily-summary alias is reached before the current activity list and "
+                "the work would broaden to rhythm, weekly pattern, completed-activity "
+                "mix, gaps, streaks, cadence, recovery context, or what was done, the "
+                "next visible move must be garmin_list_activities before more Garmin "
+                "reads, synthesis, or final answer."
             ),
             input_schema={
                 "type": "object",
@@ -901,6 +921,432 @@ MATERIAL_SURFACES: dict[str, Material] = {
                     "max_per_type": {"type": "integer", "minimum": 1, "maximum": 25},
                     "show_tiles": {"type": "boolean"},
                 },
+            },
+        ),
+        # Latent Knowledge Probe — free/public mechanistic-interpretability routes.
+        Material(
+            name="latent_probe_design_protocol",
+            description=(
+                "Select and record the free/open mechanistic-interpretability route "
+                "for a latent-knowledge probe. Surfaces include Neuronpedia's public "
+                "SAE feature API, NDIF/NNsight remote open-model internals for users "
+                "with free research access, and local TransformerLens/SAELens routes."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "target_model": {"type": "string"},
+                    "model_runtime": {"type": "string"},
+                    "mechanistic_surfaces": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "neuronpedia",
+                                "ndif_nnsight",
+                                "transformerlens",
+                                "saelens",
+                            ],
+                        },
+                    },
+                    "question_family": {"type": "string"},
+                    "known_targets": {"type": "array", "items": {"type": "string"}},
+                    "unknown_controls": {"type": "array", "items": {"type": "string"}},
+                    "planted_or_misleading_controls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "intervention_plan": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "stopping_conditions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "gaps": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["target_model", "mechanistic_surfaces", "question_family"],
+            },
+        ),
+        Material(
+            name="latent_probe_record_trial",
+            description=(
+                "Record one scaffolded target-model trial and enrich it with live "
+                "Neuronpedia feature JSON when feature ids are supplied. Keeps "
+                "relational observations, mechanistic observations, intervention "
+                "results, control results, and access gaps separated."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "as_of": {"type": "string"},
+                    "target_model": {"type": "string"},
+                    "prompt": {"type": "string"},
+                    "scaffolding_move": {"type": "string"},
+                    "model_response": {"type": "string"},
+                    "mechanistic_observations": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                    "relational_observations": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "intervention_results": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                    "control_results": {"type": "array", "items": {"type": "object"}},
+                    "neuronpedia_features": {
+                        "type": "array",
+                        "items": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "feature_id": {"type": "string"},
+                                        "model_id": {"type": "string"},
+                                        "sae_id": {"type": "string"},
+                                        "feature_index": {},
+                                    },
+                                },
+                            ]
+                        },
+                    },
+                    "gaps": {"type": "array", "items": {"type": "string"}},
+                    "timeout_seconds": {"type": "number", "default": 10.0},
+                },
+                "required": ["as_of", "target_model", "prompt", "model_response"],
+            },
+        ),
+        Material(
+            name="run_neuronpedia_activation_probe",
+            description=(
+                "Run Neuronpedia-hosted custom-text activation testing for one SAE "
+                "feature, using the public /api/activation/new endpoint. This keeps "
+                "the activation pass on Neuronpedia's side instead of requiring "
+                "local torch or TransformerLens. Returns tokens, activation values, "
+                "max activation, source endpoint, raw response, or an auth/access gap."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "custom_text": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                    },
+                    "feature_id": {
+                        "type": "string",
+                        "description": "MODEL@SOURCE:INDEX, e.g. gpt2-small@9-res-jb:200.",
+                    },
+                    "model_id": {"type": "string"},
+                    "source": {"type": "string"},
+                    "feature_index": {},
+                    "timeout_seconds": {"type": "number", "default": 20.0},
+                    "base_url": {
+                        "type": "string",
+                        "default": "https://www.neuronpedia.org",
+                    },
+                    "api_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional Neuronpedia API key for resources that require "
+                            "auth. Prefer environment-managed secrets in live use."
+                        ),
+                    },
+                },
+                "required": ["custom_text"],
+            },
+        ),
+        Material(
+            name="run_neuronpedia_topk_by_token_probe",
+            description=(
+                "Run Neuronpedia-hosted top-k feature discovery by token for a "
+                "custom text and SAE source. This discovers which features a "
+                "baseline or scaffold actually recruits, instead of requiring the "
+                "practitioner to choose a feature first. Returns summarized top "
+                "features per token with explanations and positive/negative strings."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                    },
+                    "model_id": {"type": "string"},
+                    "source": {
+                        "type": "string",
+                        "description": "Neuronpedia source/SAE id, e.g. 6-res_scefr-ajt.",
+                    },
+                    "num_results": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "ignore_bos": {"type": "boolean", "default": True},
+                    "density_threshold": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "default": 0.01,
+                    },
+                    "timeout_seconds": {"type": "number", "default": 30.0},
+                    "base_url": {
+                        "type": "string",
+                        "default": "https://www.neuronpedia.org",
+                    },
+                    "api_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional Neuronpedia API key for resources that require "
+                            "auth. Prefer environment-managed secrets in live use."
+                        ),
+                    },
+                },
+                "required": ["text", "model_id", "source"],
+            },
+        ),
+        Material(
+            name="run_neuronpedia_steering_probe",
+            description=(
+                "Run Neuronpedia-hosted SAE feature steering for a completion prompt. "
+                "Returns the default and steered completions, logprobs when provided, "
+                "feature intervention settings, raw response, or an auth/access gap. "
+                "Use this as the hosted causal-intervention route before local "
+                "TransformerLens patching."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "model_id": {"type": "string"},
+                    "features": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["modelId", "layer", "index", "strength"],
+                            "properties": {
+                                "modelId": {"type": "string"},
+                                "layer": {"type": "string"},
+                                "index": {"type": "number"},
+                                "strength": {"type": "number"},
+                            },
+                        },
+                    },
+                    "temperature": {"type": "number", "default": 0.3},
+                    "n_tokens": {"type": "integer", "minimum": 1, "maximum": 256},
+                    "freq_penalty": {"type": "number", "default": 0.0},
+                    "seed": {"type": "integer", "default": 42},
+                    "strength_multiplier": {"type": "number", "default": 1.0},
+                    "steer_method": {
+                        "type": "string",
+                        "enum": ["SIMPLE_ADDITIVE", "ORTHOGONAL_DECOMP"],
+                    },
+                    "timeout_seconds": {"type": "number", "default": 45.0},
+                    "base_url": {
+                        "type": "string",
+                        "default": "https://www.neuronpedia.org",
+                    },
+                    "api_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional Neuronpedia API key for resources that require "
+                            "auth. Prefer environment-managed secrets in live use."
+                        ),
+                    },
+                },
+                "required": ["prompt", "model_id", "features"],
+            },
+        ),
+        Material(
+            name="run_latent_recovery_trial",
+            description=(
+                "Run a hosted baseline-to-scaffold latent recovery trial. It discovers "
+                "top Neuronpedia features for the baseline, each scaffold text, final "
+                "probe, and negative controls; selects features newly recruited by the "
+                "scaffold/final traces; and optionally runs Neuronpedia steering on "
+                "the strongest candidate. This is the repeatable trial shape for "
+                "testing whether scaffolding recruits latent structure."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "baseline_text": {"type": "string"},
+                    "scaffold_texts": {"type": "array", "items": {"type": "string"}},
+                    "final_probe_text": {"type": "string"},
+                    "model_id": {"type": "string"},
+                    "source": {"type": "string"},
+                    "negative_control_texts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "num_results": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "candidate_limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "run_steering": {"type": "boolean", "default": True},
+                    "steering_strength": {"type": "number", "default": 20.0},
+                    "steering_temperature": {"type": "number", "default": 0.3},
+                    "steering_tokens": {"type": "integer", "minimum": 1, "maximum": 256},
+                    "seed": {"type": "integer", "default": 42},
+                    "timeout_seconds": {"type": "number", "default": 30.0},
+                    "base_url": {
+                        "type": "string",
+                        "default": "https://www.neuronpedia.org",
+                    },
+                    "api_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional Neuronpedia API key for resources that require "
+                            "auth. Prefer environment-managed secrets in live use."
+                        ),
+                    },
+                },
+                "required": [
+                    "baseline_text",
+                    "scaffold_texts",
+                    "final_probe_text",
+                    "model_id",
+                    "source",
+                ],
+            },
+        ),
+        Material(
+            name="run_interactive_latent_positioning_trial",
+            description=(
+                "Run a hosted cumulative transcript analysis for an interactive "
+                "latent-positioning sequence. Each turn is added to the transcript, "
+                "Neuronpedia top-k features are discovered for the cumulative text, "
+                "features newly recruited after the first turn are selected, controls "
+                "are checked, and optional steering is run on the strongest candidate."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "turns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "speaker": {
+                                    "type": "string",
+                                    "enum": ["user", "assistant", "system", "observer"],
+                                },
+                                "text": {"type": "string"},
+                            },
+                            "required": ["speaker", "text"],
+                        },
+                    },
+                    "model_id": {"type": "string"},
+                    "source": {"type": "string"},
+                    "target_probe_text": {"type": "string"},
+                    "negative_control_turns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "speaker": {
+                                    "type": "string",
+                                    "enum": ["user", "assistant", "system", "observer"],
+                                },
+                                "text": {"type": "string"},
+                            },
+                            "required": ["speaker", "text"],
+                        },
+                    },
+                    "num_results": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "candidate_limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "run_steering": {"type": "boolean", "default": True},
+                    "steering_strength": {"type": "number", "default": 20.0},
+                    "steering_temperature": {"type": "number", "default": 0.3},
+                    "steering_tokens": {"type": "integer", "minimum": 1, "maximum": 256},
+                    "seed": {"type": "integer", "default": 42},
+                    "timeout_seconds": {"type": "number", "default": 30.0},
+                    "base_url": {
+                        "type": "string",
+                        "default": "https://www.neuronpedia.org",
+                    },
+                    "api_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional Neuronpedia API key for resources that require "
+                            "auth. Prefer environment-managed secrets in live use."
+                        ),
+                    },
+                },
+                "required": ["turns", "model_id", "source"],
+            },
+        ),
+        Material(
+            name="run_transformerlens_activation_probe",
+            description=(
+                "Run a local TransformerLens probe against an open model when "
+                "transformer_lens and torch are installed. Captures selected "
+                "activation-cache summaries, next-token predictions, optional "
+                "control prompts, and an optional simple zero-ablation contrast. "
+                "If the optional runtime is missing, returns an explicit install "
+                "gap and planned probe rather than failing the practice."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "model_name": {"type": "string", "default": "gpt2-small"},
+                    "activation_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "target_token": {"type": "string"},
+                    "control_prompts": {"type": "array", "items": {"type": "string"}},
+                    "ablate_activation_name": {"type": "string"},
+                    "ablate_position": {"type": "integer", "default": -1},
+                    "device": {"type": "string"},
+                    "top_k": {"type": "integer", "minimum": 1, "maximum": 25},
+                },
+                "required": ["prompt"],
+            },
+        ),
+        Material(
+            name="latent_probe_confidence_judgment",
+            description=(
+                "Record the bounded confidence judgment for a candidate claim. "
+                "The material flags over-strong retrieval-supported judgments when "
+                "behavioral, mechanistic, causal, or control evidence is missing."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "claim": {"type": "string"},
+                    "classification": {
+                        "type": "string",
+                        "enum": [
+                            "retrieval-supported",
+                            "constructed-plausible",
+                            "activation-present-response-blocked",
+                            "confabulation-likely",
+                            "unknown",
+                        ],
+                    },
+                    "confidence": {"type": "string"},
+                    "behavioral_evidence": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "mechanistic_evidence": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "causal_evidence": {"type": "array", "items": {"type": "string"}},
+                    "control_evidence": {"type": "array", "items": {"type": "string"}},
+                    "counterevidence": {"type": "array", "items": {"type": "string"}},
+                    "missing_registers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "next_probe": {"type": "string"},
+                },
+                "required": ["claim", "classification", "confidence"],
             },
         ),
         # Practice Management meta-materials.

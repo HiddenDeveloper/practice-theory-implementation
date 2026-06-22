@@ -25,6 +25,7 @@ from practice_theory_implementation.materials import (
     google_calendar,
     google_mail,
     judge,
+    latent_probe,
     market_data,
     morning_briefing,
     operational_observability,
@@ -152,6 +153,22 @@ FUNCTIONS: dict[str, Callable[..., object]] = {
     "fund_record_follow_up_register": paper_fund.fund_record_follow_up_register,
     "fund_read_follow_up_register": paper_fund.fund_read_follow_up_register,
     "fund_read_state": paper_fund.fund_read_state,
+    # Latent Knowledge Probe — public/free mechanistic-interpretability routes.
+    "latent_probe_design_protocol": latent_probe.latent_probe_design_protocol,
+    "latent_probe_record_trial": latent_probe.latent_probe_record_trial,
+    "run_neuronpedia_activation_probe": latent_probe.run_neuronpedia_activation_probe,
+    "run_neuronpedia_topk_by_token_probe": (
+        latent_probe.run_neuronpedia_topk_by_token_probe
+    ),
+    "run_neuronpedia_steering_probe": latent_probe.run_neuronpedia_steering_probe,
+    "run_latent_recovery_trial": latent_probe.run_latent_recovery_trial,
+    "run_interactive_latent_positioning_trial": (
+        latent_probe.run_interactive_latent_positioning_trial
+    ),
+    "run_transformerlens_activation_probe": (
+        latent_probe.run_transformerlens_activation_probe
+    ),
+    "latent_probe_confidence_judgment": latent_probe.latent_probe_confidence_judgment,
     # Practice Management — meta-materials
     "pm_read_pool": practice_management.pm_read_pool,
     "pm_create_element": practice_management.pm_create_element,
