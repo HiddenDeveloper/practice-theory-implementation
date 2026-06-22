@@ -27,7 +27,7 @@ practice_evaluation:
 somatic_schedule:
   enabled: true
   practice: stock_investor
-  interval_seconds: 86400
+  interval_seconds: 3600
   startup_delay_seconds: 0
   # Optional: point scheduled practitioners at a long-lived somatic HTTP MCP
   # server. Empty means each practitioner gets a fresh stdio server.

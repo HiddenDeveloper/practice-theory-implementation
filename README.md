@@ -92,7 +92,7 @@ The same runner can periodically create a target-practice practitioner agent and
 dispatch a bounded somatic enactment. The generic service is configured by
 `config/somatic_scheduler.yaml`: provider/model, target somatic practice,
 cadence, log file, MCP transport, and task prompt all live there. The included
-config schedules `stock_investor`, but any somatic bundle can be used by
+config schedules `stock_investor` hourly, but any somatic bundle can be used by
 changing `somatic_schedule.practice` and `somatic_schedule.task`.
 
 ```bash

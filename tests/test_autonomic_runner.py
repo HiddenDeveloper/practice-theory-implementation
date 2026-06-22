@@ -97,7 +97,7 @@ def test_autonomic_inbox_backlog_combines_judge_and_smoother() -> None:
 def test_somatic_scheduler_defaults() -> None:
     assert not autonomic_runner._somatic_scheduler_enabled()
     assert autonomic_runner._somatic_scheduler_target() == "stock_investor"
-    assert autonomic_runner._somatic_scheduler_interval_seconds() == 86400.0
+    assert autonomic_runner._somatic_scheduler_interval_seconds() == 3600.0
     assert autonomic_runner._somatic_scheduler_startup_delay_seconds() == 60.0
     assert "stock_investor" in autonomic_runner._somatic_scheduler_task("stock_investor")
     assert (
