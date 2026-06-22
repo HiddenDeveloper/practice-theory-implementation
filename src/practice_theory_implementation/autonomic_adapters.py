@@ -181,8 +181,22 @@ def _local_mcp_env(cwd: Path) -> dict[str, str]:
     return merged
 
 
+def _has_neo4j_password(env: dict[str, str]) -> bool:
+    auth = env.get("PRACTICE_NEO4J_AUTH") or env.get("NEO4J_AUTH") or ""
+    if "/" in auth and auth.split("/", 1)[1]:
+        return True
+    return bool(env.get("PRACTICE_NEO4J_PASSWORD") or env.get("NEO4J_PASSWORD"))
+
+
 def practice_service_env(cwd: Path | None = None) -> dict[str, str]:
-    """Return service env from the shell plus local MCP config fallback."""
+    """Return service env from the shell plus local MCP config fallback.
+
+    The single chokepoint that feeds Neo4j/Qdrant access to every consumer in
+    this repo (somatic + autonomic MCP servers, the keeper, loop-spawned
+    subprocesses). The Neo4j password resolves env/.codex first, then falls back
+    to the shared `setec` store via `get_secret`, so the credential no longer has
+    to live on disk. See docs/plans/setec-secrets-setup.md.
+    """
     root = cwd or Path.cwd()
     local = _local_mcp_env(root)
     out = {
@@ -193,6 +207,13 @@ def practice_service_env(cwd: Path | None = None) -> dict[str, str]:
     for key in _PRACTICE_SERVICE_ENV_KEYS:
         if os.environ.get(key):
             out[key] = os.environ[key]
+    if not _has_neo4j_password(out):
+        from practice_theory_implementation.secret_provider import get_secret
+
+        password = get_secret("NEO4J_PASSWORD", aliases=("PRACTICE_NEO4J_PASSWORD",))
+        if password:
+            out["NEO4J_PASSWORD"] = password
+            out.setdefault("NEO4J_USER", os.environ.get("NEO4J_USER") or "neo4j")
     return out
 
 

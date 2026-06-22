@@ -66,7 +66,17 @@ get_secret("LINE_CHANNEL_ACCESS_TOKEN")
 Build the indirection in both solutions; behaviour identical to today (still
 env), so this is safe to ship immediately.
 
-### 1a. Python (`practic-theory-implementation`)
+### 1a. Python (`practic-theory-implementation`) — ✅ DONE 2026-06-21
+Shipped: `src/practice_theory_implementation/secret_provider.py` (`get_secret`,
+env→setec→default, in-process cache of setec hits only, best-effort, never logs
+values); `escalation.py` resolves the LINE creds through it; `tests/
+test_secret_provider.py` (11 tests) + existing escalation tests green. Behaviour
+identical to today — setec path is dormant until `PRACTICE_SETEC_URL` is set
+(Phase 3). setec wire format: POST `{url}/api/get`, header
+`Sec-X-Tailscale-No-Browsers: setec`, body `{"Name", "Version": 0}`, response
+`{"Value": base64, "Version"}`.
+
+
 - New `src/practice_theory_implementation/secret_provider.py`:
   - `get_secret(name: str, *, aliases: tuple[str, ...] = (), default: str | None = None) -> str | None`
   - Resolution: env (name + aliases) → setec (if `PRACTICE_SETEC_URL` set) → default.
@@ -78,7 +88,21 @@ env), so this is safe to ship immediately.
   and the same for the user id. No behaviour change while env is set.
 - Tests: env-hit returns env; setec-hit mocked; both-unset returns None; cache.
 
-### 1b. TypeScript (`apprenticeship-cognabot`)
+### 1b. TypeScript (`apprenticeship-cognabot`) — ✅ DONE 2026-06-21
+Shipped: `packages/server/src/shared/services/secret-provider.ts` — `getSecret`
+(async, env→setec→default, caches setec hits only, best-effort, never logs
+values) plus `getSecretSync` (env-only, for the sync constructor /
+`isConfigured()` seams). `LineChannel` resolves its three creds through the
+provider: sync env path in the constructor (identical to today), async
+`ensureConfigured()` fills any gap from setec and is awaited at the top of
+`sendMessage`. `SETEC_URL` added to `config-schema.ts` (infrastructure) for the
+Settings UI. Tests: `packages/server/tests/unit/secret-provider.test.ts` (12);
+full server suite green (1137). setec dormant until `SETEC_URL` is set (Phase 3).
+Note: webhook signature validation reads `channelSecret` synchronously — when
+`LINE_CHANNEL_SECRET` migrates to setec (Phase 3), pre-warm with
+`await channel.ensureConfigured()` at channel registration in `message-router`.
+
+
 - Mirror in the server's config layer (where `config-schema.ts` /
   `routes-bun/config.ts` resolve runtime config). A `secretProvider.ts`:
   `getSecret(name, { aliases })` → `process.env` → setec → undefined.
@@ -87,7 +111,27 @@ env), so this is safe to ship immediately.
 
 **Acceptance:** both solutions run exactly as now (env still set), tests green.
 
-## Phase 2 — Stand up one `setec` server on the tailnet
+## Phase 2 — Stand up one `setec` server on the tailnet — ✅ DONE 2026-06-22
+
+> **Runbook:** `docs/runbooks/setec-server-laputa.md` (executable steps + the
+> build/network gotchas hit along the way).
+>
+> Live on laputa: patched setec binary (local Tink KEK, **no AWS** — see
+> `setec-local-kek.patch`) at `~/setec/setec`, pm2-managed (`pm2 id 11 "setec"`,
+> `pm2 save`d, launchd resurrect on boot). Node `setec` = `100.91.75.119`,
+> serving `https://setec.tail82f84.ts.net`. DB encrypted at rest with
+> `~/setec/state/kek.json` (AES-256-GCM, 0600); audit log writing to
+> `~/setec/state/audit.log`. Tailnet grant added (`tailscale.com/cap/secrets`,
+> all members, all actions, all secrets — solo-tailnet shape). Three LINE secrets
+> loaded + sha-verified against the cognabot `.env`: `LINE_CHANNEL_ACCESS_TOKEN`,
+> `LINE_CHANNEL_SECRET`, `LINE_DEFAULT_USER_ID`.
+>
+> Gotchas resolved (in runbook): native macOS build needs `CGO_ENABLED=1` (else
+> pure-Go resolver fails DNS) + ad-hoc `codesign`; tsnet needs
+> `Server.AuthKey = os.Getenv("TS_AUTHKEY")` wired in; **LuLu firewall** silently
+> blocked the new binary's outbound to Tailscale control (the original "join
+> hangs" cause) — allow `setec` in LuLu.
+
 
 - Host: laputa (already on the tailnet, already hosts Neo4j/Qdrant). Run the
   `setec server` (Go binary). Decide state dir + enable **S3 backups** + the
@@ -103,6 +147,34 @@ env), so this is safe to ship immediately.
 - Confirm: a tailnet node can `setec get` a secret; a non-granted node cannot.
 
 ## Phase 3 — Point the providers at setec + migrate
+
+> **Status 2026-06-22:** Keeper (this repo) MIGRATED + verified. Cognabot code +
+> config DONE + tests green; final deploy (rebuild image, bring up, live-verify
+> LINE bot) + cognabot `.env` removal is the remaining user-driven step.
+>
+> **Keeper (DONE):** `scripts/somatic_scheduler_service.sh` now exports
+> `PRACTICE_SETEC_URL=https://setec.tail82f84.ts.net` and no longer lifts LINE
+> vars from the cognabot `.env`. Verified: the repo's own `get_secret` resolves
+> both LINE creds from setec with env unset (sha-matched the source).
+>
+> **Cognabot (code/config DONE, deploy PENDING):** `docker-compose.yml` adds
+> `SETEC_URL` (defaulted to the tailnet URL) to the server + daemon services and
+> drops the `${LINE_*}` interpolation. `message-router.ts` made setec-aware:
+> LINE registration now `await line.ensureConfigured()` *before* the sync
+> `isConfigured()` gate (else a setec-only cred would never register) — this also
+> pre-loads `channelSecret` so synchronous webhook validation works. Typecheck +
+> lint clean, full server suite (1137) green. Container→setec reachability proven
+> (Docker Desktop resolves the MagicDNS name and NATs out under laputa's tailnet
+> identity → HTTP 200 + sha match from inside a throwaway container; no sidecar).
+>
+> **Remaining (user-driven):** rebuild the cognabot server+daemon images (so the
+> new setec-aware code ships), `docker compose up`, confirm LINE push + webhook
+> work against setec, THEN remove the 3 LINE keys from
+> `config/stonemonkey/.env`. Backups taken: `~/setec/backups/{database,kek.json}.*`
+> and `config/stonemonkey/.env.pre-setec.*`. NOTE: the compose change already
+> stops forwarding `${LINE_*}` to the container, so the rebuilt (setec-aware)
+> image is required on next `up` — an old image would lose LINE regardless of the
+> `.env`. `LINE_CHANNEL_SECRET` is the one needing the pre-warm (now in place).
 
 - Set `PRACTICE_SETEC_URL` (Python) and the cognabot equivalent so Phase-1
   providers resolve from setec when env is unset.

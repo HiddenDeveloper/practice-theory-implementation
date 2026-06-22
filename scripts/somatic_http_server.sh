@@ -8,6 +8,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Let practice_service_env resolve the Neo4j password from the shared setec store
+# when it isn't already in env/.codex. The URL is not a secret.
+export PRACTICE_SETEC_URL="${PRACTICE_SETEC_URL:-https://setec.tail82f84.ts.net}"
+
 # Export the same service env the adapters use (no secrets embedded here).
 eval "$(uv run python -c "
 from pathlib import Path

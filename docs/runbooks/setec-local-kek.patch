@@ -1,0 +1,106 @@
+diff --git a/cmd/setec/setec.go b/cmd/setec/setec.go
+index 4364c04..1f2e29d 100644
+--- a/cmd/setec/setec.go
++++ b/cmd/setec/setec.go
+@@ -33,6 +33,9 @@ import (
+ 	"github.com/tailscale/setec/server"
+ 	"github.com/tailscale/setec/types/api"
+ 	"github.com/tink-crypto/tink-go-awskms/v2/integration/awskms"
++	"github.com/tink-crypto/tink-go/v2/aead"
++	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
++	"github.com/tink-crypto/tink-go/v2/keyset"
+ 	"github.com/tink-crypto/tink-go/v2/tink"
+ 	"golang.org/x/term"
+ 	"tailscale.com/tsnet"
+@@ -65,6 +68,11 @@ the node on the tailnet.
+ With the --dev flag, the server runs with a dummy KMS. This mode is intended
+ for debugging and is NOT SAFE for production use.
+ 
++With --local-kek, the server encrypts the database with a local Tink AES-256-GCM
++keyset stored at the given path (created on first use). This needs no cloud KMS;
++the keyset is stored cleartext, so protect it with disk encryption and file
++permissions. Suitable for a single self-hosted node on a trusted host.
++
+ Otherwise you must provide a --kms-key-name to use to encrypt the database.
+ 
+ Most of the settings can be set via environment variables as well as flags.
+@@ -74,7 +82,8 @@ Most of the settings can be set via environment variables as well as flags.
+    -------------------------------------------------------------------------
+     --state-dir            SETEC_DIR                  path      (required)
+     --hostname             SETEC_HOSTNAME             string    (required)
+-    --kms-key-name         SETEC_KMS_KEY_NAME         string    (required unless --dev)
++    --kms-key-name         SETEC_KMS_KEY_NAME         string    (required unless --dev/--local-kek)
++    --local-kek            SETEC_LOCAL_KEK            path      (alternative to --kms-key-name)
+     --backup-bucket        SETEC_BACKUP_BUCKET        string    (optional)
+     --backup-bucket-region SETEC_BACKUP_BUCKET_REGION string    (optional)
+     --backup-role          SETEC_BACKUP_ROLE          string    (optional)
+@@ -160,10 +169,41 @@ generate the token, then re-run appending the provided value.`,
+ 	command.RunOrFail(env, os.Args[1:])
+ }
+ 
++// localKEK loads a Tink AEAD keyset from path, creating a fresh AES-256-GCM
++// keyset there on first use. The keyset is stored cleartext: protection relies
++// on disk encryption (FileVault) and file permissions (0600), so there is no
++// passphrase or cloud KMS to bootstrap. Intended for a single self-hosted node.
++func localKEK(path string) (tink.AEAD, error) {
++	if b, err := os.ReadFile(path); err == nil {
++		kh, err := insecurecleartextkeyset.Read(keyset.NewJSONReader(bytes.NewReader(b)))
++		if err != nil {
++			return nil, fmt.Errorf("reading local KEK keyset %q: %w", path, err)
++		}
++		return aead.New(kh)
++	} else if !errors.Is(err, os.ErrNotExist) {
++		return nil, fmt.Errorf("opening local KEK keyset %q: %w", path, err)
++	}
++
++	kh, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
++	if err != nil {
++		return nil, fmt.Errorf("generating local KEK: %w", err)
++	}
++	var buf bytes.Buffer
++	if err := insecurecleartextkeyset.Write(kh, keyset.NewJSONWriter(&buf)); err != nil {
++		return nil, fmt.Errorf("serialising local KEK: %w", err)
++	}
++	if err := os.WriteFile(path, buf.Bytes(), 0600); err != nil {
++		return nil, fmt.Errorf("writing local KEK keyset %q: %w", path, err)
++	}
++	log.Printf("local KEK: generated new AES-256-GCM keyset at %q", path)
++	return aead.New(kh)
++}
++
+ var serverArgs struct {
+ 	StateDir           string `flag:"state-dir,default=$SETEC_STATE_DIR,Server state directory"`
+ 	Hostname           string `flag:"hostname,default=$SETEC_HOSTNAME,Tailscale hostname to use"`
+ 	KMSKeyName         string `flag:"kms-key-name,default=$SETEC_KMS_KEY_NAME,Name of KMS key to use for database encryption"`
++	LocalKEK           string `flag:"local-kek,default=$SETEC_LOCAL_KEK,Path to a local Tink AEAD keyset for DB encryption (alternative to --kms-key-name; created on first use)"`
+ 	BackupBucket       string `flag:"backup-bucket,default=$SETEC_BACKUP_BUCKET,Name of AWS S3 bucket to use for database backups"`
+ 	BackupBucketRegion string `flag:"backup-bucket-region,default=$SETEC_BACKUP_BUCKET_REGION,AWS region of the backup S3 bucket"`
+ 	BackupRole         string `flag:"backup-role,default=$SETEC_BACKUP_ROLE,Name of AWS IAM role to assume to write backups"`
+@@ -204,9 +244,16 @@ func runServer(env *command.Env) error {
+ 	if serverArgs.Hostname == "" {
+ 		return errors.New("--hostname must be specified")
+ 	}
++	if kek == nil && serverArgs.LocalKEK != "" {
++		var err error
++		kek, err = localKEK(serverArgs.LocalKEK)
++		if err != nil {
++			return err
++		}
++	}
+ 	if kek == nil {
+ 		if serverArgs.KMSKeyName == "" {
+-			return errors.New("--kms-key-name must be specified")
++			return errors.New("must specify one of --kms-key-name, --local-kek, or --dev")
+ 		}
+ 		// Tink requires prefixing the key identifier with a URI
+ 		// scheme that identifies the correct backend to use.
+@@ -225,6 +272,9 @@ func runServer(env *command.Env) error {
+ 		Dir:        filepath.Join(serverArgs.StateDir, "tsnet"),
+ 		Hostname:   serverArgs.Hostname,
+ 		ControlURL: serverArgs.LoginServer,
++		// tsnet does not auto-read the TS_AUTHKEY env var; wire it through so a
++		// first-run join can be authorized non-interactively.
++		AuthKey: os.Getenv("TS_AUTHKEY"),
+ 	}
+ 
+ 	lc, err := s.LocalClient()
