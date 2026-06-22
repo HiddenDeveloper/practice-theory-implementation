@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +13,16 @@ from practice_theory_implementation.trail import EnactmentStore
 
 REPORT_DIR = Path("data/paper_stock_reports")
 INVESTOR_PRACTICE_IDS = ("stock_investor", "paper_stock_investor")
+
+# Operator-authorized decision reconciliations. This append-only JSONL ledger
+# retires a trade decision that the trail recorded but never executed — a
+# starter intent re-recorded under a settled decision_id, leaving the original
+# as superseded drift. It is kept OUT of the immutable trail (which records only
+# what the practitioner actually did) and read alongside it, so the
+# deterministic state reconstruction stops re-flagging a decision a human has
+# already resolved. Override the path with FUND_RECONCILIATION_PATH (tests).
+RECONCILIATION_PATH_ENV = "FUND_RECONCILIATION_PATH"
+DEFAULT_RECONCILIATION_PATH = Path("data/fund_decision_reconciliations.jsonl")
 
 
 def _safe_stem(value: object) -> str:
@@ -301,6 +312,39 @@ def fund_read_follow_up_register(
         trail.close()
 
 
+def _reconciliation_path() -> Path:
+    raw = os.environ.get(RECONCILIATION_PATH_ENV)
+    return Path(raw) if raw else DEFAULT_RECONCILIATION_PATH
+
+
+def _load_reconciliations(fund_id: str) -> dict[str, dict[str, Any]]:
+    """Load operator-authorized decision reconciliations for a fund.
+
+    Returns a mapping of retired decision_id -> reconciliation record. Missing
+    or malformed lines are skipped, so a partially written ledger never breaks a
+    state read.
+    """
+    records: dict[str, dict[str, Any]] = {}
+    try:
+        text = _reconciliation_path().read_text(encoding="utf-8")
+    except OSError:
+        return records
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict) or row.get("fund_id") != fund_id:
+            continue
+        decision_id = row.get("decision_id")
+        if decision_id:
+            records[str(decision_id)] = row
+    return records
+
+
 def fund_read_state(
     fund_id: str,
     *,
@@ -431,6 +475,11 @@ def fund_read_state(
         # change. This is the write-side counterpart of the thesis/position
         # drift above, and is exactly what leaves the decision ledger far longer
         # than the order ledger — intent recorded without the matching trade.
+        # Operator-authorized reconciliations retire decisions that the trail
+        # recorded but never executed (superseded starter intents), so they are
+        # not re-flagged as drift every pass. They are surfaced separately in the
+        # returned state, never silently dropped.
+        reconciliations = _load_reconciliations(fund_id)
         executing_actions = {"buy", "sell", "add", "trim"}
         executed_decision_ids = {
             str(order["arguments"].get("decision_id"))
@@ -439,17 +488,23 @@ def fund_read_state(
             and order["arguments"].get("decision_id")
         }
         unmatched_decisions: list[str] = []
+        reconciled_decision_ids: list[str] = []
         for decision in decisions:
             decision_args = decision.get("arguments") or {}
             action = str(decision_args.get("action") or "").lower()
             if action not in executing_actions:
                 continue
             decision_id = decision_args.get("decision_id")
-            if not decision_id or str(decision_id) not in executed_decision_ids:
-                symbol = decision_args.get("symbol") or "?"
-                unmatched_decisions.append(
-                    f"{action} {symbol} ({decision_id or 'no decision_id'})"
-                )
+            decision_key = str(decision_id) if decision_id else ""
+            if decision_key and decision_key in executed_decision_ids:
+                continue
+            if decision_key and decision_key in reconciliations:
+                reconciled_decision_ids.append(decision_key)
+                continue
+            symbol = decision_args.get("symbol") or "?"
+            unmatched_decisions.append(
+                f"{action} {symbol} ({decision_id or 'no decision_id'})"
+            )
         if unmatched_decisions:
             shown = "; ".join(unmatched_decisions[:8])
             more = (
@@ -474,6 +529,10 @@ def fund_read_state(
             "latest_valuation": latest_valuation,
             "latest_follow_ups": latest_follow_ups,
             "warnings": warnings,
+            "reconciliations": [
+                reconciliations[decision_key]
+                for decision_key in reconciled_decision_ids
+            ],
             "source": "trail.steps.stock_investor_state_reconstruction",
             "read_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }

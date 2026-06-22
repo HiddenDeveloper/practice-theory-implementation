@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -401,6 +402,83 @@ def test_fund_state_warns_on_decision_without_matching_order(
     assert "dec-unexecuted" in drift[0]
     # The executed decision must not be flagged.
     assert "dec-executed" not in drift[0]
+
+
+def test_reconciled_decision_is_not_flagged_as_drift(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator-reconciled, non-executed decision is retired, not re-flagged."""
+    trail_path = tmp_path / "trail.db"
+    monkeypatch.setenv(TRAIL_PATH_ENV, str(trail_path))
+    ledger_path = tmp_path / "reconciliations.jsonl"
+    monkeypatch.setenv(paper_fund.RECONCILIATION_PATH_ENV, str(ledger_path))
+    trail = EnactmentStore(trail_path)
+    try:
+        enactment_id = trail.open_enactment("stock_investor")
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        trail.record_step(
+            enactment_id=enactment_id,
+            affordance_id="define_fund",
+            material_name="fund_record_setup",
+            arguments={
+                "fund_id": "recon_fund",
+                "as_of": now,
+                "starting_capital": 100000,
+                "currency": "USD",
+                "strategy": "Quality investor fund.",
+                "benchmark": "SPY",
+            },
+            result={"ok": True},
+            started_at=now,
+            completed_at=now,
+            duration_ms=1,
+        )
+        # Two never-executed buy decisions: one reconciled, one still open.
+        for decision_id, symbol in (
+            ("dec-superseded", "BRK-B"),
+            ("dec-still-open", "SPY"),
+        ):
+            trail.record_step(
+                enactment_id=enactment_id,
+                affordance_id="record_trade_decision",
+                material_name="fund_record_trade_decision",
+                arguments={
+                    "fund_id": "recon_fund",
+                    "decision_id": decision_id,
+                    "as_of": now,
+                    "symbol": symbol,
+                    "action": "buy",
+                },
+                result={"ok": True},
+                started_at=now,
+                completed_at=now,
+                duration_ms=1,
+            )
+        trail.close_enactment(enactment_id)
+    finally:
+        trail.close()
+
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "fund_id": "recon_fund",
+                "decision_id": "dec-superseded",
+                "resolution": "superseded_non_executed",
+                "superseded_by": "dec-later-executed",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = paper_fund.fund_read_state("recon_fund")
+
+    drift = [w for w in result["warnings"] if "Decision/order drift" in w]
+    assert len(drift) == 1, result["warnings"]
+    # The reconciled decision is retired; only the still-open one remains drift.
+    assert "dec-still-open" in drift[0]
+    assert "dec-superseded" not in drift[0]
+    assert [r["decision_id"] for r in result["reconciliations"]] == ["dec-superseded"]
 
 
 def test_somatic_scheduler_projects_as_autonomic_boundary_practice() -> None:
