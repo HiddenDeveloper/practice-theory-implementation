@@ -19,6 +19,7 @@ affordance_ids:
 - run_neuronpedia_activation_probe
 - run_neuronpedia_steering_probe
 - run_latent_recovery_trial
+- run_interactive_latent_positioning_trial
 - run_transformerlens_activation_probe
 - judge_latent_probe_confidence
 evaluation_ids:
