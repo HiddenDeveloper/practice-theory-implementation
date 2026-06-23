@@ -18,6 +18,8 @@ rules_ids:
 - rule_stock_investor_decision_report
 - rule_stock_investor_follow_up_register
 - rule_stock_investor_position_sizing
+- rule_stock_investor_cash_mandate
+- rule_stock_investor_no_restall
 - rule_stock_investor_measure_against_benchmark
 - rule_stock_investor_thesis_journal
 affordance_ids:
