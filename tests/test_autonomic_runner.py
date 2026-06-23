@@ -226,3 +226,47 @@ def test_candidate_memory_signals_still_go_to_consolidation(
     kind: object,
 ) -> None:
     assert not autonomic_runner._is_diagnostic_memory_signal({"kind": kind})
+
+
+def test_await_halt_cooldown_no_marker_returns_immediately(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    monkeypatch.setenv(
+        "PRACTICE_AUTONOMIC_HALT_FILE", str(tmp_path / "autonomic_halt.json")
+    )
+    stop = asyncio.Event()
+    # No persisted cooldown → the gate is a no-op and does not block.
+    asyncio.run(asyncio.wait_for(autonomic_runner._await_halt_cooldown(stop), timeout=1))
+    assert not stop.is_set()
+
+
+def test_await_halt_cooldown_waits_then_clears(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from practice_theory_implementation.harness_errors import (
+        ErrorKind,
+        ModelError,
+        StopDecision,
+        read_halt_cooldown,
+        record_halt_cooldown,
+    )
+
+    halt_file = tmp_path / "autonomic_halt.json"
+    monkeypatch.setenv("PRACTICE_AUTONOMIC_HALT_FILE", str(halt_file))
+    decision = StopDecision(
+        reason="quota_exhausted: usage limit",
+        error=ModelError(ErrorKind.QUOTA_EXHAUSTED, "usage limit", "codex"),
+        consecutive=1,
+    )
+    # A short live cooldown: the gate should wait it out, then clear the marker.
+    record_halt_cooldown(decision, cooldown_seconds=0.1)
+    assert read_halt_cooldown() is not None
+
+    stop = asyncio.Event()
+    asyncio.run(asyncio.wait_for(autonomic_runner._await_halt_cooldown(stop), timeout=2))
+    assert read_halt_cooldown() is None  # elapsed → cleared
+    assert not stop.is_set()

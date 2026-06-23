@@ -64,7 +64,10 @@ from practice_theory_implementation.autonomic_dispatcher import dispatcher_task
 from practice_theory_implementation.bundles import BUNDLES
 from practice_theory_implementation.harness_errors import (
     CircuitBreaker,
+    clear_halt_cooldown,
+    halt_cooldown_remaining,
     observe_dispatch,
+    read_halt_cooldown,
 )
 from practice_theory_implementation.observability import (
     annotate_dispatch_result,
@@ -1192,6 +1195,37 @@ async def _run_practice_evaluation_loop(
         await adapter.close()
 
 
+async def _await_halt_cooldown(stop: asyncio.Event) -> None:
+    """Back off on boot if a prior trip persisted a halt cooldown.
+
+    The cross-restart half of the circuit breaker. The in-memory breaker halts
+    the process on a quota/auth outage, but a supervisor (pm2) restarts it with
+    empty counters; without this gate it would re-dispatch immediately and
+    re-trip, the 2026-06-21 restart storm. Here a restarted process waits out the
+    persisted cooldown (interruptible by the stop signal) before any loop opens,
+    then clears it so the next pass runs normally — turning a ~20s crash loop
+    into a single back-off until the provider is likely to have recovered.
+    """
+    remaining = halt_cooldown_remaining()
+    if remaining <= 0:
+        clear_halt_cooldown()  # expired/partial marker — tidy up
+        return
+    info = read_halt_cooldown() or {}
+    logger.warning(
+        "[autonomic] persisted halt cooldown active: backing off %.0fs before "
+        "first dispatch (%s %s; retry_at=%s)",
+        remaining,
+        info.get("provider"),
+        info.get("kind"),
+        info.get("retry_at"),
+    )
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(stop.wait(), timeout=remaining)
+    if not stop.is_set():
+        clear_halt_cooldown()
+        logger.info("[autonomic] halt cooldown elapsed; resuming dispatch")
+
+
 async def _watch_sentinel(stop: asyncio.Event) -> None:
     while not stop.is_set():
         if await asyncio.to_thread(QUIT_SENTINEL.exists):
@@ -1222,6 +1256,14 @@ async def main_async() -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
+
+    # Honour a persisted halt cooldown from a prior trip before opening any
+    # adapter or dispatching — this is what stops a supervisor restart from
+    # re-entering the quota/auth crash loop.
+    await _await_halt_cooldown(stop)
+    if stop.is_set():
+        store.close()
+        return
 
     judge: AutonomicAdapter | None = None
     smoother: AutonomicAdapter | None = None

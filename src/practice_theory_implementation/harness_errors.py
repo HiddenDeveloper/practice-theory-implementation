@@ -25,14 +25,17 @@ Three pieces:
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import re
 import shlex
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,18 @@ ERROR_THRESHOLD_ENV = "PRACTICE_AUTONOMIC_ERROR_THRESHOLD"
 STOP_CMD_ENV = "PRACTICE_AUTONOMIC_STOP_CMD"
 DEFAULT_STOP_CMD = "make autonomic-stop"
 DEFAULT_ERROR_THRESHOLD = 2
+
+# Persistent halt cooldown. The CircuitBreaker is in-memory, so a quota/auth
+# halt that exits the process is defeated the moment a supervisor (pm2) restarts
+# it: the fresh process starts with empty counters and re-dispatches at once,
+# re-tripping every cycle (the 2026-06-21 restart storm — 2459 restarts, because
+# each ~20s crash cycle exceeded pm2's min_uptime and reset its backoff). On a
+# trip we write the cooldown to disk; a restarted process reads it and backs off
+# until it expires instead of hammering the exhausted provider.
+HALT_COOLDOWN_FILE_ENV = "PRACTICE_AUTONOMIC_HALT_FILE"
+HALT_COOLDOWN_SECONDS_ENV = "PRACTICE_AUTONOMIC_HALT_COOLDOWN_SECONDS"
+DEFAULT_HALT_COOLDOWN_FILE = Path("data/autonomic_halt.json")
+DEFAULT_HALT_COOLDOWN_SECONDS = 3600.0
 
 # Material name of the system-recorded step that marks a dispatch which failed
 # after its subprocess had opened a consumer enactment. The runner writes it
@@ -324,6 +339,93 @@ class CircuitBreaker:
         return self._tripped
 
 
+# --- persistent halt cooldown ----------------------------------------------
+
+
+def _halt_cooldown_file() -> Path:
+    raw = os.environ.get(HALT_COOLDOWN_FILE_ENV, "").strip()
+    return Path(raw) if raw else DEFAULT_HALT_COOLDOWN_FILE
+
+
+def _halt_cooldown_seconds() -> float:
+    raw = os.environ.get(HALT_COOLDOWN_SECONDS_ENV, "").strip()
+    if not raw:
+        return DEFAULT_HALT_COOLDOWN_SECONDS
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        logger.warning(
+            "invalid %s=%r, falling back to %s",
+            HALT_COOLDOWN_SECONDS_ENV,
+            raw,
+            DEFAULT_HALT_COOLDOWN_SECONDS,
+        )
+        return DEFAULT_HALT_COOLDOWN_SECONDS
+
+
+def record_halt_cooldown(
+    decision: StopDecision,
+    *,
+    now: float | None = None,
+    cooldown_seconds: float | None = None,
+) -> float:
+    """Persist a halt cooldown so a restarted process backs off on boot.
+
+    Written when the breaker trips. Carries the absolute ``until`` epoch
+    timestamp plus the classified cause for operator visibility. The duration is
+    a fixed cooldown (``PRACTICE_AUTONOMIC_HALT_COOLDOWN_SECONDS``, default 1h)
+    rather than the parsed ``retry_at`` string, which is a bare local-time hint
+    ("2:44 PM") with no date/zone to anchor it. Best-effort; returns the
+    ``until`` timestamp written (or that would have been written on failure).
+    """
+    now = time.time() if now is None else now
+    cooldown = _halt_cooldown_seconds() if cooldown_seconds is None else cooldown_seconds
+    until = now + cooldown
+    payload = {
+        "until": until,
+        "provider": decision.error.provider,
+        "kind": decision.error.kind.value,
+        "reason": decision.reason,
+        "retry_at": decision.error.retry_at,
+        "recorded_at": now,
+    }
+    path = _halt_cooldown_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    except OSError:
+        logger.exception("failed to persist halt cooldown to %s", path)
+    return until
+
+
+def read_halt_cooldown() -> dict[str, object] | None:
+    """Read the persisted halt cooldown payload, or None if absent/unreadable."""
+    path = _halt_cooldown_file()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError, OSError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def halt_cooldown_remaining(*, now: float | None = None) -> float:
+    """Seconds left on a persisted halt cooldown; 0.0 if none or expired."""
+    payload = read_halt_cooldown()
+    if payload is None:
+        return 0.0
+    until = payload.get("until")
+    if not isinstance(until, (int, float)):
+        return 0.0
+    now = time.time() if now is None else now
+    return max(0.0, float(until) - now)
+
+
+def clear_halt_cooldown() -> None:
+    """Remove the persisted halt cooldown (after it has been waited out)."""
+    with contextlib.suppress(FileNotFoundError, OSError):
+        _halt_cooldown_file().unlink()
+
+
 # --- deterministic stop ----------------------------------------------------
 
 
@@ -410,6 +512,10 @@ def trip_and_stop(
                 "consecutive": decision.consecutive,
             },
         )
+    # Persist the cooldown BEFORE the stop command (which may kill this process)
+    # so a supervisor restart honours the back-off instead of re-dispatching at
+    # once and re-tripping — the in-memory breaker alone cannot survive that.
+    record_halt_cooldown(decision)
     if on_stop_signal is not None:
         with contextlib.suppress(Exception):
             on_stop_signal()

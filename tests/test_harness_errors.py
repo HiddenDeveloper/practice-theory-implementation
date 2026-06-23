@@ -13,9 +13,14 @@ from practice_theory_implementation.harness_errors import (
     CircuitBreaker,
     ErrorKind,
     ModelError,
+    StopDecision,
     classify_dispatch_error,
     classify_exception,
+    clear_halt_cooldown,
+    halt_cooldown_remaining,
     observe_dispatch,
+    read_halt_cooldown,
+    record_halt_cooldown,
     run_autonomic_stop,
 )
 
@@ -110,8 +115,11 @@ def test_run_autonomic_stop_invokes_command(tmp_path, monkeypatch) -> None:
     assert marker.exists()
 
 
-def test_observe_dispatch_trips_and_signals(monkeypatch) -> None:
+def test_observe_dispatch_trips_and_signals(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("PRACTICE_AUTONOMIC_STOP_CMD", "true")
+    monkeypatch.setenv(
+        "PRACTICE_AUTONOMIC_HALT_FILE", str(tmp_path / "autonomic_halt.json")
+    )
     signalled = {"stopped": False}
 
     breaker = CircuitBreaker()
@@ -121,9 +129,60 @@ def test_observe_dispatch_trips_and_signals(monkeypatch) -> None:
     )
     assert should_stop is True
     assert signalled["stopped"] is True
+    # A trip persists a cooldown so a restarted process backs off.
+    assert halt_cooldown_remaining() > 0
 
 
 def test_observe_dispatch_success_does_not_stop() -> None:
     breaker = CircuitBreaker()
     assert observe_dispatch(breaker, None) is False
     assert observe_dispatch(None, None) is False
+
+
+# --- persistent halt cooldown ----------------------------------------------
+
+
+def _decision() -> StopDecision:
+    err = ModelError(
+        ErrorKind.QUOTA_EXHAUSTED, "usage limit", "codex", retry_at="2:44 PM"
+    )
+    return StopDecision(reason="quota_exhausted: usage limit", error=err, consecutive=1)
+
+
+def test_record_and_read_halt_cooldown(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "PRACTICE_AUTONOMIC_HALT_FILE", str(tmp_path / "autonomic_halt.json")
+    )
+    monkeypatch.setenv("PRACTICE_AUTONOMIC_HALT_COOLDOWN_SECONDS", "1800")
+    until = record_halt_cooldown(_decision(), now=1000.0)
+    assert until == 1000.0 + 1800.0
+    payload = read_halt_cooldown()
+    assert payload is not None
+    assert payload["provider"] == "codex"
+    assert payload["kind"] == "quota_exhausted"
+    assert payload["retry_at"] == "2:44 PM"
+
+
+def test_halt_cooldown_remaining_counts_down_and_expires(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "PRACTICE_AUTONOMIC_HALT_FILE", str(tmp_path / "autonomic_halt.json")
+    )
+    record_halt_cooldown(_decision(), now=1000.0, cooldown_seconds=600.0)
+    assert halt_cooldown_remaining(now=1000.0) == 600.0
+    assert halt_cooldown_remaining(now=1300.0) == 300.0
+    # At/after the deadline it reads as expired, not negative.
+    assert halt_cooldown_remaining(now=1600.0) == 0.0
+    assert halt_cooldown_remaining(now=9999.0) == 0.0
+
+
+def test_halt_cooldown_absent_is_zero_and_clear_is_safe(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "PRACTICE_AUTONOMIC_HALT_FILE", str(tmp_path / "autonomic_halt.json")
+    )
+    assert halt_cooldown_remaining() == 0.0
+    assert read_halt_cooldown() is None
+    clear_halt_cooldown()  # no file → no error
+    record_halt_cooldown(_decision())
+    assert read_halt_cooldown() is not None
+    clear_halt_cooldown()
+    assert read_halt_cooldown() is None

@@ -28,7 +28,10 @@ somatic_schedule:
   enabled: true
   practice: stock_investor
   interval_seconds: 3600
-  startup_delay_seconds: 0
+  # Wait before the first dispatch on (re)start. A 0 here was part of the
+  # 2026-06-21 quota crash loop: every supervised restart dispatched instantly,
+  # re-tripped the breaker, and looped ~every 20s. Keep this non-zero.
+  startup_delay_seconds: 60
   # Optional: point scheduled practitioners at a long-lived somatic HTTP MCP
   # server. Empty means each practitioner gets a fresh stdio server.
   mcp_url:
