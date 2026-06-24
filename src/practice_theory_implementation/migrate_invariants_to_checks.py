@@ -246,6 +246,85 @@ def apply_migration(
     return affs, invs
 
 
+@dataclass(frozen=True, slots=True)
+class CheckMaterialSpec:
+    """A check-material to author (a dynamic material, kind `enactment_check`)."""
+
+    name: str
+    trigger: str
+    friction_kind: str
+    message: str
+    forbid_when: Mapping[str, object]
+    body: str
+
+
+def plan_conversion(
+    affordances: Mapping[str, Affordance],
+) -> tuple[list[CheckMaterialSpec], list[Affordance]]:
+    """Convert transitional embedded preconditions into check-materials + refs.
+
+    Embedded preconditions are grouped by check id — which already encodes the
+    contract, so the multi-owner case (same id on two affordances) yields **one**
+    check-material referenced twice. Returns the check-materials to author and the
+    affordances rewritten to reference them by name with no embedded form left.
+    Tombstoned embedded checks are dropped, not migrated.
+    """
+    specs: dict[str, CheckMaterialSpec] = {}
+    refs: dict[str, list[str]] = defaultdict(list)
+    for aff in affordances.values():
+        for chk in aff.preconditions:
+            if chk.status != "active":
+                continue
+            if chk.id not in specs:
+                specs[chk.id] = CheckMaterialSpec(
+                    name=chk.id,
+                    trigger=chk.trigger,
+                    friction_kind=chk.friction_kind,
+                    message=chk.message,
+                    forbid_when=chk.forbid_when,
+                    body=chk.content
+                    or f"Determinable check on {chk.trigger}: {chk.message}",
+                )
+            refs[aff.id].append(chk.id)
+
+    rewritten = [
+        replace(
+            aff,
+            preconditions=(),
+            check_materials=tuple(sorted(set(aff.check_materials) | set(refs[aff.id]))),
+        )
+        for aff in affordances.values()
+        if aff.id in refs
+    ]
+    return list(specs.values()), rewritten
+
+
+def apply_conversion(
+    affordances: Mapping[str, Affordance], *, root: str | None = None
+) -> tuple[list[CheckMaterialSpec], list[Affordance]]:
+    """Author the check-materials and rewrite the affordances to reference them."""
+    from practice_theory_implementation import substrate_writer
+
+    specs, rewritten = plan_conversion(affordances)
+    for spec in specs:
+        substrate_writer.write_dynamic_material(
+            spec.name,
+            spec.body,
+            {},  # input_schema — a check is invoked over steps, not call args
+            {
+                "kind": "enactment_check",
+                "trigger": spec.trigger,
+                "friction_kind": spec.friction_kind,
+                "message": spec.message,
+                "forbid_when": spec.forbid_when,
+            },
+            root=root,
+        )
+    for aff in rewritten:
+        substrate_writer.write_affordance(aff, root=root)
+    return specs, rewritten
+
+
 def render_report(plan: MigrationPlan) -> str:
     lines: list[str] = []
     lines.append(
@@ -291,11 +370,27 @@ def main() -> None:
     parser.add_argument(
         "--apply", action="store_true", help="write the changes (default: dry-run report)"
     )
+    parser.add_argument(
+        "--convert",
+        action="store_true",
+        help="convert embedded affordance preconditions into check-materials + refs",
+    )
     args = parser.parse_args()
 
     from practice_theory_implementation.substrate_loader import loaded
 
     sub = loaded().substrate
+
+    if args.convert:
+        specs, rewritten = apply_conversion(sub.affordances)
+        print(
+            f"Converted: authored {len(specs)} check-material(s); "
+            f"rewrote {len(rewritten)} affordance(s) to reference them."
+        )
+        for aff in rewritten:
+            print(f"  {aff.id} -> {list(aff.check_materials)}")
+        return
+
     plan = plan_migration(sub.invariants, sub.affordances)
     if not args.apply:
         print(render_report(plan))

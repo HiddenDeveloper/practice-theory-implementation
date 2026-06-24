@@ -189,3 +189,47 @@ def test_apply_preserves_existing_preconditions() -> None:
 
     ids = [c.id for c in written_affs[0].preconditions]
     assert "pre_existing" in ids and len(ids) == 2  # appended, not replaced
+
+
+# --- phase 3 (re-aim): convert embedded preconditions -> check-materials ------
+
+from practice_theory_implementation.migrate_invariants_to_checks import (  # noqa: E402
+    plan_conversion,
+)
+from practice_theory_implementation.types import Check  # noqa: E402
+
+
+def _chk(id: str, trigger: str = "t", fk: str = "k", fw=None, status: str = "active") -> Check:
+    return Check(
+        id=id, name=id, trigger=trigger, friction_kind=fk, message=f"m {id}",
+        forbid_when=fw or {"not": {"step_exists": {"material_name": "x"}}}, status=status,
+    )
+
+
+def _aff_pc(id: str, *checks: Check, materials=()) -> Affordance:
+    return Affordance(
+        id=id, name=id, description="", materials=tuple(materials), preconditions=tuple(checks)
+    )
+
+
+def test_plan_conversion_one_precondition_becomes_material_and_ref() -> None:
+    aff = _aff_pc("a", _chk("requires_x_before_t"))
+    specs, rewritten = plan_conversion({"a": aff})
+    assert [s.name for s in specs] == ["requires_x_before_t"]
+    assert specs[0].trigger == "t" and specs[0].friction_kind == "k"
+    assert len(rewritten) == 1
+    assert rewritten[0].preconditions == ()  # embedded form gone
+    assert rewritten[0].check_materials == ("requires_x_before_t",)
+
+
+def test_plan_conversion_multi_owner_is_one_material_two_refs() -> None:
+    shared = _chk("shared_check")
+    specs, rewritten = plan_conversion({"a1": _aff_pc("a1", shared), "a2": _aff_pc("a2", shared)})
+    assert [s.name for s in specs] == ["shared_check"]  # ONE check-material
+    assert {r.id for r in rewritten} == {"a1", "a2"}
+    assert all(r.check_materials == ("shared_check",) for r in rewritten)
+
+
+def test_plan_conversion_drops_tombstoned_embedded() -> None:
+    specs, rewritten = plan_conversion({"a": _aff_pc("a", _chk("dead", status="tombstoned"))})
+    assert specs == [] and rewritten == []

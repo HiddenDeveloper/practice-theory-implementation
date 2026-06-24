@@ -174,3 +174,34 @@ def test_write_affordance_preconditions_round_trips(tmp_path: Path) -> None:
     affs, errors = _load(tmp_path)
     assert errors == []
     assert affs["a1"].preconditions == (check,)  # frozen-dataclass equality, lossless
+
+
+def test_write_and_load_enactment_check_material(tmp_path: Path) -> None:
+    """A written enactment_check dynamic material loads, registers, and fires."""
+    from practice_theory_implementation import registry, substrate_loader, substrate_writer
+    from practice_theory_implementation.trail import StepRow
+
+    name = "check_x_before_t"
+    substrate_writer.write_dynamic_material(
+        name,
+        "rationale",  # description
+        {},  # input_schema
+        {
+            "kind": "enactment_check",
+            "trigger": "t",
+            "friction_kind": "k",
+            "message": "m",
+            "forbid_when": {"not": {"step_exists": {"material_name": "x"}}},
+        },
+        root=tmp_path,
+    )
+    errors: list[str] = []
+    mats = substrate_loader._load_dynamic_materials(tmp_path, errors, {})
+    assert errors == [] and name in mats
+
+    fn = registry.resolve(name)  # loader registered the callable
+    step = StepRow(
+        id=1, enactment_id="e", affordance_id="a", material_name="t",
+        arguments_json="{}", result_summary="", started_at="x", completed_at="x", duration_ms=1,
+    )
+    assert fn([step]) is not None  # trigger present, no earlier x -> violation
