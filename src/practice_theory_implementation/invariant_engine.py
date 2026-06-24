@@ -201,6 +201,56 @@ def _parse_args(step: StepRow) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+@dataclass(frozen=True, slots=True)
+class Violation:
+    """What a check-material returns when a determinable contract is breached:
+    enough to raise+resolve the friction with no LLM."""
+
+    friction_kind: str
+    message: str
+    trigger_step_id: int
+
+
+def build_enactment_check(
+    *,
+    trigger: str,
+    forbid_when: Mapping[str, object],
+    friction_kind: str,
+    message: str,
+) -> Callable[[list[StepRow]], Violation | None]:
+    """Build a check-material callable from a step-predicate.
+
+    The runtime of the `enactment_check` material kind — the determinable check
+    as a deterministic function over an enactment's steps, so it lives in the
+    materials layer (registry-resolvable by name) rather than a separate
+    `invariants` pool (see docs/plans/determinable-checks-are-materials.md). The
+    callable is self-contained: it does its own trigger-gating, so one
+    check-material can be referenced by many affordances. It evaluates
+    `forbid_when` against the steps before the last `trigger` step; a satisfied
+    predicate is a violation. Validates the predicate at build time so a bad
+    `forbid_when` never reaches a live enactment.
+    """
+    if predicate_error := validate_predicate(forbid_when):
+        raise ValueError(f"enactment_check forbid_when invalid: {predicate_error}")
+
+    def check(steps: list[StepRow]) -> Violation | None:
+        # cspell:ignore idxs
+        trigger_idxs = [k for k, s in enumerate(steps) if s.material_name == trigger]
+        if not trigger_idxs:
+            return None
+        ti = trigger_idxs[-1]
+        ctx = EvalContext(steps=steps, trigger_index=ti, arguments=_parse_args(steps[ti]))
+        if evaluate_predicate(forbid_when, ctx):
+            return Violation(
+                friction_kind=friction_kind,
+                message=message,
+                trigger_step_id=steps[ti].id,
+            )
+        return None
+
+    return check
+
+
 def run_invariants(
     store: EnactmentStore,
     enactment: EnactmentRow,

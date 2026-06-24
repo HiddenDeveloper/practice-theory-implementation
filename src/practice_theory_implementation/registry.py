@@ -262,8 +262,36 @@ def build_dynamic_material_function(
 
         expression_material.__name__ = name
         return expression_material
+    if kind == "enactment_check":
+        # A determinable check is a deterministic function over an enactment's
+        # steps — so it is a material, built here from a step-predicate rather
+        # than living in a separate invariants pool. The predicate engine is
+        # reused as the check kind's runtime + validator.
+        trigger = implementation.get("trigger")
+        forbid_when = implementation.get("forbid_when")
+        friction_kind = implementation.get("friction_kind")
+        if (
+            not isinstance(trigger, str)
+            or not isinstance(friction_kind, str)
+            or not isinstance(forbid_when, Mapping)
+        ):
+            raise ValueError(
+                "enactment_check requires a string trigger, a string friction_kind, "
+                "and a forbid_when mapping"
+            )
+        from practice_theory_implementation.invariant_engine import build_enactment_check
+
+        check = build_enactment_check(
+            trigger=trigger,
+            forbid_when=forbid_when,
+            friction_kind=friction_kind,
+            message=str(implementation.get("message", "")),
+        )
+        check.__name__ = name
+        return check
     raise ValueError(
-        "dynamic material implementation kind must be one of 'constant', 'echo', or 'expression'"
+        "dynamic material implementation kind must be one of 'constant', 'echo', "
+        "'expression', or 'enactment_check'"
     )
 
 

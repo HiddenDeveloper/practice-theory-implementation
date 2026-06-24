@@ -343,3 +343,80 @@ def test_gather_active_checks_unions_both_sources_and_skips_tombstoned() -> None
     assert "affordance:aff1::no_close_on_unpersisted" in ids  # active affordance check
     assert "inv_dead" not in ids  # tombstoned invariant skipped
     assert "affordance:aff1::dead" not in ids  # tombstoned check skipped
+
+
+# --- re-aim: a check is a material (enactment_check kind) ---------------------
+
+LIST_BEFORE_DETAIL = {"not": {"step_exists": {"material_name": "garmin_list_activities"}}}
+
+
+def test_build_enactment_check_fires_when_predicate_holds() -> None:
+    check = ie.build_enactment_check(
+        trigger="garmin_get_activity",
+        forbid_when=LIST_BEFORE_DETAIL,
+        friction_kind="quality_affordance_coverage",
+        message="detail before list",
+    )
+    # detail reached with no earlier list -> violation
+    steps = [_step(1, "garmin_get_activity", "ok")]
+    v = check(steps)
+    assert v is not None
+    assert v.friction_kind == "quality_affordance_coverage"
+    assert v.message == "detail before list"
+    assert v.trigger_step_id == 1
+
+
+def test_build_enactment_check_clears_when_satisfied_or_untriggered() -> None:
+    check = ie.build_enactment_check(
+        trigger="garmin_get_activity",
+        forbid_when=LIST_BEFORE_DETAIL,
+        friction_kind="k",
+        message="m",
+    )
+    # list before detail -> satisfied, no violation
+    ok = [_step(1, "garmin_list_activities", "ok"), _step(2, "garmin_get_activity", "ok")]
+    assert check(ok) is None
+    # trigger material never used -> the check does not arm
+    assert check([_step(1, "something_else", "ok")]) is None
+
+
+def test_build_enactment_check_rejects_bad_predicate() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="forbid_when invalid"):
+        ie.build_enactment_check(
+            trigger="t", forbid_when={"nope": 1}, friction_kind="k", message="m"
+        )
+
+
+def test_registry_builds_enactment_check_material() -> None:
+    from practice_theory_implementation import registry
+
+    fn = registry.build_dynamic_material_function(
+        "check_list_before_detail",
+        {
+            "kind": "enactment_check",
+            "trigger": "garmin_get_activity",
+            "friction_kind": "quality_affordance_coverage",
+            "message": "detail before list",
+            "forbid_when": LIST_BEFORE_DETAIL,
+        },
+    )
+    assert fn.__name__ == "check_list_before_detail"
+    assert fn([_step(1, "garmin_get_activity", "ok")]) is not None
+    list_then_detail = [
+        _step(1, "garmin_list_activities", "x"),
+        _step(2, "garmin_get_activity", "x"),
+    ]
+    assert fn(list_then_detail) is None
+
+
+def test_registry_enactment_check_requires_fields() -> None:
+    import pytest
+
+    from practice_theory_implementation import registry
+
+    with pytest.raises(ValueError, match="enactment_check requires"):
+        registry.build_dynamic_material_function(
+            "bad", {"kind": "enactment_check", "trigger": "t"}  # missing forbid_when/friction_kind
+        )
