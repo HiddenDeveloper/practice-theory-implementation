@@ -119,6 +119,34 @@ def practices_with_concerns(
     return out
 
 
+def evaluation_window_signature(result: dict) -> str:
+    """Stable signature of the enactment window + concerns behind a result.
+
+    Two evaluations of the same practice yield the same signature when neither
+    the evaluated enactment window nor the set of concern signals has changed.
+    The Judge dispatch is keyed on this so an idle somatic practice — one with
+    no new human-driven enactment since its last review — is not re-reviewed
+    every cooldown cycle (the activities_management duplication: a frozen 8-pass
+    window re-judged ~2,200 times). Built purely from data the engine already
+    reports: per-spec `evaluated_enactment_ids` and, for findings in `concern`
+    status, their `signal_id`. A new enactment or a newly-tripped signal changes
+    the signature and so re-opens review; pure substrate re-wording does not.
+    """
+    ids: set[str] = set()
+    concerns: set[str] = set()
+
+    def _collect(part: dict) -> None:
+        ids.update(part.get("evaluated_enactment_ids") or [])
+        for finding in part.get("findings") or []:
+            if finding.get("status") == "concern":
+                concerns.add(str(finding.get("signal_id")))
+
+    _collect(result)
+    for part in result.get("results") or []:
+        _collect(part)
+    return "ids:" + ",".join(sorted(ids)) + ";concerns:" + ",".join(sorted(concerns))
+
+
 # --- idempotent deterministic Friction routing ----------------------------
 
 

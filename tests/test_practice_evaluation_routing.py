@@ -172,3 +172,67 @@ def test_compose_concern_brief_includes_concerns_only() -> None:
     assert "s1" in brief
     assert "emit_friction" in brief
     assert "s2" not in brief  # pass findings are not listed
+
+
+# --- window watermark (Judge re-review suppression) ------------------------
+
+
+def _single_spec_result(enactment_ids, concern_signals):
+    return {
+        "practice_id": "demo",
+        "spec_present": True,
+        "evaluated_enactment_ids": list(enactment_ids),
+        "findings": [
+            {"signal_id": s, "kind": "affordance_coverage", "status": "concern"}
+            for s in concern_signals
+        ],
+    }
+
+
+def test_window_signature_stable_when_window_and_concerns_unchanged() -> None:
+    a = _single_spec_result(["e3", "e2", "e1"], ["s1"])
+    b = _single_spec_result(["e1", "e2", "e3"], ["s1"])  # same set, different order
+    assert routing.evaluation_window_signature(a) == routing.evaluation_window_signature(b)
+
+
+def test_window_signature_changes_when_a_new_enactment_appears() -> None:
+    before = _single_spec_result(["e1", "e2", "e3"], ["s1"])
+    after = _single_spec_result(["e4", "e1", "e2"], ["s1"])  # window advanced
+    assert routing.evaluation_window_signature(before) != routing.evaluation_window_signature(after)
+
+
+def test_window_signature_changes_when_a_new_concern_trips() -> None:
+    before = _single_spec_result(["e1", "e2"], ["s1"])
+    after = _single_spec_result(["e1", "e2"], ["s1", "s2"])  # same window, new concern
+    assert routing.evaluation_window_signature(before) != routing.evaluation_window_signature(after)
+
+
+def test_window_signature_ignores_pass_findings_and_rewording() -> None:
+    # Identical window + concerns, but extra `pass` findings / detail churn must
+    # not change the signature (a Smoother re-wording on a frozen window).
+    base = _single_spec_result(["e1", "e2"], ["s1"])
+    reworded = _single_spec_result(["e1", "e2"], ["s1"])
+    reworded["findings"].append(
+        {"signal_id": "s9", "kind": "shape_repetition", "status": "pass"}
+    )
+    reworded["detail"] = "freshly re-worded narrative that should not matter"
+    assert routing.evaluation_window_signature(
+        base
+    ) == routing.evaluation_window_signature(reworded)
+
+
+def test_window_signature_handles_multi_spec_results() -> None:
+    multi = {
+        "practice_id": "demo",
+        "spec_present": True,
+        "results": [
+            {"evaluated_enactment_ids": ["e1", "e2"],
+             "findings": [{"signal_id": "s1", "status": "concern"}]},
+            {"evaluated_enactment_ids": ["e2", "e3"],
+             "findings": [{"signal_id": "s2", "status": "pass"}]},
+        ],
+        "concern_count": 1,
+    }
+    sig = routing.evaluation_window_signature(multi)
+    assert "e1" in sig and "e3" in sig and "s1" in sig
+    assert "s2" not in sig.split(";concerns:")[1]  # pass finding not a concern

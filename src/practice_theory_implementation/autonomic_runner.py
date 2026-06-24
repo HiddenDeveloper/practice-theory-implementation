@@ -1095,12 +1095,20 @@ async def _run_practice_evaluation_loop(
     from practice_theory_implementation import substrate_loader
     from practice_theory_implementation.practice_evaluation_routing import (
         compose_concern_brief,
+        evaluation_window_signature,
         practices_with_concerns,
         route_evaluation_governance,
     )
 
     await adapter.open()
     last_eval = 0.0
+    # Per-practice watermark of the last window/concern signature handed to the
+    # Judge. An idle somatic practice's window does not advance between cooldown
+    # cycles, so without this the same review is dispatched indefinitely (the
+    # activities_management duplication). In-memory by design, like the
+    # reflective loop's watermark: a restart re-reviews each concerned practice
+    # once, then suppresses until its window actually changes.
+    reviewed_windows: dict[str, str] = {}
     try:
         while not stop.is_set():
             backlog = _autonomic_inbox_backlog(store)
@@ -1131,9 +1139,21 @@ async def _run_practice_evaluation_loop(
             for result in concerns:
                 if stop.is_set():
                     break
+                practice_id = result.get("practice_id")
+                signature = evaluation_window_signature(result)
+                if reviewed_windows.get(practice_id) == signature:
+                    # Window unchanged since the Judge last reviewed it — the
+                    # concern is byte-identical, so re-dispatch would only
+                    # duplicate the review and burn budget. Wait for the window
+                    # to advance (a new enactment) before reviewing again.
+                    logger.debug(
+                        "[practice_eval] skipping %s: window unchanged since last review",
+                        practice_id,
+                    )
+                    continue
                 logger.info(
                     "[practice_eval] dispatching Judge for %s (%d concern(s))",
-                    result.get("practice_id"),
+                    practice_id,
                     result.get("concern_count", 0),
                 )
                 dispatch_started = datetime.now(UTC).isoformat(timespec="microseconds")
@@ -1162,6 +1182,11 @@ async def _run_practice_evaluation_loop(
                                 _record_usage_and_close_consumer(
                                     store, adapter, consumer_id, dispatch_ms=dispatch_ms
                                 )
+                            # The Judge reviewed this exact window (whether or not
+                            # it emitted friction) — record the watermark so it is
+                            # not re-reviewed until the window advances. Only on a
+                            # landed enactment, so a quota/error dispatch retries.
+                            reviewed_windows[practice_id] = signature
                             annotate_dispatch_result(
                                 span,
                                 status="ok",
@@ -1181,7 +1206,7 @@ async def _run_practice_evaluation_loop(
                         annotate_dispatch_result(span, status="error", error=str(exc))
                         logger.exception(
                             "[practice_eval] judge dispatch failed for %s",
-                            result.get("practice_id"),
+                            practice_id,
                         )
                 if observe_dispatch(
                     breaker, getattr(adapter, "last_error", None), on_stop_signal=stop.set
