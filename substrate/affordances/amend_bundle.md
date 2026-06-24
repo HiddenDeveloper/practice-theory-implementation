@@ -3,6 +3,19 @@ id: amend_bundle
 name: Amend a bundle
 materials:
 - pm_amend_bundle
+preconditions:
+- id: requires_pm_read_pool_before_pm_amend_bundle
+  name: requires pm read pool before pm amend bundle
+  trigger: pm_amend_bundle
+  friction_kind: practice_quality_affordance_coverage
+  message: Practice Management amended bundle wiring without a same-enactment pm_read_pool
+    grounding step before the write.
+  forbid_when:
+    not:
+      step_exists:
+        material_name: pm_read_pool
+  content: 'Migrated 2026-06-24T23:04:28+00:00 from 5 invariant(s): pm_amend_bundle_pool_read_affordance_coverage_957,
+    pm_amend_bundle_requires_pool_read, pm_amend_bundle_requires_prior_pool_read….'
 ---
 Change which pool ids an existing bundle selects. This is Practice Management substrate stewardship: before invoking `pm_amend_bundle`, first use `read_pool` / `pm_read_pool` for every pool whose ids or current content the bundle amendment relies on, such as `affordances`, `materials`, `rules`, `understanding`, or `teleo_affective`. If a write or bundle wiring step has already occurred without that read, stop with the concrete missing-pool-read blocker instead of continuing from persistence, reload context, remembered ids, or bundle prose.
 

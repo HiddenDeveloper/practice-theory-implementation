@@ -3,6 +3,24 @@ id: capture_morning_site_check
 name: Check a morning site
 materials:
 - morning_briefing_browser_site_check
+preconditions:
+- id: guard_morning_briefing_browser_site_check__practice_quality_affordance_coverage
+  name: guard morning briefing browser site check  practice quality affordance coverage
+  trigger: morning_briefing_browser_site_check
+  friction_kind: practice_quality_affordance_coverage
+  message: Morning briefing browser site checks require earlier unread Gmail and configured
+    site-list reads, or direct checks are substituting for the required source-gathering
+    gate.
+  forbid_when:
+    any:
+    - not:
+        step_exists:
+          material_name: gmail_user_search_threads
+    - not:
+        step_exists:
+          material_name: read_morning_briefing_sites
+  content: 'Migrated 2026-06-24T23:04:28+00:00 from 2 invariant(s): morning_briefing_source_gate_before_site_check,
+    morning_briefing_sources_before_site_check.'
 ---
 Check one recurring morning site through Cognabot's browser JIT proxy, preserving URL/name, observed time, headline candidates, source notes, snapshot text, and any access gap. Use this for URL-backed site checks in the morning briefing; if the JIT proxy or browser service is unavailable, report the returned access gap instead of substituting a generic web summary.
 

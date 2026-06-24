@@ -3,6 +3,19 @@ id: read_morning_site_list
 name: Read morning site list
 materials:
 - read_morning_briefing_sites
+preconditions:
+- id: requires_gmail_user_search_threads_before_read_morning_briefing_sites
+  name: requires gmail user search threads before read morning briefing sites
+  trigger: read_morning_briefing_sites
+  friction_kind: quality_affordance_coverage
+  message: Morning briefing site-list reads without an earlier unread Gmail search
+    leave the recurring source baseline incomplete for quality coverage.
+  forbid_when:
+    not:
+      step_exists:
+        material_name: gmail_user_search_threads
+  content: 'Migrated 2026-06-24T23:04:28+00:00 from 2 invariant(s): friction_893_morning_briefing_gmail_before_site_list_quality,
+    morning_briefing_gmail_before_site_list.'
 ---
 Read the configured recurring morning briefing site list before site interpretation, browser checks, live snapshots, or briefing assembly. This affordance reaches `read_morning_briefing_sites` and is the configured-site-list source gate paired with unread Gmail. In every `morning_briefing` pass, this is not the first source move: first use `read_user_email` reaching `gmail_user_search_threads` for unread mail, or record a concrete Gmail access/auth/data/material blocker. Only after that unread-mail state is visible should the practitioner invoke `read_morning_site_list` / `read_morning_briefing_sites` for the configured recurring sites, unless the same concrete Gmail blocker has already limited the briefing. If a pass enters this affordance first, the immediate next move after the site-list read is to backfill `read_user_email` / `gmail_user_search_threads` before any site interpretation, browser check, live snapshot, action/watch/routine grouping, handoff, final answer, or closure. If the site list cannot be read, record the concrete configuration, access, data, or material blocker; do not substitute an ad hoc browser check or generic web summary for the configured recurring site list. This amendment responds to Friction 689: recent morning-briefing passes still read only the site list or skipped both recurring source reads, so the site-list affordance now carries the Gmail-first redirect at the point where the observed drift begins.
 

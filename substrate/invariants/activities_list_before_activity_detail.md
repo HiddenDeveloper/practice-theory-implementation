@@ -1,7 +1,7 @@
 ---
 id: activities_list_before_activity_detail
 name: Activities Management lists activities before activity detail
-status: active
+status: tombstoned
 trigger: garmin_get_activity
 mode: detect
 friction_kind: quality_affordance_coverage_gap
@@ -13,5 +13,7 @@ message: activities_management activity-detail work reached garmin_get_activity 
   any current-enactment garmin_list_activities row; recover by making recent_activity
   / garmin_list_activities the next visible move or record a concrete list blocker
   before synthesis.
+tombstoned_at: '2026-06-24T23:04:28+00:00'
+tombstone_reason: migrated to an affordance precondition (phase 3)
 ---
 For activities-management activity-detail passes, a garmin_get_activity row without any earlier garmin_list_activities row is the deterministic bypass the Judge has repeatedly re-found by hand in Frictions 824, 825, 833, 837, 841, 845, 850, and 855. This invariant detects that ordering miss at the adjacent detail material instead of waiting for another quality-evaluation Friction.

@@ -1,7 +1,7 @@
 ---
 id: no_close_after_failed_targeted_friction_read
 name: No addressed mark after failed or empty targeted Friction read
-status: active
+status: tombstoned
 trigger: smoother_mark_addressed
 mode: detect
 friction_kind: ungrounded_closure_attempt
@@ -29,6 +29,8 @@ message: A Smoother enactment invoked mark_friction_addressed after an earlier t
   mark itself fails because the Friction id is absent, no longer pending, or already
   addressed, leaving the failed closure attempt unresolved unless a later step records
   a disposition.
+tombstoned_at: '2026-06-24T23:04:28+00:00'
+tombstone_reason: migrated to an affordance precondition (phase 3)
 ---
 When a Smoother closure is triggered by smoother_mark_addressed, forbid the closure if an earlier targeted read_pending_friction call either failed with the historical unexpected-keyword TypeError or returned an empty pending result, and the enactment has no successful read_pending_friction result exposing a Friction id. This captures the determinable part of ungrounded_closure_attempt: an absent, failed, or empty targeted Friction read is not a grounded pending-Friction basis for an addressed mark, disposition, or closure attempt.
 

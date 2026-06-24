@@ -1,7 +1,7 @@
 ---
 id: morning_briefing_requires_source_reads_before_assembly
 name: Morning briefing assembly requires recurring source reads
-status: active
+status: tombstoned
 trigger: morning_briefing_assemble_report
 mode: detect
 friction_kind: quality_affordance_coverage
@@ -17,5 +17,7 @@ message: morning_briefing assembly must be preceded in the same enactment by unr
   Gmail (`gmail_user_search_threads`) and configured usual-site-list (`read_morning_briefing_sites`)
   source reads; assemble only after both source rows are visible, or stop before assembly
   with the concrete missing-source blocker.
+tombstoned_at: '2026-06-24T23:04:28+00:00'
+tombstone_reason: migrated to an affordance precondition (phase 3)
 ---
 Deterministic guard for the recurring `reads_morning_sources_before_assembling` quality concern: when `morning_briefing_assemble_report` appears, the trail must already contain both required source-read material rows. This turns the repeated hand-judged source-read omission into an automatic substrate contract for the assembly boundary.
