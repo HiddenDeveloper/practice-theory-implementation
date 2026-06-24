@@ -150,3 +150,27 @@ def test_tombstoned_check_is_loaded(tmp_path: Path) -> None:
     affs, errors = _load(tmp_path)
     assert errors == []
     assert affs["ts"].preconditions[0].status == "tombstoned"
+
+
+def test_write_affordance_preconditions_round_trips(tmp_path: Path) -> None:
+    """write_affordance emits preconditions that _load_affordances reads back equal."""
+    from practice_theory_implementation import substrate_writer
+    from practice_theory_implementation.types import Affordance, Check
+
+    check = Check(
+        id="requires_x_before_t",
+        name="requires x before t",
+        trigger="t",
+        friction_kind="quality_affordance_coverage",
+        message="t reached before x",
+        forbid_when={"not": {"step_exists": {"material_name": "x"}}},
+    )
+    aff = Affordance(
+        id="a1", name="A1", description="body prose", materials=("t", "x"),
+        preconditions=(check,),
+    )
+    substrate_writer.write_affordance(aff, root=tmp_path)
+
+    affs, errors = _load(tmp_path)
+    assert errors == []
+    assert affs["a1"].preconditions == (check,)  # frozen-dataclass equality, lossless

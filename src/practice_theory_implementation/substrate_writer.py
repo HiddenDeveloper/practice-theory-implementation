@@ -20,6 +20,7 @@ always agree on where a file lives.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Mapping
@@ -35,6 +36,7 @@ from practice_theory_implementation.substrate_loader import (
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
+    Check,
     EvaluationSpec,
     Invariant,
     PoolElement,
@@ -85,16 +87,41 @@ def write_pool_element(
     return path
 
 
+def _check_frontmatter(check: Check) -> dict[str, Any]:
+    """One affordance precondition as deterministic YAML frontmatter, the mirror
+    of `_parse_affordance_preconditions`. Defaults (active status, detect mode,
+    empty content) are omitted so an unchanged check is a no-op diff. `forbid_when`
+    is rendered as plain dict/list via a json round-trip so any Mapping subtype
+    dumps cleanly."""
+    fm: dict[str, Any] = {
+        "id": check.id,
+        "name": check.name,
+        "trigger": check.trigger,
+        "friction_kind": check.friction_kind,
+        "message": check.message,
+        "forbid_when": json.loads(json.dumps(check.forbid_when)),
+    }
+    if check.content:
+        fm["content"] = check.content
+    if check.status != "active":
+        fm["status"] = check.status
+    return fm
+
+
 def write_affordance(
     affordance: Affordance, *, root: str | Path | None = None
 ) -> Path:
     """Persist one affordance to `affordances/<id>.md`."""
     path = _path_for("affordances", affordance.id, root=root)
-    frontmatter = {
+    frontmatter: dict[str, Any] = {
         "id": affordance.id,
         "name": affordance.name,
         "materials": list(affordance.materials),
     }
+    if affordance.preconditions:
+        frontmatter["preconditions"] = [
+            _check_frontmatter(c) for c in affordance.preconditions
+        ]
     _write_atomic(path, _render(frontmatter, affordance.description))
     return path
 

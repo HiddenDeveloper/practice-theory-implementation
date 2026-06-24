@@ -112,3 +112,80 @@ def test_source_count_accounts_for_every_active_invariant() -> None:
     plan = plan_migration(invs, affs)
     assert plan.source_count == 2
     assert len(plan.ready) == 1 and len(plan.deferred) == 1
+
+
+# --- apply: build the affordance rewrites + invariant tombstones --------------
+
+from practice_theory_implementation.migrate_invariants_to_checks import (  # noqa: E402
+    build_apply_changes,
+)
+
+
+def test_apply_appends_precondition_and_tombstones_sources() -> None:
+    trig = "garmin_get_daily_summary"
+    invs = {
+        "a": _inv("a", trig, "quality_affordance_coverage", LIST_BEFORE),
+        "b": _inv("b", trig, "practice_quality_affordance_coverage", LIST_BEFORE),
+    }
+    affs = {"daily_summary": _aff("daily_summary", trig, "garmin_list_activities")}
+    plan = plan_migration(invs, affs)
+    written_affs, tombstoned = build_apply_changes(
+        plan, affs, invs, now="2026-06-25T00:00:00+00:00"
+    )
+
+    assert len(written_affs) == 1
+    aff = written_affs[0]
+    assert aff.id == "daily_summary"
+    assert len(aff.preconditions) == 1
+    assert aff.preconditions[0].id == (
+        "requires_garmin_list_activities_before_garmin_get_daily_summary"
+    )
+    assert aff.preconditions[0].trigger == "garmin_get_daily_summary"
+    # both source invariants tombstoned with the migrated reason
+    assert {i.id for i in tombstoned} == {"a", "b"}
+    assert all(i.status == "tombstoned" for i in tombstoned)
+    assert all("migrated" in i.tombstone_reason for i in tombstoned)
+    assert all(i.tombstoned_at == "2026-06-25T00:00:00+00:00" for i in tombstoned)
+
+
+def test_apply_multi_owner_writes_both_affordances() -> None:
+    invs = {"a": _inv("a", "garmin_get_activity", "k", LIST_BEFORE)}
+    affs = {
+        "activity_detail": _aff("activity_detail", "garmin_get_activity", "garmin_list_activities"),
+        "iwt": _aff("iwt", "garmin_get_activity"),
+    }
+    plan = plan_migration(invs, affs)
+    written_affs, tombstoned = build_apply_changes(plan, affs, invs, now="N")
+
+    assert {a.id for a in written_affs} == {"activity_detail", "iwt"}
+    assert all(len(a.preconditions) == 1 for a in written_affs)
+
+
+def test_apply_tombstones_deferred_as_dead() -> None:
+    invs = {"orphan": _inv("orphan", "stale_alias_material", "k", {"arg_present": "x"})}
+    affs = {"o": _aff("o", "real_material")}
+    plan = plan_migration(invs, affs)
+    _, tombstoned = build_apply_changes(plan, affs, invs, now="N")
+
+    assert [i.id for i in tombstoned] == ["orphan"]
+    assert tombstoned[0].status == "tombstoned"
+    assert "dead" in tombstoned[0].tombstone_reason
+
+
+def test_apply_preserves_existing_preconditions() -> None:
+    from dataclasses import replace
+
+    from practice_theory_implementation.types import Check
+
+    existing = Check(
+        id="pre_existing", name="pre", trigger="other", friction_kind="k",
+        message="m", forbid_when={"arg_present": "z"},
+    )
+    invs = {"a": _inv("a", "trig", "k", {"not": {"step_exists": {"material_name": "pre"}}})}
+    base = _aff("owner", "trig", "pre")
+    affs = {"owner": replace(base, preconditions=(existing,))}
+    plan = plan_migration(invs, affs)
+    written_affs, _ = build_apply_changes(plan, affs, invs, now="N")
+
+    ids = [c.id for c in written_affs[0].preconditions]
+    assert "pre_existing" in ids and len(ids) == 2  # appended, not replaced

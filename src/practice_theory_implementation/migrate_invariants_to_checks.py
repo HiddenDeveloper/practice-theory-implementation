@@ -31,7 +31,7 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
-from practice_theory_implementation.types import Affordance, Invariant
+from practice_theory_implementation.types import Affordance, Check, Invariant, Substrate
 
 
 def _canonical(forbid_when: Mapping[str, object]) -> str:
@@ -176,6 +176,76 @@ def plan_migration(
     )
 
 
+def _precondition_check(planned: PlannedCheck, now: str) -> Check:
+    ids = planned.source_invariant_ids
+    head = ", ".join(ids[:3]) + ("…" if len(ids) > 3 else "")
+    return Check(
+        id=planned.check_id,
+        name=planned.check_id.replace("_", " "),
+        trigger=planned.trigger,
+        friction_kind=planned.friction_kind,
+        message=planned.message,
+        forbid_when=planned.forbid_when,
+        content=f"Migrated {now} from {len(ids)} invariant(s): {head}.",
+    )
+
+
+def build_apply_changes(
+    plan: MigrationPlan,
+    affordances: Mapping[str, Affordance],
+    invariants: Mapping[str, Invariant],
+    *,
+    now: str,
+) -> tuple[list[Affordance], list[Invariant]]:
+    """Pure: the affordances to rewrite (preconditions appended) and the
+    invariants to tombstone. `needs_review` checks are applied to every owner
+    candidate (decision 1a); deferred invariants are tombstoned as dead.
+    """
+    new_pc: dict[str, list[Check]] = defaultdict(list)
+    migrated: set[str] = set()
+    for planned in (*plan.ready, *plan.needs_review):
+        check = _precondition_check(planned, now)
+        for owner in planned.owner_candidates:
+            new_pc[owner].append(check)
+        migrated.update(planned.source_invariant_ids)
+
+    affs_to_write = [
+        replace(affordances[owner], preconditions=affordances[owner].preconditions + tuple(checks))
+        for owner, checks in sorted(new_pc.items())
+    ]
+
+    deferred_ids = {d.invariant_id for d in plan.deferred}
+    invs_to_tombstone: list[Invariant] = []
+    for iid in sorted(migrated | deferred_ids):
+        inv = invariants[iid]
+        reason = (
+            "migrated to an affordance precondition (phase 3)"
+            if iid in migrated
+            else "dead: trigger material is a stale alias no affordance reaches (phase 3)"
+        )
+        invs_to_tombstone.append(
+            replace(inv, status="tombstoned", tombstoned_at=now, tombstone_reason=reason)
+        )
+    return affs_to_write, invs_to_tombstone
+
+
+def apply_migration(
+    plan: MigrationPlan, substrate: Substrate, *, now: str, root: str | None = None
+) -> tuple[list[Affordance], list[Invariant]]:
+    """Write the migration: rewrite each owner affordance with its new
+    preconditions, and tombstone every migrated + deferred invariant."""
+    from practice_theory_implementation import substrate_writer
+
+    affs, invs = build_apply_changes(
+        plan, substrate.affordances, substrate.invariants, now=now
+    )
+    for aff in affs:
+        substrate_writer.write_affordance(aff, root=root)
+    for inv in invs:
+        substrate_writer.write_invariant(inv, root=root)
+    return affs, invs
+
+
 def render_report(plan: MigrationPlan) -> str:
     lines: list[str] = []
     lines.append(
@@ -213,11 +283,34 @@ def render_report(plan: MigrationPlan) -> str:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Plan (default) or apply the invariant->affordance-check migration."
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="write the changes (default: dry-run report)"
+    )
+    args = parser.parse_args()
+
     from practice_theory_implementation.substrate_loader import loaded
 
     sub = loaded().substrate
     plan = plan_migration(sub.invariants, sub.affordances)
-    print(render_report(plan))
+    if not args.apply:
+        print(render_report(plan))
+        return
+
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    affs, invs = apply_migration(plan, sub, now=now)
+    print(
+        f"Applied: rewrote {len(affs)} affordance(s) with new preconditions; "
+        f"tombstoned {len(invs)} invariant(s)."
+    )
+    for aff in affs:
+        print(f"  affordance {aff.id} now carries {len(aff.preconditions)} precondition(s)")
 
 
 if __name__ == "__main__":
