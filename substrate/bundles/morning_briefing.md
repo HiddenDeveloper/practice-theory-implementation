@@ -13,6 +13,7 @@ rules_ids:
 - rule_morning_briefing_site_access_gap
 - rule_morning_briefing_no_source_read_is_unfinished
 - rule_morning_briefing_read_sources_first
+- rule_morning_briefing_source_baseline
 affordance_ids:
 - read_user_email
 - read_live_market_snapshot
