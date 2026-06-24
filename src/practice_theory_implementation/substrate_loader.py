@@ -36,6 +36,7 @@ from practice_theory_implementation.material_surfaces import MATERIAL_SURFACES
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
+    Check,
     EvaluationSpec,
     Invariant,
     Material,
@@ -114,6 +115,78 @@ def _load_pool(root: Path, pool: str, errors: list[str]) -> dict[str, PoolElemen
     return result
 
 
+def _parse_affordance_preconditions(
+    owner_id: str, raw: object, errors: list[str]
+) -> tuple[Check, ...]:
+    """Parse an affordance's inline `preconditions` into validated Checks.
+
+    Graceful, like `_load_invariants`: a malformed entry is recorded in `errors`
+    and skipped, never raised. A check `id` must be unique within its owning
+    affordance — the firing identity `affordance:<owner>::<id>` depends on it.
+    The predicate vocabulary is the invariant engine's, validated here so a bad
+    `forbid_when` never reaches the evaluator. Tombstoned checks are still loaded
+    (history); the evaluator filters them by `status`.
+    """
+    if raw is None:
+        return ()
+    from practice_theory_implementation.invariant_engine import validate_predicate
+
+    if not isinstance(raw, list):
+        errors.append(f"affordances/{owner_id}.md: preconditions must be a list")
+        return ()
+    checks: list[Check] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            errors.append(f"affordances/{owner_id}.md: each precondition must be a mapping")
+            continue
+        cid = entry.get("id")
+        if not isinstance(cid, str) or not cid:
+            errors.append(f"affordances/{owner_id}.md: a precondition is missing a string id")
+            continue
+        if cid in seen:
+            errors.append(f"affordances/{owner_id}.md: duplicate precondition id {cid!r}")
+            continue
+        status = entry.get("status", "active")
+        if status not in ("active", "tombstoned"):
+            errors.append(
+                f"affordances/{owner_id}.md: precondition {cid!r} invalid status {status!r}"
+            )
+            continue
+        forbid_when = entry.get("forbid_when")
+        if not isinstance(forbid_when, dict):
+            errors.append(
+                f"affordances/{owner_id}.md: precondition {cid!r} missing/invalid forbid_when"
+            )
+            continue
+        if predicate_error := validate_predicate(forbid_when):
+            errors.append(f"affordances/{owner_id}.md: precondition {cid!r}: {predicate_error}")
+            continue
+        trigger = entry.get("trigger")
+        friction_kind = entry.get("friction_kind")
+        if not isinstance(trigger, str) or not isinstance(friction_kind, str):
+            errors.append(
+                f"affordances/{owner_id}.md: precondition {cid!r} "
+                "trigger and friction_kind must be strings"
+            )
+            continue
+        seen.add(cid)
+        checks.append(
+            Check(
+                id=cid,
+                name=str(entry.get("name", cid)),
+                trigger=trigger,
+                friction_kind=friction_kind,
+                message=str(entry.get("message", "")),
+                forbid_when=forbid_when,
+                content=str(entry.get("content", "")),
+                status=status,  # type: ignore[arg-type]
+                mode=entry.get("mode", "detect"),  # type: ignore[arg-type]
+            )
+        )
+    return tuple(checks)
+
+
 def _load_affordances(root: Path, errors: list[str]) -> dict[str, Affordance]:
     result: dict[str, Affordance] = {}
     for stem, fm, body in _read_dir(root / "affordances", errors):
@@ -125,6 +198,9 @@ def _load_affordances(root: Path, errors: list[str]) -> dict[str, Affordance]:
             name=str(fm.get("name", stem)),
             description=body,
             materials=tuple(fm.get("materials") or ()),
+            preconditions=_parse_affordance_preconditions(
+                stem, fm.get("preconditions"), errors
+            ),
         )
     return result
 

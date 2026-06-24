@@ -45,17 +45,48 @@ class Material:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class Check:
+    """A determinable precondition homed on the affordance it constrains.
+
+    The deterministic face of a usage contract, owned by the thing it governs
+    rather than living in a free-floating pool (the design move that dissolves
+    the `invariants` pool — see docs/plans/invariants-as-affordance-material-
+    checks.md). The engine evaluates `forbid_when` — the same predicate
+    vocabulary as the legacy `Invariant` — against any closed enactment that
+    contains a step on the `trigger` material, over the steps before that step;
+    a satisfied predicate is a violation that raises and resolves
+    `friction_kind` with no LLM. `id` is unique within the owning affordance, so
+    the firing identity is `affordance:<owner_id>::<id>`. A tombstoned check
+    keeps its entry (history) but is skipped by the evaluator.
+    """
+
+    id: str
+    name: str
+    trigger: str  # material_name whose presence in an enactment arms the check
+    friction_kind: str
+    message: str
+    forbid_when: Mapping[str, object]  # violation predicate (see invariant_engine)
+    content: str = ""
+    status: InvariantStatus = "active"
+    mode: InvariantMode = "detect"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Affordance:
     """A practice-perspectival capability framed over one or more materials.
 
     `materials` is a tuple of Material names this affordance reaches for,
-    resolved against the substrate's material pool.
+    resolved against the substrate's material pool. `preconditions` are the
+    determinable usage contracts the affordance owns — checks the engine
+    enforces on the affordance's proper use (e.g. an ordering requirement over
+    its materials), homed here rather than in a separate pool.
     """
 
     id: str
     name: str
     description: str
     materials: tuple[str, ...]
+    preconditions: tuple[Check, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
