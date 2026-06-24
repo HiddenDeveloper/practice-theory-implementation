@@ -330,6 +330,102 @@ def run_invariants(
     return firings
 
 
+def _gather_check_callables(
+    substrate: Substrate,
+) -> list[tuple[str, Callable[[list[StepRow]], Violation | None]]]:
+    """Every active check as a `(fire_id, callable)`, from both shapes during the
+    migration: affordance-referenced **check-materials** (resolved from the
+    registry by name — the target shape), and the transitional embedded
+    preconditions / legacy invariants (adapted to a callable via
+    `build_enactment_check`, so everything runs uniformly). Deduped by fire_id, so
+    a check-material referenced by several affordances runs once.
+    """
+    from practice_theory_implementation import registry
+
+    out: list[tuple[str, Callable[[list[StepRow]], Violation | None]]] = []
+    seen: set[str] = set()
+    # Referenced check-materials (target shape).
+    for aff in substrate.affordances.values():
+        for name in aff.check_materials:
+            if name in seen:
+                continue
+            try:
+                out.append((name, registry.resolve(name)))
+                seen.add(name)
+            except KeyError:
+                logger.warning(
+                    "affordance %s references unknown check-material %s", aff.id, name
+                )
+    # Transitional embedded checks + any remaining legacy invariants.
+    for ev in gather_active_checks(substrate):
+        if ev.fire_id in seen:
+            continue
+        out.append((
+            ev.fire_id,
+            build_enactment_check(
+                trigger=ev.trigger,
+                forbid_when=ev.forbid_when,
+                friction_kind=ev.friction_kind,
+                message=ev.message,
+            ),
+        ))
+        seen.add(ev.fire_id)
+    return out
+
+
+def run_enactment_checks(
+    store: EnactmentStore,
+    enactment: EnactmentRow,
+    *,
+    substrate: Substrate | None = None,
+) -> list[Firing]:
+    """Run every active check-material against one closed enactment.
+
+    The check-as-material runner that supersedes `run_invariants`: a check is a
+    deterministic function `check(steps) -> Violation | None` resolved by name,
+    not a predicate scanned out of a pool. On a returned Violation the friction is
+    raised AND auto-resolved deterministically (no Smoother), idempotent per
+    (check, enactment) via the firing ledger keyed on the check's name.
+    """
+    if substrate is None:
+        from practice_theory_implementation.substrate_loader import loaded
+
+        substrate = loaded().substrate
+    checks = _gather_check_callables(substrate)
+    if not checks:
+        return []
+    steps = store.steps_for(enactment.id)
+    if not steps:
+        return []
+
+    firings: list[Firing] = []
+    for fire_id, check in checks:
+        if store.invariant_fired(fire_id, enactment.id):
+            continue
+        try:
+            violation = check(steps)
+        except Exception:
+            logger.exception("check %s failed on %s; skipping", fire_id, enactment.id)
+            continue
+        if violation is None:
+            continue
+        friction_id = store.record_invariant_resolution(
+            invariant_id=fire_id,
+            enactment_id=enactment.id,
+            observer_id=f"{INVARIANT_OBSERVER_PREFIX}{fire_id}",
+            kind=violation.friction_kind,
+            content=violation.message,
+            observation_data={
+                "check": fire_id,
+                "trigger_step_id": violation.trigger_step_id,
+                "auto_resolved": True,
+            },
+        )
+        _emit_firing(fire_id, enactment.id, friction_id, violation.friction_kind)
+        firings.append(Firing(fire_id, enactment.id, friction_id))
+    return firings
+
+
 def _emit_firing(
     invariant_id: str, enactment_id: str, friction_id: int, friction_kind: str
 ) -> None:

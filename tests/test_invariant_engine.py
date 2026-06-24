@@ -420,3 +420,79 @@ def test_registry_enactment_check_requires_fields() -> None:
         registry.build_dynamic_material_function(
             "bad", {"kind": "enactment_check", "trigger": "t"}  # missing forbid_when/friction_kind
         )
+
+
+# --- phase 2 (re-aim): run_enactment_checks over referenced check-materials ---
+
+
+def _register_check(name: str) -> str:
+    """Register a check-material in the registry mirroring RULE/CHECK's contract."""
+    from practice_theory_implementation import registry
+
+    registry.register(
+        name,
+        ie.build_enactment_check(
+            trigger="smoother_mark_addressed",
+            forbid_when={"any_earlier_step_result_contains": PERSISTED_FALSE},
+            friction_kind="non_persisted_amendment_marked_addressed",
+            message="closure rests on a change that did not save",
+        ),
+    )
+    return name
+
+
+def test_run_enactment_checks_runs_embedded_precondition(tmp_path: Path) -> None:
+    # Transitional embedded precondition still fires via the new runner (parity).
+    store = EnactmentStore(tmp_path / "trail.db")
+    _seed_unpersisted_then_close(store)
+    en = store.recent_enactments(limit=1)[0]
+    firings = ie.run_enactment_checks(
+        store, en, substrate=_substrate_with_affordance_check()
+    )
+    assert len(firings) == 1
+    assert firings[0].invariant_id == (
+        "affordance:mark_friction_addressed::no_close_on_unpersisted"
+    )
+
+
+def test_run_enactment_checks_runs_referenced_check_material(tmp_path: Path) -> None:
+    name = _register_check("test_check_no_close_on_unpersisted")
+    aff = Affordance(
+        id="mark_friction_addressed", name="m", description="",
+        materials=("smoother_mark_addressed",), check_materials=(name,),
+    )
+    sub = Substrate(affordances={aff.id: aff})
+    store = EnactmentStore(tmp_path / "trail.db")
+    _seed_unpersisted_then_close(store)
+    en = store.recent_enactments(limit=1)[0]
+
+    firings = ie.run_enactment_checks(store, en, substrate=sub)
+    assert len(firings) == 1
+    assert firings[0].invariant_id == name  # fire_id is the check-material name
+    fr = next(f for f in store.all_friction() if f.id == firings[0].friction_id)
+    assert fr.kind == "non_persisted_amendment_marked_addressed"
+    assert fr.addressed_at is not None  # auto-resolved
+
+
+def test_referenced_check_deduped_across_affordances(tmp_path: Path) -> None:
+    name = _register_check("test_check_shared")
+    a1 = Affordance(id="a1", name="a1", description="", materials=(), check_materials=(name,))
+    a2 = Affordance(id="a2", name="a2", description="", materials=(), check_materials=(name,))
+    sub = Substrate(affordances={"a1": a1, "a2": a2})
+    store = EnactmentStore(tmp_path / "trail.db")
+    _seed_unpersisted_then_close(store)
+    en = store.recent_enactments(limit=1)[0]
+
+    firings = ie.run_enactment_checks(store, en, substrate=sub)
+    assert len(firings) == 1  # one check-material, two references -> one firing
+
+
+def test_unknown_check_reference_does_not_crash(tmp_path: Path) -> None:
+    aff = Affordance(
+        id="a", name="a", description="", materials=(), check_materials=("nope_missing",)
+    )
+    sub = Substrate(affordances={"a": aff})
+    store = EnactmentStore(tmp_path / "trail.db")
+    _seed_unpersisted_then_close(store)
+    en = store.recent_enactments(limit=1)[0]
+    assert ie.run_enactment_checks(store, en, substrate=sub) == []

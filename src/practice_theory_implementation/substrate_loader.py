@@ -198,6 +198,7 @@ def _load_affordances(root: Path, errors: list[str]) -> dict[str, Affordance]:
             name=str(fm.get("name", stem)),
             description=body,
             materials=tuple(fm.get("materials") or ()),
+            check_materials=tuple(fm.get("check_materials") or ()),
             preconditions=_parse_affordance_preconditions(
                 stem, fm.get("preconditions"), errors
             ),

@@ -118,6 +118,8 @@ def write_affordance(
         "name": affordance.name,
         "materials": list(affordance.materials),
     }
+    if affordance.check_materials:
+        frontmatter["check_materials"] = list(affordance.check_materials)
     if affordance.preconditions:
         frontmatter["preconditions"] = [
             _check_frontmatter(c) for c in affordance.preconditions

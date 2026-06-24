@@ -86,6 +86,12 @@ class Affordance:
     name: str
     description: str
     materials: tuple[str, ...]
+    # Determinable usage contracts. `check_materials` is the target shape — names
+    # of check-materials (deterministic functions in the registry) that govern
+    # this affordance's proper use. `preconditions` is the transitional embedded
+    # form (a check's predicate inline); it is being converted into check-materials
+    # + references (see docs/plans/determinable-checks-are-materials.md).
+    check_materials: tuple[str, ...] = ()
     preconditions: tuple[Check, ...] = ()
 
 
