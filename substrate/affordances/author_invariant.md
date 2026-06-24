@@ -3,18 +3,8 @@ id: author_invariant
 name: Author a governed invariant
 materials:
 - pm_create_invariant
-preconditions:
-- id: requires_pm_read_pool_before_pm_create_invariant
-  name: requires pm read pool before pm create invariant
-  trigger: pm_create_invariant
-  friction_kind: practice_quality_affordance_coverage
-  message: Practice Management invoked pm_create_invariant without an earlier pm_read_pool
-    grounding step in the same enactment.
-  forbid_when:
-    not:
-      step_exists:
-        material_name: pm_read_pool
-  content: 'Migrated 2026-06-24T23:04:28+00:00 from 1 invariant(s): pm_create_invariant_requires_prior_pool_read_971.'
+check_materials:
+- requires_pm_read_pool_before_pm_create_invariant
 ---
 Author a deterministic invariant when you find a determinable contract the Judge has been policing by hand. The invariant names a `trigger` material; whenever a closed enactment contains that step, the routing layer evaluates `forbid_when` against the enactment's earlier steps and, on violation, raises and auto-resolves the named `friction_kind` with no LLM. `forbid_when` is a declarative predicate built from `any_earlier_step_result_contains`, `step_exists` ({affordance_id?, material_name? glob, result_contains?}), `arg_present`, `arg_nonempty`, and `all`/`any`/`not`. Author only what is genuinely determinable from the recorded steps; leave to judgement what needs judgement.
 

@@ -3,19 +3,8 @@ id: author_affordance
 name: Author an affordance
 materials:
 - pm_create_affordance
-preconditions:
-- id: requires_pm_read_pool_before_pm_create_affordance
-  name: requires pm read pool before pm create affordance
-  trigger: pm_create_affordance
-  friction_kind: quality_friction:substrate_authoring_without_pool_read
-  message: Practice Management created an affordance without a same-enactment pm_read_pool
-    grounding step before the write.
-  forbid_when:
-    not:
-      step_exists:
-        material_name: pm_read_pool
-  content: 'Migrated 2026-06-24T23:04:28+00:00 from 4 invariant(s): pm_create_affordance_requires_pool_read,
-    pm_create_affordance_requires_prior_pool_read, pm_pool_read_before_create_affordance….'
+check_materials:
+- requires_pm_read_pool_before_pm_create_affordance
 ---
 Author a new affordance only after the current enactment has visibly grounded the substrate surface it will change. Before invoking `pm_create_affordance`, the first Practice Management stewardship work product must be `pm_read_pool` for `affordances`, and also `pm_read_pool` for `materials` when the new affordance relies on existing or newly named material ids/content. A bundle description, reload result, documentation-impact context, remembered ids, prior Smoother wording, or the created affordance result itself is not a substitute for those pool rows.
 

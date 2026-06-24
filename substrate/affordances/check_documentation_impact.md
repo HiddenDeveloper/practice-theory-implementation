@@ -3,19 +3,8 @@ id: check_documentation_impact
 name: Check documentation impact
 materials:
 - pm_check_documentation_impact
-preconditions:
-- id: requires_pm_read_pool_before_pm_check_documentation_impact
-  name: requires pm read pool before pm check documentation impact
-  trigger: pm_check_documentation_impact
-  friction_kind: quality_affordance_coverage
-  message: Practice Management invoked pm_check_documentation_impact before a visible
-    pm_read_pool for the relied-on substrate pool.
-  forbid_when:
-    not:
-      step_exists:
-        material_name: pm_read_pool
-  content: 'Migrated 2026-06-24T23:04:28+00:00 from 4 invariant(s): pm_check_documentation_impact_requires_prior_pool_read,
-    pm_check_documentation_impact_requires_prior_pool_read_861, pm_documentation_impact_requires_pool_read….'
+check_materials:
+- requires_pm_read_pool_before_pm_check_documentation_impact
 ---
 Search README, docs, and social-media markdown for references likely affected by recently created, amended, tombstoned, or removed substrate ids/files before declaring the substrate change complete.
 
