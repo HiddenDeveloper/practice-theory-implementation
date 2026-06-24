@@ -497,6 +497,7 @@ def pm_amend_affordance(
     name: str | None = None,
     description: str | None = None,
     materials: list[str] | None = None,
+    check_materials: list[str] | None = None,
 ) -> dict[str, Any]:
     s, _ = _need_substrate()
     if id not in s.affordances:
@@ -506,11 +507,25 @@ def pm_amend_affordance(
         missing = [m for m in materials if m not in s.materials]
         if missing:
             return {"error": f"materials not in substrate: {missing}"}
+    if check_materials is not None:
+        # A check-material reference must resolve to a real material — this is how
+        # a determinable check (now a material) is wired to the affordance it
+        # governs, replacing the retired author_invariant path.
+        missing = [m for m in check_materials if m not in s.materials]
+        if missing:
+            return {"error": f"check-materials not in substrate: {missing}"}
     affordance = Affordance(
         id=id,
         name=name if name is not None else current.name,
         description=description if description is not None else current.description,
         materials=tuple(materials) if materials is not None else current.materials,
+        check_materials=(
+            tuple(check_materials)
+            if check_materials is not None
+            else current.check_materials
+        ),
+        # Preserve any transitional embedded preconditions across an amendment.
+        preconditions=current.preconditions,
     )
     if err := _persist(lambda: substrate_writer.write_affordance(affordance)):
         return err
