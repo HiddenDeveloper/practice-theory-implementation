@@ -15,7 +15,7 @@ import pytest
 
 from practice_theory_implementation import invariant_engine as ie
 from practice_theory_implementation.trail import EnactmentStore, StepRow
-from practice_theory_implementation.types import Invariant
+from practice_theory_implementation.types import Affordance, Check, Invariant, Substrate
 
 PERSISTED_FALSE = '"persisted": false'
 
@@ -244,3 +244,102 @@ def test_resolution_rolls_back_when_firing_write_fails(tmp_path: Path) -> None:
     assert store.all_friction() == []
     assert store.invariant_fired(RULE.id, eid) is False
     assert store.pending_smoother_inbox_count() == 0
+
+
+# --- phase 2: affordance-owned checks evaluate alongside the invariant pool ---
+
+# The same contract as RULE, expressed as an affordance precondition. fires under
+# the identity `affordance:<owner>::<check_id>`.
+CHECK = Check(
+    id="no_close_on_unpersisted",
+    name="Don't mark addressed after a non-persisted amendment",
+    trigger="smoother_mark_addressed",
+    friction_kind="non_persisted_amendment_marked_addressed",
+    message="closure rests on a change that did not save",
+    forbid_when={"any_earlier_step_result_contains": PERSISTED_FALSE},
+)
+
+
+def _substrate_with_affordance_check() -> Substrate:
+    aff = Affordance(
+        id="mark_friction_addressed",
+        name="Mark a friction addressed",
+        description="body",
+        materials=("smoother_mark_addressed",),
+        preconditions=(CHECK,),
+    )
+    return Substrate(affordances={aff.id: aff})
+
+
+def test_affordance_precondition_fires_under_composite_identity(tmp_path: Path) -> None:
+    store = EnactmentStore(tmp_path / "trail.db")
+    _seed_unpersisted_then_close(store)
+    enactment = store.recent_enactments(limit=1)[0]
+
+    firings = ie.run_invariants(
+        store, enactment, substrate=_substrate_with_affordance_check()
+    )
+
+    assert len(firings) == 1
+    fid = "affordance:mark_friction_addressed::no_close_on_unpersisted"
+    assert firings[0].invariant_id == fid
+    assert store.invariant_fired(fid, enactment.id)
+
+
+def test_parity_same_friction_from_either_source(tmp_path: Path) -> None:
+    # Legacy free-floating invariant.
+    store_inv = EnactmentStore(tmp_path / "inv.db")
+    _seed_unpersisted_then_close(store_inv)
+    en_inv = store_inv.recent_enactments(limit=1)[0]
+    f_inv = ie.run_invariants(store_inv, en_inv, invariants=[RULE])
+
+    # Same contract, homed on an affordance.
+    store_aff = EnactmentStore(tmp_path / "aff.db")
+    _seed_unpersisted_then_close(store_aff)
+    en_aff = store_aff.recent_enactments(limit=1)[0]
+    f_aff = ie.run_invariants(
+        store_aff, en_aff, substrate=_substrate_with_affordance_check()
+    )
+
+    assert len(f_inv) == len(f_aff) == 1
+    # Same friction is raised+resolved regardless of source; only identity differs.
+    fr_inv = next(fr for fr in store_inv.all_friction() if fr.id == f_inv[0].friction_id)
+    fr_aff = next(fr for fr in store_aff.all_friction() if fr.id == f_aff[0].friction_id)
+    assert fr_inv.kind == fr_aff.kind == "non_persisted_amendment_marked_addressed"
+    assert fr_inv.addressed_at is not None and fr_aff.addressed_at is not None
+    assert f_inv[0].invariant_id == "no_close_on_unpersisted_amendment"
+    assert f_aff[0].invariant_id == (
+        "affordance:mark_friction_addressed::no_close_on_unpersisted"
+    )
+
+
+def test_gather_active_checks_unions_both_sources_and_skips_tombstoned() -> None:
+    dead_check = Check(
+        id="dead",
+        name="d",
+        trigger="smoother_mark_addressed",
+        friction_kind="k",
+        message="m",
+        forbid_when={"arg_present": "x"},
+        status="tombstoned",
+    )
+    aff = Affordance(
+        id="aff1",
+        name="A",
+        description="",
+        materials=("smoother_mark_addressed",),
+        preconditions=(CHECK, dead_check),
+    )
+    from dataclasses import replace
+
+    dead_inv = replace(RULE, id="inv_dead", status="tombstoned")
+    sub = Substrate(
+        affordances={"aff1": aff},
+        invariants={RULE.id: RULE, "inv_dead": dead_inv},
+    )
+
+    ids = {ev.fire_id for ev in ie.gather_active_checks(sub)}
+    assert RULE.id in ids  # active legacy invariant
+    assert "affordance:aff1::no_close_on_unpersisted" in ids  # active affordance check
+    assert "inv_dead" not in ids  # tombstoned invariant skipped
+    assert "affordance:aff1::dead" not in ids  # tombstoned check skipped
