@@ -932,35 +932,33 @@ def _practice_eval_cooldown_seconds() -> float:
 
 
 def _invariant_audit_brief(firings: list[dict[str, object]]) -> str:
-    """Build the audit dispatch from a batch of unaudited firings + their rules."""
+    """Build the audit dispatch from a batch of unaudited check-material firings."""
     from practice_theory_implementation.substrate_loader import loaded
 
-    invariants = loaded().substrate.invariants
+    materials = loaded().substrate.materials
     lines = []
     for f in firings:
-        inv = invariants.get(str(f["invariant_id"]))
-        rule = (
-            f"forbid_when={inv.forbid_when!r}; status={inv.status}"
-            if inv is not None
-            else "(rule not found / tombstoned)"
-        )
+        name = str(f["invariant_id"])  # firing key is the check-material name
+        mat = materials.get(name)
+        desc = mat.description.strip().splitlines()[0] if mat and mat.description else None
+        rule = f"check-material `{name}`: {desc}" if desc else "(check-material not found)"
         lines.append(
-            f"- invariant `{f['invariant_id']}` fired on enactment "
+            f"- check `{name}` fired on enactment "
             f"`{f['enactment_id']}`, raising friction `{f['friction_kind']}` "
-            f"(id {f['friction_id']}). Rule: {rule}"
+            f"(id {f['friction_id']}). {rule}"
         )
     body = "\n".join(lines)
     return (
-        "# Invariant audit\n\n"
-        "The loop is idle. Review whether these governed deterministic invariants "
-        "are still firing correctly. Each one already detected AND auto-resolved its "
-        "friction with no LLM; your task is oversight of the rules themselves, not of "
+        "# Check audit\n\n"
+        "The loop is idle. Review whether these deterministic check-materials are "
+        "still firing correctly. Each one already detected AND auto-resolved its "
+        "friction with no LLM; your task is oversight of the checks themselves, not of "
         "the underlying enactments.\n\n"
-        "For each firing, judge whether the rule is sound, or whether it is a false "
-        "positive, stale, or too blunt. If a rule looks wrong, emit_friction naming "
-        "the invariant_id in observation_data with the reason, so the Smoother can "
-        "amend_invariant or tombstone_invariant it. If the rules are firing correctly, "
-        "record a no-finding. Do not re-judge the underlying enactments.\n\n"
+        "For each firing, judge whether the check is sound, or whether it is a false "
+        "positive, stale, or too blunt. If a check looks wrong, emit_friction naming "
+        "the check-material in observation_data with the reason, so the Smoother can "
+        "amend_material or retire it. If the checks are firing correctly, record a "
+        "no-finding. Do not re-judge the underlying enactments.\n\n"
         f"Firings under review:\n{body}\n"
     )
 

@@ -1,13 +1,16 @@
-"""The deterministic invariant engine — runs governed guards, no LLM.
+"""The deterministic check engine — runs check-materials, no LLM.
 
-An Invariant is a determinable contract over an enactment's step history,
-authored as substrate by the Smoother. This module evaluates them: a small
-declarative predicate language (validated at author time, no code-eval) plus
-`run_invariants`, which scans a closed enactment and — when a rule is violated —
-both RAISES the friction and AUTO-RESOLVES it (detect + auto-resolve), so no
-Judge or Smoother LLM is ever dispatched for the determinable case. Judgement
-re-enters only when the Smoother authors/refines a rule and when the scheduled
-audit reviews how the rules have fired (see [[intelligence-only-where-judgement-needed]]).
+A determinable check is a deterministic function over an enactment's step
+history — a **check-material**, authored by the Smoother through the materials
+layer (see docs/plans/determinable-checks-are-materials.md). This module
+provides the predicate language those checks are built from (validated at author
+time, no code-eval), `build_enactment_check` (the `enactment_check` material
+kind's runtime), and `run_enactment_checks`, which resolves the check-materials
+an affordance references and — when one returns a Violation — both RAISES the
+friction and AUTO-RESOLVES it (detect + auto-resolve), so no Judge or Smoother
+LLM is dispatched for the determinable case. Judgement re-enters only when the
+Smoother authors/refines a check and when the scheduled audit reviews how checks
+have fired (see [[intelligence-only-where-judgement-needed]]).
 
 Predicate shape: a mapping with exactly one key — a boolean combinator
 (`all`/`any`/`not`) or a leaf op. Leaf ops are pure functions over the
@@ -24,7 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from practice_theory_implementation.trail import EnactmentRow, EnactmentStore, StepRow
-from practice_theory_implementation.types import Invariant, Substrate
+from practice_theory_implementation.types import Substrate
 
 logger = logging.getLogger(__name__)
 
@@ -147,52 +150,6 @@ class Firing:
     friction_id: int
 
 
-@dataclass(frozen=True, slots=True)
-class _Evaluable:
-    """One determinable check to evaluate, unifying the two sources active during
-    the migration: a legacy free-floating `Invariant` and an affordance-owned
-    `Check`. `fire_id` is the stable firing/idempotency identity — the bare
-    invariant id, or `affordance:<owner_id>::<check_id>` — so the two sources
-    never collide in the firing ledger."""
-
-    fire_id: str
-    trigger: str
-    friction_kind: str
-    message: str
-    forbid_when: Mapping[str, object]
-
-
-def _evaluable_from_invariant(inv: Invariant) -> _Evaluable:
-    return _Evaluable(inv.id, inv.trigger, inv.friction_kind, inv.message, inv.forbid_when)
-
-
-def gather_active_checks(substrate: Substrate) -> list[_Evaluable]:
-    """Every active determinable check, from both sources during the migration.
-
-    The legacy free-floating `invariants` pool (retired in a later phase) plus
-    affordance-owned `preconditions` (the dissolved home — see
-    docs/plans/invariants-as-affordance-material-checks.md). Affordance checks
-    fire under the identity `affordance:<owner_id>::<check_id>`.
-    """
-    out: list[_Evaluable] = []
-    for inv in substrate.invariants.values():
-        if inv.status == "active":
-            out.append(_evaluable_from_invariant(inv))
-    for aff in substrate.affordances.values():
-        for chk in aff.preconditions:
-            if chk.status == "active":
-                out.append(
-                    _Evaluable(
-                        fire_id=f"affordance:{aff.id}::{chk.id}",
-                        trigger=chk.trigger,
-                        friction_kind=chk.friction_kind,
-                        message=chk.message,
-                        forbid_when=chk.forbid_when,
-                    )
-                )
-    return out
-
-
 def _parse_args(step: StepRow) -> dict:
     try:
         data = json.loads(step.arguments_json)
@@ -251,100 +208,17 @@ def build_enactment_check(
     return check
 
 
-def run_invariants(
-    store: EnactmentStore,
-    enactment: EnactmentRow,
-    *,
-    invariants: list[Invariant] | None = None,
-    substrate: Substrate | None = None,
-) -> list[Firing]:
-    """Evaluate every active determinable check against one closed enactment.
-
-    A check is a legacy free-floating `Invariant` or an affordance-owned
-    `Check`; both are evaluated by the same predicate machinery. For each check
-    whose `trigger` material appears as a step, the predicate is evaluated
-    against the steps before the (last) trigger step. On violation the friction
-    is recorded AND immediately marked addressed — raised+resolved
-    deterministically, the Smoother inbox untouched. Idempotent per
-    (check, enactment) via the invariant_firings table, keyed on the check's
-    stable firing identity.
-
-    Source: pass an explicit `invariants` list to evaluate exactly that set
-    (tests, replays). Otherwise the checks come from `substrate` (or the loaded
-    substrate when omitted) — the union of the legacy `invariants` pool and
-    affordance `preconditions` via `gather_active_checks`.
-    """
-    if invariants is not None:
-        evaluables = [_evaluable_from_invariant(i) for i in invariants if i.status == "active"]
-    else:
-        if substrate is None:
-            from practice_theory_implementation.substrate_loader import loaded
-
-            substrate = loaded().substrate
-        evaluables = gather_active_checks(substrate)
-    if not evaluables:
-        return []
-    steps = store.steps_for(enactment.id)
-    if not steps:
-        return []
-
-    firings: list[Firing] = []
-    for ev in evaluables:
-        # cspell:ignore idxs
-        trigger_idxs = [k for k, s in enumerate(steps) if s.material_name == ev.trigger]
-        if not trigger_idxs:
-            continue
-        if store.invariant_fired(ev.fire_id, enactment.id):
-            continue
-        ti = trigger_idxs[-1]
-        ctx = EvalContext(steps=steps, trigger_index=ti, arguments=_parse_args(steps[ti]))
-        try:
-            violated = evaluate_predicate(ev.forbid_when, ctx)
-        except Exception:
-            logger.exception(
-                "check %s failed to evaluate on %s; skipping", ev.fire_id, enactment.id
-            )
-            continue
-        if not violated:
-            continue
-        observer = f"{INVARIANT_OBSERVER_PREFIX}{ev.fire_id}"
-        # Detect + auto-resolve + record the firing, atomically: the rule closes
-        # the Friction in the same breath it raises it, and a crash cannot leave
-        # that half-done (which would re-fire and duplicate on retry). See
-        # `record_invariant_resolution`.
-        friction_id = store.record_invariant_resolution(
-            invariant_id=ev.fire_id,
-            enactment_id=enactment.id,
-            observer_id=observer,
-            kind=ev.friction_kind,
-            content=ev.message,
-            observation_data={
-                "invariant_id": ev.fire_id,
-                "trigger_material": ev.trigger,
-                "trigger_step_id": steps[ti].id,
-                "auto_resolved": True,
-            },
-        )
-        _emit_firing(ev.fire_id, enactment.id, friction_id, ev.friction_kind)
-        firings.append(Firing(ev.fire_id, enactment.id, friction_id))
-    return firings
-
-
 def _gather_check_callables(
     substrate: Substrate,
 ) -> list[tuple[str, Callable[[list[StepRow]], Violation | None]]]:
-    """Every active check as a `(fire_id, callable)`, from both shapes during the
-    migration: affordance-referenced **check-materials** (resolved from the
-    registry by name — the target shape), and the transitional embedded
-    preconditions / legacy invariants (adapted to a callable via
-    `build_enactment_check`, so everything runs uniformly). Deduped by fire_id, so
-    a check-material referenced by several affordances runs once.
+    """Every active check as a `(fire_id, callable)`: the check-materials
+    referenced by affordances, resolved from the registry by name. Deduped by
+    name, so a check-material referenced by several affordances runs once.
     """
     from practice_theory_implementation import registry
 
     out: list[tuple[str, Callable[[list[StepRow]], Violation | None]]] = []
     seen: set[str] = set()
-    # Referenced check-materials (target shape).
     for aff in substrate.affordances.values():
         for name in aff.check_materials:
             if name in seen:
@@ -356,20 +230,6 @@ def _gather_check_callables(
                 logger.warning(
                     "affordance %s references unknown check-material %s", aff.id, name
                 )
-    # Transitional embedded checks + any remaining legacy invariants.
-    for ev in gather_active_checks(substrate):
-        if ev.fire_id in seen:
-            continue
-        out.append((
-            ev.fire_id,
-            build_enactment_check(
-                trigger=ev.trigger,
-                forbid_when=ev.forbid_when,
-                friction_kind=ev.friction_kind,
-                message=ev.message,
-            ),
-        ))
-        seen.add(ev.fire_id)
     return out
 
 
