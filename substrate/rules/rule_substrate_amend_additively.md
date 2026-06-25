@@ -1,5 +1,5 @@
 ---
 id: rule_substrate_amend_additively
-name: Treat amendments as additions, not replacements
+name: Amend to the stable intent; condense accretion
 ---
-An amendment refines what is there. It does not erase prior judgement embedded in the existing content; it makes the smallest change needed. Before applying any bundle amendment, settle on the stable intended end state; do not use substrate amendments as refresh markers, add temporary marker text, or make adjacent amendments whose only net effect is adding and then removing the same phrase.
+An amendment expresses the element's stable intended end state in the fewest words that carry it. It preserves prior *judgement* — the contract the content encodes — not prior *prose*. When existing content has accreted (the same point restated across several paragraphs, a friction-by-friction log, near-duplicate clauses), the amendment CONDENSES it: replace the accretion with one clear statement of the contract rather than appending another paragraph. Growing an element with each Friction it answers is itself a defect — it inflates every brief and every read that carries the element, and that cost is paid on all later enactments. If a new Friction names a genuinely new constraint, fold it into the single statement; if it only re-confirms an existing one, the content already covers it, so record the Friction addressed without changing the element. Do not use amendments as refresh markers, add temporary marker text, or make adjacent amendments whose only net effect is adding then removing the same phrase.
