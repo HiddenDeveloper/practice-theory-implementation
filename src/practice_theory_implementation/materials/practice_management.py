@@ -430,8 +430,6 @@ def pm_amend_affordance(
             if check_materials is not None
             else current.check_materials
         ),
-        # Preserve any transitional embedded preconditions across an amendment.
-        preconditions=current.preconditions,
     )
     if err := _persist(lambda: substrate_writer.write_affordance(affordance)):
         return err

@@ -288,3 +288,25 @@ def test_resolution_rolls_back_when_firing_write_fails(tmp_path: Path) -> None:
     assert store.all_friction() == []
     assert store.invariant_fired("some_check", eid) is False
     assert store.pending_smoother_inbox_count() == 0
+
+
+def test_write_and_load_enactment_check_material(tmp_path: Path) -> None:
+    """A written enactment_check dynamic material loads, registers, and fires."""
+    from practice_theory_implementation import substrate_loader, substrate_writer
+
+    name = "check_x_before_t"
+    substrate_writer.write_dynamic_material(
+        name,
+        "rationale",  # description
+        {},  # input_schema
+        {
+            "kind": "enactment_check", "trigger": "t", "friction_kind": "k", "message": "m",
+            "forbid_when": {"not": {"step_exists": {"material_name": "x"}}},
+        },
+        root=tmp_path,
+    )
+    errors: list[str] = []
+    mats = substrate_loader._load_dynamic_materials(tmp_path, errors, {})
+    assert errors == [] and name in mats
+    fn = registry.resolve(name)  # the loader registered the callable
+    assert fn([_step(1, "t", "")]) is not None  # trigger present, no earlier x -> violation

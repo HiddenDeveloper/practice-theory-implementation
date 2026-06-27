@@ -20,7 +20,6 @@ always agree on where a file lives.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from collections.abc import Mapping
@@ -36,9 +35,7 @@ from practice_theory_implementation.substrate_loader import (
 from practice_theory_implementation.types import (
     Affordance,
     Bundle,
-    Check,
     EvaluationSpec,
-    Invariant,
     PoolElement,
 )
 
@@ -87,27 +84,6 @@ def write_pool_element(
     return path
 
 
-def _check_frontmatter(check: Check) -> dict[str, Any]:
-    """One affordance precondition as deterministic YAML frontmatter, the mirror
-    of `_parse_affordance_preconditions`. Defaults (active status, detect mode,
-    empty content) are omitted so an unchanged check is a no-op diff. `forbid_when`
-    is rendered as plain dict/list via a json round-trip so any Mapping subtype
-    dumps cleanly."""
-    fm: dict[str, Any] = {
-        "id": check.id,
-        "name": check.name,
-        "trigger": check.trigger,
-        "friction_kind": check.friction_kind,
-        "message": check.message,
-        "forbid_when": json.loads(json.dumps(check.forbid_when)),
-    }
-    if check.content:
-        fm["content"] = check.content
-    if check.status != "active":
-        fm["status"] = check.status
-    return fm
-
-
 def write_affordance(
     affordance: Affordance, *, root: str | Path | None = None
 ) -> Path:
@@ -120,10 +96,6 @@ def write_affordance(
     }
     if affordance.check_materials:
         frontmatter["check_materials"] = list(affordance.check_materials)
-    if affordance.preconditions:
-        frontmatter["preconditions"] = [
-            _check_frontmatter(c) for c in affordance.preconditions
-        ]
     _write_atomic(path, _render(frontmatter, affordance.description))
     return path
 
@@ -163,32 +135,6 @@ def _existing_engagement_flag(path: Path) -> bool:
         return False
     fm, _ = split_frontmatter(path.read_text(encoding="utf-8"), source=str(path))
     return fm.get("engagement") is True
-
-
-def write_invariant(invariant: Invariant, *, root: str | Path | None = None) -> Path:
-    """Persist one governed invariant to `invariants/<id>.md`.
-
-    Mirrors the loader's read: the predicate and lifecycle fields become
-    frontmatter, the prose becomes the verbatim body. Tombstone fields are only
-    emitted when set, so an active invariant's file stays clean.
-    """
-    path = _path_for("invariants", invariant.id, root=root)
-    frontmatter: dict[str, Any] = {
-        "id": invariant.id,
-        "name": invariant.name,
-        "status": invariant.status,
-        "trigger": invariant.trigger,
-        "mode": invariant.mode,
-        "friction_kind": invariant.friction_kind,
-        "forbid_when": _plain(invariant.forbid_when),
-        "message": invariant.message,
-    }
-    if invariant.tombstoned_at is not None:
-        frontmatter["tombstoned_at"] = invariant.tombstoned_at
-    if invariant.tombstone_reason is not None:
-        frontmatter["tombstone_reason"] = invariant.tombstone_reason
-    _write_atomic(path, _render(frontmatter, invariant.content))
-    return path
 
 
 def write_evaluation(spec: EvaluationSpec, *, root: str | Path | None = None) -> Path:

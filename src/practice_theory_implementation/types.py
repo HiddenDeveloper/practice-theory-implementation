@@ -13,8 +13,6 @@ from typing import Literal
 
 type JsonSchema = Mapping[str, object]
 type Mode = Literal["somatic", "autonomic"]
-type InvariantStatus = Literal["active", "tombstoned"]
-type InvariantMode = Literal["detect"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -45,54 +43,22 @@ class Material:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Check:
-    """A determinable precondition homed on the affordance it constrains.
-
-    The deterministic face of a usage contract, owned by the thing it governs
-    rather than living in a free-floating pool (the design move that dissolves
-    the `invariants` pool — see docs/plans/invariants-as-affordance-material-
-    checks.md). The engine evaluates `forbid_when` — the same predicate
-    vocabulary as the legacy `Invariant` — against any closed enactment that
-    contains a step on the `trigger` material, over the steps before that step;
-    a satisfied predicate is a violation that raises and resolves
-    `friction_kind` with no LLM. `id` is unique within the owning affordance, so
-    the firing identity is `affordance:<owner_id>::<id>`. A tombstoned check
-    keeps its entry (history) but is skipped by the evaluator.
-    """
-
-    id: str
-    name: str
-    trigger: str  # material_name whose presence in an enactment arms the check
-    friction_kind: str
-    message: str
-    forbid_when: Mapping[str, object]  # violation predicate (see invariant_engine)
-    content: str = ""
-    status: InvariantStatus = "active"
-    mode: InvariantMode = "detect"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class Affordance:
     """A practice-perspectival capability framed over one or more materials.
 
     `materials` is a tuple of Material names this affordance reaches for,
-    resolved against the substrate's material pool. `preconditions` are the
-    determinable usage contracts the affordance owns — checks the engine
-    enforces on the affordance's proper use (e.g. an ordering requirement over
-    its materials), homed here rather than in a separate pool.
+    resolved against the substrate's material pool. `check_materials` names the
+    check-materials (deterministic functions over an enactment's steps) that
+    govern this affordance's proper use — the determinable contracts it owns,
+    referenced by name like its action materials (see
+    docs/plans/determinable-checks-are-materials.md).
     """
 
     id: str
     name: str
     description: str
     materials: tuple[str, ...]
-    # Determinable usage contracts. `check_materials` is the target shape — names
-    # of check-materials (deterministic functions in the registry) that govern
-    # this affordance's proper use. `preconditions` is the transitional embedded
-    # form (a check's predicate inline); it is being converted into check-materials
-    # + references (see docs/plans/determinable-checks-are-materials.md).
     check_materials: tuple[str, ...] = ()
-    preconditions: tuple[Check, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -151,42 +117,14 @@ class Bundle:
     mode: Mode = "somatic"
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class Invariant:
-    """A governed deterministic guard the Smoother authors, amends, tombstones.
-
-    A determinable contract over an enactment's step history. The routing layer
-    evaluates `forbid_when` (a declarative predicate) against any closed
-    enactment that contains a step on the `trigger` material; if the predicate
-    is satisfied, the contract is violated and the friction `friction_kind` is
-    raised — and, because the violation is determinable, resolved — without any
-    LLM. Judgement only enters when the Smoother authors/refines the rule and
-    when the scheduled audit reviews how it has fired.
-
-    `status` is the substrate's first soft-retire concept: a tombstoned
-    invariant keeps its file (history) but is skipped by the evaluator.
-    """
-
-    id: str
-    name: str
-    trigger: str  # material_name whose presence in an enactment arms the check
-    friction_kind: str
-    message: str
-    forbid_when: Mapping[str, object]  # declarative predicate (see invariant_engine)
-    content: str  # body prose
-    status: InvariantStatus = "active"
-    mode: InvariantMode = "detect"
-    tombstoned_at: str | None = None
-    tombstone_reason: str | None = None
-
-
 @dataclass(slots=True)
 class Substrate:
     """The pools at the substrate level, shared across all bundles.
 
-    Mutable so runtime additions (dynamic materials, dynamic affordances,
-    invariants) are supported. Step 2 hand-populates the substrate at module
-    load time; later steps may amend it.
+    Mutable so runtime additions (dynamic materials, dynamic affordances) are
+    supported. Step 2 hand-populates the substrate at module load time; later
+    steps may amend it. Determinable checks are check-materials, so they live in
+    `materials` (referenced from affordances) — not a separate pool.
     """
 
     teleo_affective: dict[str, PoolElement] = field(default_factory=dict)
@@ -194,7 +132,6 @@ class Substrate:
     rules: dict[str, PoolElement] = field(default_factory=dict)
     affordances: dict[str, Affordance] = field(default_factory=dict)
     materials: dict[str, Material] = field(default_factory=dict)
-    invariants: dict[str, Invariant] = field(default_factory=dict)
     evaluations: dict[str, EvaluationSpec] = field(default_factory=dict)
 
 

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from practice_theory_implementation.materials import practice_management as pm
-from practice_theory_implementation.types import Affordance, Check, Material, Substrate
+from practice_theory_implementation.types import Affordance, Material, Substrate
 
 
 @pytest.fixture
@@ -43,17 +43,11 @@ def test_amend_rejects_unknown_check_material(configured: Substrate) -> None:
     assert "error" in r and "check-materials not in substrate" in r["error"]
 
 
-def test_amend_preserves_existing_refs_and_preconditions(configured: Substrate) -> None:
-    chk = Check(
-        id="c1", name="c1", trigger="act", friction_kind="k", message="m",
-        forbid_when={"arg_present": "x"},
-    )
+def test_amend_preserves_existing_check_materials(configured: Substrate) -> None:
     configured.affordances["aff"] = Affordance(
-        id="aff", name="Aff", description="d", materials=("act",),
-        check_materials=("check_x",), preconditions=(chk,),
+        id="aff", name="Aff", description="d", materials=("act",), check_materials=("check_x",),
     )
     pm.pm_amend_affordance("aff", description="new desc")  # amend an unrelated field
     a = configured.affordances["aff"]
     assert a.description == "new desc"
     assert a.check_materials == ("check_x",)  # preserved, not wiped
-    assert a.preconditions == (chk,)  # preserved, not wiped
